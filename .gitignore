@@ -1,0 +1,17 @@
+# --- Secrets (絶対に送らないパスワード類) ---
+.env
+env.yaml
+backend-worker/env.yaml
+
+# --- Python Environments (手元の仮想環境) ---
+.venv/
+venv/
+__pycache__/
+*.pyc
+
+# --- OS / Logs ---
+.DS_Store
+*.log
+
+# --- Firebase ---
+.firebase/

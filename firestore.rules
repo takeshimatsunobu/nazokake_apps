@@ -1,0 +1,28 @@
+// firestore.rules
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // nazokake_items コレクションへのアクセスルール
+    match /nazokake_items/{documentId} {
+      
+      // 【Read】誰でも読み取り可能
+      allow read: if true; 
+
+      // 【Create】フロントエンドからの新規作成(未処理データ)のみ許可
+      allow create: if 
+          request.resource.data.status == 0
+          && request.resource.data.keys().hasAll([
+               'A_TITLE', 'B_TITLE', 'C_READING', 
+               'A_CONTEXT_DETAIL', 'GENERATION_TYPE', 'nazokake_text'
+             ])
+          && !('scores' in request.resource.data)
+          && !('error_message' in request.resource.data)
+          && request.resource.data.status is int;
+
+      // 【Update / Delete】クライアントからは一切禁止（完全ブロック）
+      // ※Cloud Runワーカー(Admin権限)はこれを自動でバイパスします
+      allow update, delete: if false;
+    }
+  }
+}
