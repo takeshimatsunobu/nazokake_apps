@@ -1,0 +1,10 @@
+.git
+.venv
+__pycache__
+serviceAccountKey.json
+backend/serviceAccountKey.json
+gemini_api_key.json
+*.env
+
+# AI Models
+models/

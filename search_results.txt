@@ -1,0 +1,589 @@
+==========================================
+🔍 過去のFirestoreコレクション名の探索
+==========================================
+📁 ファイル: \audit_firestore_full.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \auto_agent_8-14_master_queue.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \check_db.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \check_distribution.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \count_db.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \db_cleanup.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \db_repair.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \extract_dpo_dataset.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \extract_dpo_dataset_v2.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \extract_dpo_dataset_v6.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \extract_sft_dataset.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \firestore_db.py
+   => 検出されたコレクション: {'nazokake_evaluations'}
+
+📁 ファイル: \import_legacy_data.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \investigate_db.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \investigate_evals.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \patch_admin.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \purge_db.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \seed_rag_database.py
+   => 検出されたコレクション: {'nazokake_rag_knowledge'}
+
+📁 ファイル: \seed_rag_database_glucose.py
+   => 検出されたコレクション: {'nazokake_rag_knowledge', 'nazokake_items'}
+
+📁 ファイル: \seed_rag_database_glucose_v2.py
+   => 検出されたコレクション: {'nazokake_rag_knowledge', 'nazokake_items'}
+
+📁 ファイル: \seed_rag_database_glucose_v3.py
+   => 検出されたコレクション: {'nazokake_rag_knowledge', 'nazokake_items'}
+
+📁 ファイル: \seed_rag_database_glucose_v4.py
+   => 検出されたコレクション: {'nazokake_rag_knowledge', 'nazokake_items'}
+
+📁 ファイル: \seed_rag_database_v4.py
+   => 検出されたコレクション: {'nazokake_rag_knowledge'}
+
+📁 ファイル: \server_dual_ai.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \setup_admin.py
+   => 検出されたコレクション: {'system_config'}
+
+📁 ファイル: \test_rag_search.py
+   => 検出されたコレクション: {'nazokake_rag_knowledge'}
+
+📁 ファイル: \test_rag_search_stream.py
+   => 検出されたコレクション: {'nazokake_rag_knowledge'}
+
+📁 ファイル: \backend\gemini_api.py
+   => 検出されたコレクション: {'nazokake_rag_knowledge'}
+
+📁 ファイル: \backend\api\endpoints.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \backend\services\ai_service.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \nazokake_context_files\firestore_db.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \scripts\audit_batch.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \scripts\check_doc.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \scripts\cleanup_ghosts.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \scripts\create_mock_data.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \scripts\extract_sft_data.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \scripts\inject_golden_seeds.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \scripts\publish_jobs.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \scripts\requeue_errors.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \scripts\seed_data.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \scripts\test_diagnostic.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \service_api\api_main.py
+   => 検出されたコレクション: {'nazokake_items'}
+
+📁 ファイル: \utils\find_assets.py
+   => 検出されたコレクション: {'〇〇'}
+
+==========================================
+📝 プロンプト定義・システム設定ファイルの探索
+==========================================
+📄 \app.py (行 4):
+   => st.set_page_config(page_title="なぞかけ自動評価・生成システム", layout="wide")...
+
+📄 \app.py (行 7):
+   => st.title("🧙‍♂️ なぞかけコクピット (Dual AI Ver)")...
+
+📄 \app.py (行 10):
+   => tabs = ["🧩 なぞかけAI生成", "📜 自作鑑定", "🌱 評価して育てる", "🎮 楽しみ方"]...
+
+📄 \app.py (行 15):
+   => if selected_tab == "🧩 なぞかけAI生成":...
+
+📄 \app.py (行 16):
+   => st.subheader("Tier 1 (Gemma-2-9B) による高速なぞかけ創出")...
+
+📄 \app.py (行 17):
+   => topic = st.text_input("なぞかけのお題を入力してください（例：お茶、サウナ）", "お茶")...
+
+📄 \app.py (行 19):
+   => if st.button("AIなぞかけ生成開始"):...
+
+📄 \app.py (行 20):
+   => prompt = f"### Instruction:\n「{topic}」をお題にした面白いなぞかけを1つ作成してください。フォーマットは「〇〇とかけて、××ととく。そのこころは、□□」としてくださ...
+
+📄 \app.py (行 23):
+   => result = router.generate_completion(prompt, tier=1, max_tokens=128)...
+
+📄 \app.py (行 31):
+   => st.success("✨ なぞかけ生成成功!")...
+
+📄 \app.py (行 35):
+   => st.subheader("Tier 2 (LLM-jp-3-13B) による高度なぞかけ多角判定")...
+
+📄 \app.py (行 36):
+   => st.info("ここにあなたの自作なぞかけを入力して、AIによる辛口・甘口鑑定を行います。")...
+
+📄 \app.py (行 41):
+   => st.info("生成されたなぞかけを評価し、Firestoreへアノテーションデータを送信してモデルを調教します。")...
+
+📄 \app.py (行 45):
+   => st.info("現在のデュアルAIアーキテクチャのステータスや、なぞかけ上達のコツを表示します。")...
+
+📄 \auto_agent_8-14_master_queue.py (行 39):
+   => config_path = CURRENT_DIR / "backend" / "prompt_config.json"...
+
+📄 \auto_agent_8-14_master_queue.py (行 42):
+   => PROMPT_CONFIG = json.load(f)...
+
+📄 \auto_agent_8-14_master_queue.py (行 44):
+   => PROMPT_CONFIG = {"system_persona": "あなたは伝説的ななぞかけの名匠です。"}...
+
+📄 \auto_agent_8-14_master_queue.py (行 85):
+   => sys_persona = PROMPT_CONFIG.get("system_persona", "あなたは言葉遊びの天才です。")...
+
+📄 \auto_agent_8-14_master_queue.py (行 93):
+   => prompt = f"""{sys_persona}...
+
+📄 \auto_agent_8-14_master_queue.py (行 99):
+   => 【極秘ミッション: 至高のなぞかけ生成】...
+
+📄 \auto_agent_8-14_master_queue.py (行 113):
+   => contents=prompt,...
+
+📄 \auto_agent_8-14_master_queue.py (行 119):
+   => prompt = f"""あなたはなぞかけの審美眼を持つベテラン観客です。...
+
+📄 \auto_agent_8-14_master_queue.py (行 120):
+   => 以下の日常なぞかけを評価してください。...
+
+📄 \auto_agent_8-14_master_queue.py (行 127):
+   => なぞかけ: {nazokake_text}...
+
+📄 \auto_agent_8-14_master_queue.py (行 134):
+   => contents=prompt,...
+
+📄 \cui_simulator.py (行 118):
+   => feedback_text += f"\n・お題: {d['odai']}\n・なぞかけ本文: {d['text']}\n・AIの予測スコア: {d['ai_score']} / 5.0相当\n・人間...
+
+📄 \cui_simulator.py (行 120):
+   => analysis_prompt = f"""...
+
+📄 \cui_simulator.py (行 122):
+   => 以下のデータは、AIが生成・評価した「なぞかけ」に対する、実際の人間からのフィードバックです。...
+
+📄 \cui_simulator.py (行 127):
+   => 出力するレポートの【一番最初（冒頭）】に、今回分析対象となった「お題」と「なぞかけ本文」の組み合わせをすべて箇条書きで明記してください。...
+
+📄 \cui_simulator.py (行 130):
+   => ■ 📋 今回の分析対象なぞかけ一覧...
+
+📄 \cui_simulator.py (行 140):
+   => contents=analysis_prompt,...
+
+📄 \extract_dpo_dataset.py (行 48):
+   => "prompt": f"お題「{odai}」で、誰もが納得する大衆性を持った秀逸ななぞかけを作成してください。",...
+
+📄 \extract_dpo_dataset_v2.py (行 61):
+   => "prompt": f"お題「{chosen['odai']}」で、誰もが納得する大衆性を持った秀逸ななぞかけを作成してください。",...
+
+📄 \extract_dpo_dataset_v6.py (行 64):
+   => "prompt": f"お題「{good_items[i]['odai']}」で、誰もが納得する大衆性を持った秀逸ななぞかけを作成してください。",...
+
+📄 \extract_sft_dataset.py (行 47):
+   => {"role": "user", "content": f"お題「{odai}」で、誰もが納得する大衆性を持った秀逸ななぞかけを作成してください。"},...
+
+📄 \frontend_ai_logic.py (行 11):
+   => prompt = f"「{a_title}」と「{b_title}」を使ったなぞかけのヒントを1行で出してください。"...
+
+📄 \frontend_ai_logic.py (行 16):
+   => contents=prompt...
+
+📄 \generate_perfect_ui.py (行 8):
+   => <title>なぞかけディスカバリー | AIが極める伝統話芸</title>...
+
+📄 \generate_perfect_ui.py (行 56):
+   => <h1>🏮 なぞかけディスカバリー</h1>...
+
+📄 \import_legacy_data.py (行 45):
+   => prompt = f"""あなたは厳格ななぞかけ審査員です。以下の作品を、現在の11の評価軸に基づいて精密に再評価してください。...
+
+📄 \import_legacy_data.py (行 47):
+   => なぞかけ: {text}...
+
+📄 \import_legacy_data.py (行 52):
+   => contents=prompt,...
+
+📄 \import_legacy_data.py (行 59):
+   => prompt = f"""一般視聴者として、このなぞかけに星1〜5をつけてください。...
+
+📄 \import_legacy_data.py (行 61):
+   => なぞかけ: {text}...
+
+📄 \import_legacy_data.py (行 66):
+   => contents=prompt,...
+
+📄 \odai.txt (行 187):
+   => "なぞかけ",...
+
+📄 \prepare_vertex_ai.py (行 30):
+   => "parts": [{"text": record.get("prompt", "")}]...
+
+📄 \prompts.py (行 1):
+   => # prompts.py...
+
+📄 \prompts.py (行 6):
+   => LLM_JP_CULTURE_PROMPT = """...
+
+📄 \prompts.py (行 8):
+   => ユーザーから提示されたなぞかけの「お題」について、評価のヒントとなる背景知識を抽出し、簡潔なレポートを作成してください。...
+
+📄 \prompts.py (行 22):
+   => GEMMA_JUDGE_PROMPT = """...
+
+📄 \prompts.py (行 23):
+   => あなたは厳格かつユーモアを深く理解する「なぞかけ」の最高裁判官です。...
+
+📄 \prompts.py (行 24):
+   => 以下の【お題】【なぞかけ作品】、および専門家が作成した【文化コンテキスト】を読み込み、...
+
+📄 \prompts.py (行 28):
+   => 【なぞかけ作品】: {nazokake_text}...
+
+📄 \search_results.txt (行 137):
+   => => st.set_page_config(page_title="なぞかけ自動評価・生成システム", layout="wide")......
+
+📄 \search_results.txt (行 140):
+   => => st.title("🧙‍♂️ なぞかけコクピット (Dual AI Ver)")......
+
+📄 \search_results.txt (行 143):
+   => => tabs = ["🧩 なぞかけAI生成", "📜 自作鑑定", "🌱 評価して育てる", "🎮 楽しみ方"]......
+
+📄 \search_results.txt (行 146):
+   => => if selected_tab == "🧩 なぞかけAI生成":......
+
+📄 \search_results.txt (行 149):
+   => => st.subheader("Tier 1 (Gemma-2-9B) による高速なぞかけ創出")......
+
+📄 \search_results.txt (行 152):
+   => => topic = st.text_input("なぞかけのお題を入力してください（例：お茶、サウナ）", "お茶")......
+
+📄 \search_results.txt (行 155):
+   => => if st.button("AIなぞかけ生成開始"):......
+
+📄 \search_results.txt (行 158):
+   => => prompt = f"### Instruction:\n「{topic}」をお題にした面白いなぞかけを1つ作成してください。フォーマットは「〇〇とかけて、××ととく。そのこころは、□□」として...
+
+📄 \search_results.txt (行 161):
+   => => result = router.generate_completion(prompt, tier=1, max_tokens=128)......
+
+📄 \search_results.txt (行 164):
+   => => st.success("✨ なぞかけ生成成功!")......
+
+📄 \search_results.txt (行 167):
+   => => st.subheader("Tier 2 (LLM-jp-3-13B) による高度なぞかけ多角判定")......
+
+📄 \search_results.txt (行 170):
+   => => st.info("ここにあなたの自作なぞかけを入力して、AIによる辛口・甘口鑑定を行います。")......
+
+📄 \search_results.txt (行 173):
+   => => st.info("生成されたなぞかけを評価し、Firestoreへアノテーションデータを送信してモデルを調教します。")......
+
+📄 \search_results.txt (行 176):
+   => => st.info("現在のデュアルAIアーキテクチャのステータスや、なぞかけ上達のコツを表示します。")......
+
+📄 \search_results.txt (行 179):
+   => => config_path = CURRENT_DIR / "backend" / "prompt_config.json"......
+
+📄 \search_results.txt (行 182):
+   => => PROMPT_CONFIG = json.load(f)......
+
+📄 \search_results.txt (行 185):
+   => => PROMPT_CONFIG = {"system_persona": "あなたは伝説的ななぞかけの名匠です。"}......
+
+📄 \search_results.txt (行 188):
+   => => sys_persona = PROMPT_CONFIG.get("system_persona", "あなたは言葉遊びの天才です。")......
+
+📄 \search_results.txt (行 191):
+   => => prompt = f"""{sys_persona}......
+
+📄 \search_results.txt (行 194):
+   => => 【極秘ミッション: 至高のなぞかけ生成】......
+
+📄 \search_results.txt (行 197):
+   => => contents=prompt,......
+
+📄 \search_results.txt (行 200):
+   => => prompt = f"""あなたはなぞかけの審美眼を持つベテラン観客です。......
+
+📄 \search_results.txt (行 203):
+   => => 以下の日常なぞかけを評価してください。......
+
+📄 \search_results.txt (行 206):
+   => => なぞかけ: {nazokake_text}......
+
+📄 \search_results.txt (行 209):
+   => => contents=prompt,......
+
+📄 \search_results.txt (行 212):
+   => => feedback_text += f"\n・お題: {d['odai']}\n・なぞかけ本文: {d['text']}\n・AIの予測スコア: {d['ai_score']} / 5.0相当\n...
+
+📄 \seed_rag_database.py (行 56):
+   => prompt_text = item["messages"][0]["content"]...
+
+📄 \seed_rag_database.py (行 57):
+   => start_idx = prompt_text.find("お題「") + 3...
+
+📄 \seed_rag_database.py (行 58):
+   => end_idx = prompt_text.find("」で、", start_idx)...
+
+📄 \seed_rag_database.py (行 59):
+   => odai = prompt_text[start_idx:end_idx] if start_idx > 2 and end_idx > -1 else prompt_text...
+
+📄 \seed_rag_database_v4.py (行 52):
+   => prompt_text = item["messages"][0]["content"]...
+
+📄 \seed_rag_database_v4.py (行 53):
+   => start_idx = prompt_text.find("お題「") + 3...
+
+📄 \seed_rag_database_v4.py (行 54):
+   => end_idx = prompt_text.find("」で、", start_idx)...
+
+📄 \seed_rag_database_v4.py (行 55):
+   => odai = prompt_text[start_idx:end_idx] if start_idx > 2 and end_idx > -1 else prompt_text...
+
+📄 \server_dual_ai.py (行 77):
+   => prompt = f"あなたは厳格な審査員です。以下のなぞかけを12軸で0.0~1.0で評価しJSONで出力してください。\nお題: {req.odai} \n作品: {req.nazokake_te...
+
+📄 \server_dual_ai.py (行 78):
+   => resp_text = model.generate_content(prompt).text.replace('```json', '').replace('```', '').strip()...
+
+📄 \server_dual_ai.py (行 95):
+   => prompt = f"あなたは「なぞかけ」の達人です。以下の書き出しに続けて、「〇〇と解く。その心は、どちらも□□でしょう。」という形でオチを完成させてください。※解説は絶対に出力しないでください。\...
+
+📄 \server_dual_ai.py (行 96):
+   => res = requests.post(url, headers={"Authorization": f"Bearer {vertex_creds.token}", "Content-Type": "...
+
+📄 \setup_admin.py (行 18):
+   => "prompts": {...
+
+📄 \backend\gemini_api.py (行 49):
+   => rag_text += f"[参考例 {count}] お題: {data.get('odai')}\nなぞかけ: {data.get('nazokake')}\n\n"...
+
+📄 \backend\gemini_api.py (行 75):
+   => prompt = f'''...
+
+📄 \backend\gemini_api.py (行 76):
+   => あなたは、なぞかけの美しさと面白さを極めた「最高峰の審査員（AI落語家）」です。...
+
+📄 \backend\gemini_api.py (行 77):
+   => 以下の「評価対象のなぞかけ」を、11の学術的指標に基づき、0.0〜1.0の範囲で厳密にスコアリングしてください。...
+
+📄 \backend\gemini_api.py (行 80):
+   => 以下のなぞかけは、過去に人間が高く評価した「お手本（正解）」のデータです。...
+
+📄 \backend\gemini_api.py (行 86):
+   => 【評価対象のなぞかけ】...
+
+📄 \backend\gemini_api.py (行 113):
+   => contents=prompt,...
+
+📄 \backend\main.py (行 11):
+   => app = FastAPI(title="なぞかけディスカバリー API")...
+
+📄 \backend\rescue_evaluations.py (行 118):
+   => print(f"\n🎉 処理完了！ 合計 {rescue_count} 件のなぞかけを救済しました！")...
+
+📄 \backend\rescue_evaluations_final.py (行 54):
+   => prompt = f"""...
+
+📄 \backend\rescue_evaluations_final.py (行 55):
+   => あなたは「なぞかけ」のプロフェッショナル審査員です。...
+
+📄 \backend\rescue_evaluations_final.py (行 81):
+   => response = model.generate_content(prompt)...
+
+📄 \backend\rescue_evaluations_final.py (行 135):
+   => print(f"\n🎉 処理完了！ 合計 {rescue_count} 件のなぞかけを救済しました！")...
+
+📄 \backend\core\config.py (行 18):
+   => # prompt_config.json の読み込み...
+
+📄 \backend\core\config.py (行 19):
+   => config_path = os.path.join(current_dir, "prompt_config.json")...
+
+📄 \backend\core\config.py (行 22):
+   => PROMPT_CONFIG = json.load(f)...
+
+📄 \backend\core\config.py (行 24):
+   => print(f"🚨 prompt_config.json load error: {e}")...
+
+📄 \backend\core\config.py (行 25):
+   => PROMPT_CONFIG = {"system_instruction": "", "weights": {"default": 1.0}}...
+
+📄 \backend\core\prompt_config.json (行 2):
+   => "system_instruction": "あなたはプロの『なぞかけ』審査員であり、言語学と認知科学の専門家です。以下の12軸のルーブリックに従い、入力されたお題と解の構造を深く分析し、評価を行って...
+
+📄 \backend\services\ai_service.py (行 15):
+   => マルチエージェント・バケツリレー方式でのなぞかけ評価プロセス...
+
+📄 \backend\services\ai_service.py (行 31):
+   => agent1_prompt = f"お題「{odai}」に関連する日本の文化背景、同音異義語、連想されるキーワードを簡潔にリストアップしてください。"...
+
+📄 \backend\services\ai_service.py (行 34):
+   => "prompt": agent1_prompt,...
+
+📄 \backend\services\ai_service.py (行 45):
+   => agent2_prompt = f"""あなたは厳格ななぞかけの裁判官です。以下の「お題」「なぞかけ」「文化背景レポート」を読み、11軸で評価し、JSON形式で結果を出力してください。...
+
+📄 \backend\services\ai_service.py (行 48):
+   => 【なぞかけ】: {nazokake_text}...
+
+📄 \backend\services\ai_service.py (行 63):
+   => "prompt": agent2_prompt,...
+
+📄 \nazokake_context_files\gemini_api.py (行 36):
+   => prompt = f"""...
+
+📄 \nazokake_context_files\gemini_api.py (行 37):
+   => 以下のなぞかけを11の評価軸で0.0から1.0の範囲でスコアリングしてください。...
+
+📄 \nazokake_context_files\gemini_api.py (行 44):
+   => response = await model.generate_content_async(prompt)...
+
+📄 \scripts\audit_batch.py (行 20):
+   => Firestore上のなぞかけバッチ処理結果を監査し、標準出力にレポートする。...
+
+📄 \scripts\extract_sft_data.py (行 23):
+   => {"role": "user", "content": f"お題「{odai}」でなぞかけを作ってください。"},...
+
+📄 \scripts\local_gemma_api.py (行 17):
+   => prompt_template: str = "" # クラウド側から強力なプロンプトを受け取るための枠...
+
+📄 \scripts\local_gemma_api.py (行 54):
+   => if not req.prompt_template:...
+
+📄 \scripts\local_gemma_api.py (行 55):
+   => req.prompt_template = f"お題「{req.theme}」で、面白いなぞかけを作ってください。"...
+
+📄 \scripts\local_gemma_api.py (行 57):
+   => messages = [{"role": "user", "content": req.prompt_template}]...
+
+📄 \scripts\local_gemma_api.py (行 58):
+   => prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)...
+
+📄 \scripts\local_gemma_api.py (行 60):
+   => inputs = tokenizer(prompt, return_tensors="pt").to(model.device)...
+
+📄 \scripts\test_inference.py (行 38):
+   => print("⚡ 鍛え上げたLoRAアダプタ（なぞかけの脳波）を結合しています...")...
+
+📄 \scripts\test_inference.py (行 45):
+   => {"role": "user", "content": f"お題「{theme}」で、面白いなぞかけを作ってください。"}...
+
+📄 \scripts\test_inference.py (行 48):
+   => prompt = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)...
+
+📄 \scripts\test_inference.py (行 54):
+   => inputs = tokenizer(prompt, return_tensors="pt").to(model.device)...
+
+📄 \scripts\train_local_gemma.py (行 59):
+   => print("🎉 なぞかけ専用 Gemma 4 E4B が誕生しました！")...
+
+📄 \service_api\api_main.py (行 38):
+   => """AIに一からなぞかけを作らせる窓口"""...
+
+📄 \service_api\api_main.py (行 50):
+   => """人間が作った（または編集した）なぞかけをAIに審査させる窓口"""...
+
+📄 \service_api\api_main.py (行 73):
+   => raise HTTPException(status_code=404, detail="対象のなぞかけが見つかりません")...
+
+📄 \service_api\core_gemini_api.py (行 6):
+   => from backend.prompts import EVALUATION_SYSTEM_PROMPT, build_user_prompt...
+
+📄 \service_api\core_gemini_api.py (行 19):
+   => model = genai.GenerativeModel(model_name=model_name, system_instruction=EVALUATION_SYSTEM_PROMPT)...
+
+📄 \service_api\core_gemini_api.py (行 20):
+   => user_prompt = build_user_prompt(a, b, c, detail, g_type, text)...
+
+📄 \service_api\core_gemini_api.py (行 26):
+   => user_prompt,...
+
+📄 \service_api\prompts.py (行 1):
+   => EVALUATION_SYSTEM_PROMPT = """...
+
+📄 \service_api\prompts.py (行 2):
+   => あなたは認知言語学の権威であり、なぞかけの構造分析を専門とする高度な評価AIです。...
+
+📄 \service_api\prompts.py (行 3):
+   => 提示されたなぞかけを11の評価軸で厳密にスコアリングし、JSON形式で出力してください。...
+
+📄 \service_api\prompts.py (行 67):
+   => def build_user_prompt(a_title: str, b_title: str, c_reading: str, a_context_detail: str, generation_...
+
+📄 \utils\find_assets.py (行 34):
+   => prompt_keywords = ['prompt', 'instruction', 'system_message', 'なぞかけを作成']...
+
+📄 \utils\find_assets.py (行 44):
+   => if any(k in line.lower() for k in prompt_keywords):...
+
+📄 \utils\find_assets_to_file.py (行 34):
+   => prompt_keywords = ['prompt', 'instruction', 'system_message', 'なぞかけ']...
+
+📄 \utils\find_assets_to_file.py (行 44):
+   => if any(k in line.lower() for k in prompt_keywords):...
+
+📄 \utils\llm_router.py (行 11):
+   => def generate_completion(self, prompt: str, tier: int = 1, max_tokens: int = 256, temperature: float ...
+
+📄 \utils\llm_router.py (行 16):
+   => "prompt": prompt,...
+
+✅ 探索完了！

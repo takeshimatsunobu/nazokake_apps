@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+firebase-admin
+google-genai
+requests
+pydantic
+python-dotenv
+
+streamlit
+pandas
+plotly

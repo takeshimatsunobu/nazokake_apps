@@ -1,8 +1,21 @@
 {
-  "firestore": {
-    "database": "(default)",
-    "location": "asia-northeast1",
-    "rules": "firestore.rules",
-    "indexes": "firestore.indexes.json"
+  "hosting": {
+    "public": "frontend",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "headers": [
+      {
+        "source": "**/*.html",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "no-cache, no-store, must-revalidate"
+          }
+        ]
+      }
+    ]
   }
 }
