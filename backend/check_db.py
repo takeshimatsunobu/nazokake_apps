@@ -2,7 +2,6 @@ import firebase_admin
 from firebase_admin import firestore
 import json
 
-# main.pyと同じく標準認証（ADC）で起動
 if not firebase_admin._apps:
     firebase_admin.initialize_app()
 

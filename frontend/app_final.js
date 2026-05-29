@@ -140,7 +140,7 @@ function renderResult(targetAreaId, inputSectionId, data) {
     if (btnShare) {
         btnShare.addEventListener('click', () => {
             const odaiText = data.A_TITLE || data.odai || "お題不明";
-            const scoreText = data.s_total ? data.s_total.toFixed(2) : "鑑定中";
+            const scoreText = (data.total_score || data.s_total) ? (data.total_score || data.s_total).toFixed(2) : "鑑定中";
             const text = `【お題：${odaiText}】\n${cleanedText}\n\n🤖 AI分析官の総合点: ${scoreText} / 5.00\n\n#謎掛け学術振興会 #AIなぞかけ`;
             window.open(`https://x.com/intent/tweet?text=${encodeURIComponent(text)}`, '_blank');
         });
@@ -273,7 +273,7 @@ async function loadFeed() {
             
             const odai = item.A_TITLE || "お題不明";
             let text = item.nazokake_text.replace(/\*\*/g, "").replace("と解く、", "と解く、\n");
-            const aiScore = item.s_total ? item.s_total.toFixed(2) : "鑑定中";
+            const aiScore = (item.total_score || item.s_total) ? (item.total_score || item.s_total).toFixed(2) : "鑑定中";
             
             let humanScoreNormalized = 0;
             const evals = item.user_evaluations || [];

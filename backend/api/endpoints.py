@@ -9,12 +9,10 @@ import random
 router = APIRouter()
 db = firestore.client()
 
-# 💡 新規追加: エラーの元凶を安全なJSON辞書に変換するヘルパー関数
 def serialize_doc(doc):
     data = doc.to_dict()
     data["doc_id"] = doc.id
-    # 特殊な日時オブジェクトでJSON変換がコケるのを防ぐため、強制的に文字列化する
-    if "timestamp" in data:
+    if "timestamp" in data and isinstance(data["timestamp"], datetime):
         data["timestamp"] = str(data["timestamp"])
     return data
 
@@ -22,7 +20,6 @@ def serialize_doc(doc):
 def get_feed():
     try:
         docs = db.collection("nazokake_items").limit(50).stream()
-        # 💡 安全な変換を通す
         all_items = [serialize_doc(d) for d in docs]
         
         random_items = random.sample(all_items, min(10, len(all_items)))
@@ -41,23 +38,18 @@ def get_feed():
 
         return {"top10": top10, "random": random_items, "golden": golden}
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @router.get("/dojo_arena")
 def get_dojo_arena():
     try:
         docs = db.collection("nazokake_items").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(100).stream()
-        # 💡 安全な変換を通す
         all_items = [serialize_doc(d) for d in docs]
         
         arena_items = random.sample(all_items, min(30, len(all_items)))
         return {"arena_items": arena_items}
     except Exception as e:
-        import traceback
-        traceback.print_exc()
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @router.post("/submit_human")
 def submit_human(req: HumanSubmitRequest, background_tasks: BackgroundTasks):
@@ -77,7 +69,7 @@ def submit_human(req: HumanSubmitRequest, background_tasks: BackgroundTasks):
         background_tasks.add_task(evaluate_and_update_task, db, doc_ref.id, req.odai, req.nazokake_text)
         return {"status": "processing", "doc_id": doc_ref.id}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @router.get("/status/{doc_id}")
 def get_status(doc_id: str):
@@ -85,14 +77,14 @@ def get_status(doc_id: str):
         doc = db.collection("nazokake_items").document(doc_id).get()
         if not doc.exists:
             raise HTTPException(status_code=404, detail="Document not found")
-        data = serialize_doc(doc) # 💡 ここも安全変換
+        data = serialize_doc(doc)
         return {
             "eval_status": data.get("eval_status", "unknown"),
             "s_total": data.get("s_total", 0.0),
             "scores": data.get("scores", {})
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @router.post("/evaluate")
 def evaluate_item(req: EvaluateRequest):
@@ -107,7 +99,7 @@ def evaluate_item(req: EvaluateRequest):
         doc_ref.update({"user_evaluations": firestore.ArrayUnion([eval_data])})
         return {"status": "success"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @router.post("/generate_ai")
 def generate_ai(req: GenerateRequest):
@@ -115,5 +107,4 @@ def generate_ai(req: GenerateRequest):
         result = generate_nazokake(req.odai)
         return {"status": "success", "nazokake": result}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")

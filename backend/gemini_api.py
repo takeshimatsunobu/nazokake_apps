@@ -12,11 +12,11 @@ from google.cloud.firestore_v1.vector import Vector
 from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
 from sentence_transformers import SentenceTransformer
 
-# 💡 修正ポイント：ローカルとクラウド(Cloud Run)の両方で鍵を見つけられるようにする
+# --- 初期設定 ---
 current_dir = Path.cwd()
-key_path = current_dir / "serviceAccountKey.json" # 優先: Cloud Runのパス
+key_path = current_dir / "serviceAccountKey.json"
 if not key_path.exists():
-    key_path = current_dir / "backend" / "serviceAccountKey.json" # 代替: ローカルPCのパス
+    key_path = current_dir / "backend" / "serviceAccountKey.json"
 
 if not firebase_admin._apps:
     if key_path.exists():
@@ -31,9 +31,11 @@ encoder_model = SentenceTransformer('pkshatech/GLuCoSE-base-ja-v2', trust_remote
 print("✅ [RAG Init] モデルロード完了")
 
 def get_rag_context(odai: str) -> str:
+    """指定されたお題に基づき、Firestoreから関連する参考データを取得する。"""
     try:
         query_vector = encoder_model.encode([odai])[0].tolist()
         collection_ref = db.collection("nazokake_rag_knowledge")
+        
         results = collection_ref.find_nearest(
             vector_field="embedding",
             query_vector=Vector(query_vector),
@@ -56,6 +58,7 @@ def get_rag_context(odai: str) -> str:
         return "※参考データ取得エラー"
 
 def run_gemini_evaluation(item_id: str, data: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """Gemini APIを使用して、なぞかけを多角的な指標で評価する。"""
     try:
         api_key = os.environ.get("GEMINI_API_KEY")
         if not api_key:
@@ -107,7 +110,6 @@ def run_gemini_evaluation(item_id: str, data: Dict[str, Any]) -> Optional[Dict[s
 }}
 '''
 
-        # 正しいモデル名
         response = client.models.generate_content(
             model='gemini-3-flash-preview',
             contents=prompt,
@@ -118,6 +120,7 @@ def run_gemini_evaluation(item_id: str, data: Dict[str, Any]) -> Optional[Dict[s
         )
         
         result_text = response.text.strip()
+        # LLMが出力する可能性のあるMarkdownのコードブロック装飾を削除
         if result_text.startswith("`json"):
             result_text = result_text[7:]
         if result_text.endswith("`"):

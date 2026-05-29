@@ -1,6 +1,5 @@
 import firebase_admin
 
-# 🔥 超重要：APIを読み込む「前」にFirebaseを初期化する
 if not firebase_admin._apps:
     firebase_admin.initialize_app()
 
@@ -10,7 +9,6 @@ from api import endpoints
 
 app = FastAPI(title="なぞかけディスカバリー API")
 
-# CORS設定
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"], 
@@ -19,7 +17,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 🔥 修正：フロントエンドの呼び出し先と合わせるため、prefix="/api" を追加！
 app.include_router(endpoints.router, prefix="/api")
 
 @app.get("/")
