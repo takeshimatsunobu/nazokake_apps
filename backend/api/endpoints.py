@@ -16,7 +16,6 @@ from services.ai_service import evaluate_and_update_task, generate_nazokake
 router = APIRouter()
 admin_db = firestore.Client()
 
-# 🚨 新規追加: フィードバック受信用スキーマ
 class FeedbackRequest(BaseModel):
     score: int
     comment: str
@@ -79,18 +78,32 @@ def update_config(req: ConfigUpdateRequest, auth: None = Depends(verify_admin)):
     admin_db.collection("system_configs").document("ai_settings").set(req.model_dump())
     return {"status": "success"}
 
+# 🚨 修正: 殿堂入り(is_golden_data) も 一般承認(is_approved) もされていないものだけを取得
 @router.get("/admin/pending")
 def get_pending(auth: None = Depends(verify_admin)):
     docs = admin_db.collection("nazokake_items").where("is_user_edited", "==", True).stream()
     items = []
     for doc in docs:
         data = serialize_doc(doc)
-        if not data.get("is_golden_data"): items.append(data)
+        if not data.get("is_golden_data") and not data.get("is_approved"): 
+            items.append(data)
     return {"items": sorted(items, key=lambda x: x.get("timestamp", ""), reverse=True)}
 
+# 🚨 修正: 殿堂入り承認 (ギャラリーにも出る)
 @router.post("/admin/approve/{doc_id}")
 def approve_item(doc_id: str, auth: None = Depends(verify_admin)):
-    admin_db.collection("nazokake_items").document(doc_id).update({"is_golden_data": True})
+    admin_db.collection("nazokake_items").document(doc_id).update({
+        "is_golden_data": True,
+        "is_approved": True
+    })
+    return {"status": "success"}
+
+# 🚨 新規追加: 一般承認 (ギャラリーには出ないが、学習データとして保管される)
+@router.post("/admin/approve_normal/{doc_id}")
+def approve_normal_item(doc_id: str, auth: None = Depends(verify_admin)):
+    admin_db.collection("nazokake_items").document(doc_id).update({
+        "is_approved": True
+    })
     return {"status": "success"}
 
 @router.delete("/admin/delete/{doc_id}")
@@ -102,16 +115,10 @@ def delete_item(doc_id: str, auth: None = Depends(verify_admin)):
 def reset_item(doc_id: str, auth: None = Depends(verify_admin)):
     doc_ref = admin_db.collection("nazokake_items").document(doc_id)
     doc = doc_ref.get()
-    if not doc.exists:
-        raise HTTPException(status_code=404, detail="Item not found")
+    if not doc.exists: raise HTTPException(status_code=404, detail="Item not found")
     data = doc.to_dict()
     orig = data.get("original_data")
-    
-    update_data = {
-        "is_user_edited": False,
-        "human_evaluations": firestore.DELETE_FIELD
-    }
-    
+    update_data = {"is_user_edited": False, "human_evaluations": firestore.DELETE_FIELD}
     if orig:
         update_data["A_TITLE"] = orig.get("odai", "")
         update_data["odai"] = orig.get("odai", "")
@@ -119,7 +126,6 @@ def reset_item(doc_id: str, auth: None = Depends(verify_admin)):
         update_data["s_total"] = orig.get("s_total", 0.0)
         update_data["total_score"] = orig.get("s_total", 0.0)
         update_data["nazokake_text"] = orig.get("nazokake_text", "")
-        
     doc_ref.update(update_data)
     return {"status": "success"}
 
@@ -247,16 +253,9 @@ def log_telemetry(req: TelemetryLogRequest):
     admin_db.collection("telemetry_logs").document().set({"user_slug": req.user_slug, "event_name": req.event_name, "duration": req.duration, "tab_name": req.tab_name, "timestamp": firestore.SERVER_TIMESTAMP})
     return {"status": "success"}
 
-# 🚨 新規追加: ご意見箱(フィードバック)受付API
 @router.post("/feedback")
 @handle_exceptions
 def submit_feedback(req: FeedbackRequest):
     clean_comment = html.escape(str(req.comment or "").strip())
-    admin_db.collection("app_feedbacks").document().set({
-        "score": req.score,
-        "comment": clean_comment,
-        "user_slug": req.user_slug,
-        "status": 0, # 0 = 未対応
-        "created_at": firestore.SERVER_TIMESTAMP
-    })
+    admin_db.collection("app_feedbacks").document().set({"score": req.score, "comment": clean_comment, "user_slug": req.user_slug, "status": 0, "created_at": firestore.SERVER_TIMESTAMP})
     return {"status": "success"}

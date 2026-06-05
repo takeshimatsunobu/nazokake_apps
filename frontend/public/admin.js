@@ -91,16 +91,17 @@ async function loadPendingData() {
             container.innerHTML = '<div class="text-center py-10 text-gray-500">承認待ちのデータはありません</div>'; return;
         }
         data.items.forEach(item => {
-            // 🚨 修正: 棄却(リセット)ボタンを追加
+            // 🚨 修正: ボタンを4種類に分割
             container.insertAdjacentHTML('beforeend', `
                 <div class="bg-gray-50 p-4 rounded border border-gray-200 shadow-sm" id="pend-${item.doc_id}">
                     <div class="mb-3"><span class="bg-green-100 text-green-800 text-xs font-bold px-2 py-1 rounded">⭐ ${item.total_score || item.s_total || '-'}</span></div>
                     <p class="font-bold text-sm text-[#902A19] mb-2">${item.A_TITLE || item.odai}</p>
                     <p class="text-sm text-gray-700 bg-white p-2 rounded border border-gray-100">${item.nazokake_text}</p>
                     <div class="flex gap-2 mt-4 flex-wrap">
-                        <button onclick="approveItem('${item.doc_id}')" class="bg-blue-600 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-blue-700">✅ 承認(殿堂入り)</button>
-                        <button onclick="resetItem('${item.doc_id}')" class="bg-gray-500 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-gray-600">🔄 棄却(道場に戻す)</button>
-                        <button onclick="deleteItem('${item.doc_id}')" class="bg-red-600 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-red-700">🗑️ 削除(永久消去)</button>
+                        <button onclick="approveGolden('${item.doc_id}')" class="bg-yellow-600 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-yellow-700 shadow-sm">🏆 殿堂入り(ギャラリー公開)</button>
+                        <button onclick="approveNormal('${item.doc_id}')" class="bg-blue-600 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-blue-700 shadow-sm">🆗 一般承認(学習データ保管)</button>
+                        <button onclick="resetItem('${item.doc_id}')" class="bg-gray-500 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-gray-600 shadow-sm">🔄 棄却(道場に戻す)</button>
+                        <button onclick="deleteItem('${item.doc_id}')" class="bg-red-600 text-white px-4 py-1.5 rounded text-xs font-bold hover:bg-red-700 shadow-sm">🗑️ 削除(永久消去)</button>
                     </div>
                 </div>
             `);
@@ -111,18 +112,32 @@ async function loadPendingData() {
     }
 }
 
-async function approveItem(id) { try { await fetchWithAuth(`${API_BASE}/admin/approve/${id}`, {method:'POST'}); document.getElementById(`pend-${id}`).remove(); showToast("承認しました"); } catch(e) { showToast("承認失敗", "warning"); } }
+// 🚨 修正: 殿堂入り承認
+async function approveGolden(id) { 
+    try { 
+        await fetchWithAuth(`${API_BASE}/admin/approve/${id}`, {method:'POST'}); 
+        document.getElementById(`pend-${id}`).remove(); 
+        showToast("殿堂入りとして承認しました！"); 
+    } catch(e) { showToast("承認失敗", "warning"); } 
+}
+
+// 🚨 新規: 一般承認
+async function approveNormal(id) { 
+    try { 
+        await fetchWithAuth(`${API_BASE}/admin/approve_normal/${id}`, {method:'POST'}); 
+        document.getElementById(`pend-${id}`).remove(); 
+        showToast("一般学習データとして保管しました"); 
+    } catch(e) { showToast("承認失敗", "warning"); } 
+}
+
 async function deleteItem(id) { try { await fetchWithAuth(`${API_BASE}/admin/delete/${id}`, {method:'DELETE'}); document.getElementById(`pend-${id}`).remove(); showToast("削除しました"); } catch(e) { showToast("削除失敗", "warning"); } }
 
-// 🚨 新規追加: リセット機能
 async function resetItem(id) { 
     try { 
         await fetchWithAuth(`${API_BASE}/admin/reset/${id}`, {method:'POST'}); 
         document.getElementById(`pend-${id}`).remove(); 
         showToast("AIの初期状態にリセットし、道場に戻しました", "info"); 
-    } catch(e) { 
-        showToast("リセット失敗", "warning"); 
-    } 
+    } catch(e) { showToast("リセット失敗", "warning"); } 
 }
 
 async function loadAdminMetrics() {
@@ -132,7 +147,7 @@ async function loadAdminMetrics() {
         document.getElementById('adm-uu').innerText = data.total_uus || 0;
         document.getElementById('adm-dur').innerText = `${data.avg_duration_sec || 0}秒`;
         const container = document.getElementById('adm-events-container'); container.innerHTML = '';
-        const fNames = { 'page_view': '👥 初期訪問', 'tab_click': '🎛️ タブ切替', 'generate_requested': '🤖 生成リクエスト', 'human_submit': '🖌️ 自作鑑定依頼', 'evaluate_feed': '📤 道場破り送信', 'share_sns': '🔗 SNSシェア', 'page_leave': '🚪 ページ離脱 (セッション終了)' };
+        const fNames = { 'page_view': '👥 初期訪問', 'tab_click': '🎛️ タブ切替', 'generate_requested': '🤖 生成リクエスト', 'human_submit': '🖌️ 自作鑑定依頼', 'evaluate_feed': '📤 道場破り送信', 'share_sns': '🔗 SNSシェア', 'page_leave': '🚪 ページ離脱 (セッション終了)', 'submit_feedback': '📮 ご意見箱投稿' };
         for (let [key, val] of Object.entries(data.events || {})) {
             container.insertAdjacentHTML('beforeend', `<div class="flex justify-between py-2 border-b border-gray-200 border-dashed"><span class="text-gray-600 font-medium">${fNames[key]||key}</span><span class="font-bold text-gray-900 bg-gray-100 px-2 py-0.5 rounded text-xs">${val} 回</span></div>`);
         }

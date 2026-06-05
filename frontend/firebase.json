@@ -1,1 +1,33 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"nazokakeapp-137e5","appId":"1:862686676938:android:6ae8c7aba66bd2e4e6f133","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"nazokakeapp-137e5","configurations":{"android":"1:862686676938:android:6ae8c7aba66bd2e4e6f133","ios":"1:862686676938:ios:b52c909dc3b56482e6f133","macos":"1:862686676938:ios:b52c909dc3b56482e6f133","web":"1:862686676938:web:64489be095f5102ee6f133","windows":"1:862686676938:web:7ca106d70a11d87de6f133"}}}}}}
+{
+  "flutter": {
+    "platforms": {
+      "android": {
+        "default": {
+          "projectId": "nazokakeapp-137e5",
+          "appId": "1:862686676938:android:6ae8c7aba66bd2e4e6f133",
+          "fileOutput": "android/app/google-services.json"
+        }
+      },
+      "dart": {
+        "lib/firebase_options.dart": {
+          "projectId": "nazokakeapp-137e5",
+          "configurations": {
+            "android": "1:862686676938:android:6ae8c7aba66bd2e4e6f133",
+            "ios": "1:862686676938:ios:b52c909dc3b56482e6f133",
+            "macos": "1:862686676938:ios:b52c909dc3b56482e6f133",
+            "web": "1:862686676938:web:64489be095f5102ee6f133",
+            "windows": "1:862686676938:web:7ca106d70a11d87de6f133"
+          }
+        }
+      }
+    }
+  },
+  "hosting": {
+    "public": "public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ]
+  }
+}
