@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+google-cloud-tasks
+langchain
+langchain-google-vertexai
+langchain-google-firestore
+firebase-admin
+pydantic

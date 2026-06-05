@@ -1,4 +1,0 @@
-fastapi
-uvicorn[standard]
-google-cloud-firestore
-pydantic

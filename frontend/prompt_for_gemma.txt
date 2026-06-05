@@ -1,0 +1,1937 @@
+あなたは優秀なシニアアーキテクトです。
+以下の「プロジェクトのフォルダ構成」と「各ファイルの内容」を解析し、アーキテクチャ定義書（architecture_summary.md）に追記するための要約を作成してください。
+
+【出力フォーマット】
+以下のマークダウン形式のみを出力してください。挨拶や余計な解説は不要です。
+
+## 1. 全体構造と主要な画面 (Screens/UI)
+（各フォルダの役割と、主要な画面・UIコンポーネントの概要を箇条書きでまとめる）
+
+## 2. 状態管理とデータフロー (State Management)
+（データがどこから入力され、どのファイルを通って、どのようにDBに保存・更新されるか。APIの流れや状態遷移をまとめる）
+
+---
+【解析対象データ】
+
+=== 📁 フォルダ構成 ===
+.dart_tool
+.idea
+.venv
+android
+assets
+backend
+build
+ios
+lib
+linux
+macos
+scripts
+test
+web
+windows
+.env
+.flutter-plugins-dependencies
+.gitignore
+.metadata
+analysis_options.yaml
+api_key.txt
+architecture_summary.md
+export_code.ps1
+firebase.json
+hard_reset.py
+nazokake_app.iml
+patch_appcheck_final.py
+patch_appcheck.py
+patch_errors.py
+patch_index_html.py
+patch_rollback.py
+patch_tabs_and_format.py
+patch_ui_overwrite.py
+Procfile
+prompt_for_gemma.txt
+pubspec.lock
+pubspec.yaml
+README.md
+requirements.txt
+.dart_tool\dartpad
+.dart_tool\flutter_build
+.dart_tool\package_config.json
+.dart_tool\package_graph.json
+.dart_tool\version
+.dart_tool\dartpad\web_plugin_registrant.dart
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\.filecache
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\app.dill
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\app.dill.deps
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\dart_build_result.json
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\dart_build.d
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\dart_build.stamp
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\dart2js.d
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\dart2js.stamp
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\dart2wasm.stamp
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\flutter_assets.d
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\gen_localizations.stamp
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\main.dart
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\main.dart.js
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\main.dart.js.deps
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\outputs.json
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\service_worker.d
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\web_entrypoint.stamp
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\web_plugin_registrant.dart
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\web_release_bundle.stamp
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\web_resources.d
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\web_service_worker.stamp
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\web_static_assets.stamp
+.dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\web_templated_files.stamp
+.idea\libraries
+.idea\runConfigurations
+.idea\modules.xml
+.idea\workspace.xml
+.idea\libraries\Dart_SDK.xml
+.idea\libraries\KotlinJavaRuntime.xml
+.idea\runConfigurations\main_dart.xml
+android\.gradle
+android\.kotlin
+android\app
+android\build
+android\gradle
+android\.gitignore
+android\build.gradle.kts
+android\gradle.properties
+android\gradlew
+android\gradlew.bat
+android\local.properties
+android\nazokake_app_android.iml
+android\settings.gradle.kts
+android\.gradle\8.14
+android\.gradle\buildOutputCleanup
+android\.gradle\kotlin
+android\.gradle\noVersion
+android\.gradle\vcs-1
+android\.gradle\file-system.probe
+android\.gradle\8.14\checksums
+android\.gradle\8.14\executionHistory
+android\.gradle\8.14\expanded
+android\.gradle\8.14\fileChanges
+android\.gradle\8.14\fileHashes
+android\.gradle\8.14\vcsMetadata
+android\.gradle\8.14\gc.properties
+android\.gradle\8.14\checksums\checksums.lock
+android\.gradle\8.14\checksums\md5-checksums.bin
+android\.gradle\8.14\checksums\sha1-checksums.bin
+android\.gradle\8.14\executionHistory\executionHistory.bin
+android\.gradle\8.14\executionHistory\executionHistory.lock
+android\.gradle\8.14\fileChanges\last-build.bin
+android\.gradle\8.14\fileHashes\fileHashes.bin
+android\.gradle\8.14\fileHashes\fileHashes.lock
+android\.gradle\8.14\fileHashes\resourceHashesCache.bin
+android\.gradle\buildOutputCleanup\buildOutputCleanup.lock
+android\.gradle\buildOutputCleanup\cache.properties
+android\.gradle\buildOutputCleanup\outputFiles.bin
+android\.gradle\kotlin\errors
+android\.gradle\kotlin\sessions
+android\.gradle\noVersion\buildLogic.lock
+android\.gradle\vcs-1\gc.properties
+android\.kotlin\sessions
+android\app\src
+android\app\build.gradle.kts
+android\app\google-services.json
+android\app\src\debug
+android\app\src\main
+android\app\src\profile
+android\app\src\debug\AndroidManifest.xml
+android\app\src\main\java
+android\app\src\main\kotlin
+android\app\src\main\res
+android\app\src\main\AndroidManifest.xml
+android\app\src\main\java\io
+android\app\src\main\java\io\flutter
+android\app\src\main\java\io\flutter\plugins
+android\app\src\main\java\io\flutter\plugins\GeneratedPluginRegistrant.java
+android\app\src\main\kotlin\com
+android\app\src\main\kotlin\com\example
+android\app\src\main\kotlin\com\example\nazokake_app
+android\app\src\main\kotlin\com\example\nazokake_app\MainActivity.kt
+android\app\src\main\res\drawable
+android\app\src\main\res\drawable-v21
+android\app\src\main\res\mipmap-hdpi
+android\app\src\main\res\mipmap-mdpi
+android\app\src\main\res\mipmap-xhdpi
+android\app\src\main\res\mipmap-xxhdpi
+android\app\src\main\res\mipmap-xxxhdpi
+android\app\src\main\res\values
+android\app\src\main\res\values-night
+android\app\src\main\res\drawable\launch_background.xml
+android\app\src\main\res\drawable-v21\launch_background.xml
+android\app\src\main\res\mipmap-hdpi\ic_launcher.png
+android\app\src\main\res\mipmap-hdpi\launcher_icon.png
+android\app\src\main\res\mipmap-mdpi\ic_launcher.png
+android\app\src\main\res\mipmap-mdpi\launcher_icon.png
+android\app\src\main\res\mipmap-xhdpi\ic_launcher.png
+android\app\src\main\res\mipmap-xhdpi\launcher_icon.png
+android\app\src\main\res\mipmap-xxhdpi\ic_launcher.png
+android\app\src\main\res\mipmap-xxhdpi\launcher_icon.png
+android\app\src\main\res\mipmap-xxxhdpi\ic_launcher.png
+android\app\src\main\res\mipmap-xxxhdpi\launcher_icon.png
+android\app\src\main\res\values\styles.xml
+android\app\src\main\res\values-night\styles.xml
+android\app\src\profile\AndroidManifest.xml
+android\gradle\wrapper
+android\gradle\wrapper\gradle-wrapper.jar
+android\gradle\wrapper\gradle-wrapper.properties
+assets\icon
+assets\icon\app_icon.png
+backend\__pycache__
+backend\.venv
+backend\.gcloudignore
+backend\Dockerfile
+backend\main.py
+backend\pipeline.py
+backend\requirements.txt
+backend\seed_fewshots.py
+ios\Flutter
+ios\Runner
+ios\Runner.xcodeproj
+ios\Runner.xcworkspace
+ios\RunnerTests
+ios\.gitignore
+ios\Flutter\ephemeral
+ios\Flutter\AppFrameworkInfo.plist
+ios\Flutter\Debug.xcconfig
+ios\Flutter\flutter_export_environment.sh
+ios\Flutter\Generated.xcconfig
+ios\Flutter\Release.xcconfig
+ios\Flutter\ephemeral\flutter_lldb_helper.py
+ios\Flutter\ephemeral\flutter_lldbinit
+ios\Runner\Assets.xcassets
+ios\Runner\Base.lproj
+ios\Runner\AppDelegate.swift
+ios\Runner\GeneratedPluginRegistrant.h
+ios\Runner\GeneratedPluginRegistrant.m
+ios\Runner\Info.plist
+ios\Runner\Runner-Bridging-Header.h
+ios\Runner\SceneDelegate.swift
+ios\Runner\Assets.xcassets\AppIcon.appiconset
+ios\Runner\Assets.xcassets\LaunchImage.imageset
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Contents.json
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-1024x1024@1x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-20x20@1x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-20x20@2x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-20x20@3x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-29x29@1x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-29x29@2x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-29x29@3x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-40x40@1x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-40x40@2x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-40x40@3x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-50x50@1x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-50x50@2x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-57x57@1x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-57x57@2x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-60x60@2x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-60x60@3x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-72x72@1x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-72x72@2x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-76x76@1x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-76x76@2x.png
+ios\Runner\Assets.xcassets\AppIcon.appiconset\Icon-App-83.5x83.5@2x.png
+ios\Runner\Assets.xcassets\LaunchImage.imageset\Contents.json
+ios\Runner\Assets.xcassets\LaunchImage.imageset\LaunchImage.png
+ios\Runner\Assets.xcassets\LaunchImage.imageset\LaunchImage@2x.png
+ios\Runner\Assets.xcassets\LaunchImage.imageset\LaunchImage@3x.png
+ios\Runner\Assets.xcassets\LaunchImage.imageset\README.md
+ios\Runner\Base.lproj\LaunchScreen.storyboard
+ios\Runner\Base.lproj\Main.storyboard
+ios\Runner.xcodeproj\project.xcworkspace
+ios\Runner.xcodeproj\xcshareddata
+ios\Runner.xcodeproj\project.pbxproj
+ios\Runner.xcodeproj\project.xcworkspace\xcshareddata
+ios\Runner.xcodeproj\project.xcworkspace\contents.xcworkspacedata
+ios\Runner.xcodeproj\project.xcworkspace\xcshareddata\IDEWorkspaceChecks.plist
+ios\Runner.xcodeproj\project.xcworkspace\xcshareddata\WorkspaceSettings.xcsettings
+ios\Runner.xcodeproj\xcshareddata\xcschemes
+ios\Runner.xcodeproj\xcshareddata\xcschemes\Runner.xcscheme
+ios\Runner.xcworkspace\xcshareddata
+ios\Runner.xcworkspace\contents.xcworkspacedata
+ios\Runner.xcworkspace\xcshareddata\IDEWorkspaceChecks.plist
+ios\Runner.xcworkspace\xcshareddata\WorkspaceSettings.xcsettings
+ios\RunnerTests\RunnerTests.swift
+lib\models
+lib\providers
+lib\repositories
+lib\screens
+lib\services
+lib\firebase_options.dart
+lib\main.dart
+lib\nazokake_api.dart
+lib\nazokake_screen.dart
+lib\models\nazokake_model.dart
+lib\providers\nazokake_provider.dart
+lib\providers\nazokake_state_provider.dart
+lib\providers\settings_provider.dart
+lib\repositories\nazokake_repository.dart
+lib\screens\dummy_screens.dart
+lib\screens\grow_evaluation_screen.dart
+lib\screens\hall_of_fame_screen.dart
+lib\screens\home_screen.dart
+lib\screens\how_to_enjoy_screen.dart
+lib\screens\main_tab_screen.dart
+lib\screens\self_evaluation_screen.dart
+lib\screens\settings_bottom_sheet.dart
+lib\services\nazokake_api_service.dart
+lib\services\task_stream_service.dart
+linux\flutter
+linux\runner
+linux\.gitignore
+linux\CMakeLists.txt
+linux\flutter\ephemeral
+linux\flutter\CMakeLists.txt
+linux\flutter\generated_plugin_registrant.cc
+linux\flutter\generated_plugin_registrant.h
+linux\flutter\generated_plugins.cmake
+linux\flutter\ephemeral\.plugin_symlinks
+linux\runner\CMakeLists.txt
+linux\runner\main.cc
+linux\runner\my_application.cc
+linux\runner\my_application.h
+macos\Flutter
+macos\Runner
+macos\Runner.xcodeproj
+macos\Runner.xcworkspace
+macos\RunnerTests
+macos\.gitignore
+macos\Flutter\ephemeral
+macos\Flutter\Flutter-Debug.xcconfig
+macos\Flutter\Flutter-Release.xcconfig
+macos\Flutter\GeneratedPluginRegistrant.swift
+macos\Flutter\ephemeral\flutter_export_environment.sh
+macos\Flutter\ephemeral\Flutter-Generated.xcconfig
+macos\Runner\Assets.xcassets
+macos\Runner\Base.lproj
+macos\Runner\Configs
+macos\Runner\AppDelegate.swift
+macos\Runner\DebugProfile.entitlements
+macos\Runner\Info.plist
+macos\Runner\MainFlutterWindow.swift
+macos\Runner\Release.entitlements
+macos\Runner\Assets.xcassets\AppIcon.appiconset
+macos\Runner\Assets.xcassets\AppIcon.appiconset\app_icon_1024.png
+macos\Runner\Assets.xcassets\AppIcon.appiconset\app_icon_128.png
+macos\Runner\Assets.xcassets\AppIcon.appiconset\app_icon_16.png
+macos\Runner\Assets.xcassets\AppIcon.appiconset\app_icon_256.png
+macos\Runner\Assets.xcassets\AppIcon.appiconset\app_icon_32.png
+macos\Runner\Assets.xcassets\AppIcon.appiconset\app_icon_512.png
+macos\Runner\Assets.xcassets\AppIcon.appiconset\app_icon_64.png
+macos\Runner\Assets.xcassets\AppIcon.appiconset\Contents.json
+macos\Runner\Base.lproj\MainMenu.xib
+macos\Runner\Configs\AppInfo.xcconfig
+macos\Runner\Configs\Debug.xcconfig
+macos\Runner\Configs\Release.xcconfig
+macos\Runner\Configs\Warnings.xcconfig
+macos\Runner.xcodeproj\project.xcworkspace
+macos\Runner.xcodeproj\xcshareddata
+macos\Runner.xcodeproj\project.pbxproj
+macos\Runner.xcodeproj\project.xcworkspace\xcshareddata
+macos\Runner.xcodeproj\project.xcworkspace\xcshareddata\IDEWorkspaceChecks.plist
+macos\Runner.xcodeproj\xcshareddata\xcschemes
+macos\Runner.xcodeproj\xcshareddata\xcschemes\Runner.xcscheme
+macos\Runner.xcworkspace\xcshareddata
+macos\Runner.xcworkspace\contents.xcworkspacedata
+macos\Runner.xcworkspace\xcshareddata\IDEWorkspaceChecks.plist
+macos\RunnerTests\RunnerTests.swift
+scripts\generate_arch_base.py
+test\widget_test.dart
+web\icons
+web\favicon.png
+web\index.html
+web\manifest.json
+web\icons\Icon-192.png
+web\icons\Icon-512.png
+web\icons\Icon-maskable-192.png
+web\icons\Icon-maskable-512.png
+windows\flutter
+windows\runner
+windows\.gitignore
+windows\CMakeLists.txt
+windows\flutter\ephemeral
+windows\flutter\CMakeLists.txt
+windows\flutter\generated_plugin_registrant.cc
+windows\flutter\generated_plugin_registrant.h
+windows\flutter\generated_plugins.cmake
+windows\flutter\ephemeral\.plugin_symlinks
+windows\flutter\ephemeral\.plugin_symlinks\cloud_firestore
+windows\flutter\ephemeral\.plugin_symlinks\firebase_app_check
+windows\flutter\ephemeral\.plugin_symlinks\firebase_core
+windows\flutter\ephemeral\.plugin_symlinks\flutter_tts
+windows\flutter\ephemeral\.plugin_symlinks\speech_to_text_windows
+windows\runner\resources
+windows\runner\CMakeLists.txt
+windows\runner\flutter_window.cpp
+windows\runner\flutter_window.h
+windows\runner\main.cpp
+windows\runner\resource.h
+windows\runner\runner.exe.manifest
+windows\runner\Runner.rc
+windows\runner\utils.cpp
+windows\runner\utils.h
+windows\runner\win32_window.cpp
+windows\runner\win32_window.h
+windows\runner\resources\app_icon.ico
+
+=== 📄 主要コード（先頭部分） ===
+
+--- File: hard_reset.py ---
+import os
+import sys
+
+# 1. 不要なファイルを削除し、ダミー画面を1つに統合
+dummy_code = """import 'package:flutter/material.dart';
+
+class DummyScreen extends StatelessWidget {
+  final String title;
+  const DummyScreen({super.key, required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.construction, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text('$title機能は現在開発中です！', style: const TextStyle(fontSize: 18, color: Colors.grey)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+"""
+with open("lib/screens/dummy_screens.dart", "w", encoding="utf-8") as f:
+    f.write(dummy_code)
+
+# 2. 10:00時点の4タブ構成の main_tab_screen.dart を復元
+tab_code = """import 'package:flutter/material.dart';
+import 'home_screen.dart';
+import 'dummy_screens.dart';
+
+class MainTabScreen extends StatefulWidget {
+  const MainTabScreen({super.key});
+
+  @override
+  State<MainTabScreen> createState() => _MainTabScreenState();
+}
+
+class _MainTabScreenState extends State<MainTabScreen> {
+  int _currentIndex = 0;
+
+  final List<Widget> _screens = [
+    const HomeScreen(),
+    const DummyScreen(title: '自作鑑定'),
+    const DummyScreen(title: '評価して育てる'),
+
+--- File: patch_appcheck_final.py ---
+import re
+import sys
+
+file_path = "lib/main.dart"
+try:
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # 「.*?」を使うことで、途中のカッコを無視して最後の「);」までを確実に捕捉します
+    pattern = re.compile(r"await\s+FirebaseAppCheck\.instance\.activate\(.*?\);", re.DOTALL)
+    
+    new_block = """await FirebaseAppCheck.instance.activate(
+    webProvider: ReCaptchaEnterpriseProvider('YOUR_RECAPTCHA_SITE_KEY'),
+    androidProvider: AndroidProvider.debug,
+    appleProvider: AppleProvider.debug,
+  );"""
+
+    if pattern.search(content):
+        new_content = pattern.sub(new_block, content)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        print("✅ [SUCCESS] 罠を突破！ main.dart の AppCheck 完全対応パッチを適用しました！")
+    else:
+        print("⚠️ [SKIP] まだ置換対象が見つかりません（手動での確認が必要です）。")
+
+except Exception as e:
+    print(f"🚨 [ERROR] パッチ適用失敗: {e}")
+    sys.exit(1)
+
+--- File: patch_appcheck.py ---
+import re
+import sys
+
+file_path = "lib/main.dart"
+try:
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # 正規表現で古い FirebaseAppCheck のブロックを正確に捕捉して置換
+    pattern = re.compile(r"await\s+FirebaseAppCheck\.instance\.activate\s*\([^)]+\);", re.DOTALL)
+    
+    new_block = """await FirebaseAppCheck.instance.activate(
+    webProvider: ReCaptchaEnterpriseProvider('YOUR_RECAPTCHA_SITE_KEY'),
+    androidProvider: AndroidProvider.debug,
+    appleProvider: AppleProvider.debug,
+  );"""
+
+    if pattern.search(content):
+        new_content = pattern.sub(new_block, content)
+        with open(file_path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        print("✅ [SUCCESS] main.dart の AppCheck Web対応パッチを適用しました！")
+    else:
+        print("⚠️ [SKIP] 置換対象が見つかりません。既に修正されているか、形式が異なります。")
+
+except Exception as e:
+    print(f"🚨 [ERROR] パッチ適用失敗: {e}")
+    sys.exit(1)
+
+--- File: patch_errors.py ---
+import re
+import sys
+
+file_main = "lib/main.dart"
+try:
+    with open(file_main, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # 1. kIsWeb (Web判定ツール) のインポートを追加
+    if "package:flutter/foundation.dart" not in content:
+        content = content.replace("import 'package:flutter/material.dart';", "import 'package:flutter/material.dart';\nimport 'package:flutter/foundation.dart';")
+
+    # 2. AppCheckのWeb400エラーを回避 (Webならスキップするロジックに変更)
+    pattern = re.compile(r"await\s+FirebaseAppCheck\.instance\.activate\(.*?\);", re.DOTALL)
+    new_appcheck = """// Web版ではダミーキーによる400エラーを防ぐためAppCheckをスキップ
+  if (!kIsWeb) {
+    await FirebaseAppCheck.instance.activate(
+      androidProvider: AndroidProvider.debug,
+      appleProvider: AppleProvider.debug,
+    );
+  }"""
+    content = pattern.sub(new_appcheck, content)
+
+    # 3. フォント警告の抑制 (システムフォントをフォールバックに指定)
+    if "fontFamilyFallback" not in content:
+        content = content.replace("scaffoldBackgroundColor:", "fontFamilyFallback: const ['Hiragino Sans', 'Meiryo', 'sans-serif'],\n        scaffoldBackgroundColor:")
+
+    with open(file_main, "w", encoding="utf-8") as f:
+        f.write(content)
+    
+    print("✅ [SUCCESS] エラー撲滅パッチの適用に成功しました！")
+except Exception as e:
+    print(f"🚨 [ERROR] 予期せぬエラー: {e}")
+    sys.exit(1)
+
+--- File: patch_index_html.py ---
+import re
+import sys
+
+file_path = "web/index.html"
+try:
+    with open(file_path, "r", encoding="utf-8") as f:
+        content = f.read()
+
+    # 古いJSとCSSの読み込みタグを正規表現で完全削除
+    cleaned_content = re.sub(r'<script.*?src=["\'].*?app_final\.js.*?["\'].*?></script>\n?', '', content, flags=re.IGNORECASE)
+    cleaned_content = re.sub(r'<link.*?href=["\'].*?style\.css.*?["\'].*?>\n?', '', cleaned_content, flags=re.IGNORECASE)
+
+    with open(file_path, "w", encoding="utf-8") as f:
+        f.write(cleaned_content)
+    
+    print("✅ [SUCCESS] index.html から不要なタグの除去に成功しました！")
+except Exception as e:
+    print(f"🚨 [ERROR] {e}")
+    sys.exit(1)
+
+--- File: patch_rollback.py ---
+import sys
+
+file_main = "lib/main.dart"
+try:
+    main_code = """import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'firebase_options.dart';
+import 'screens/main_tab_screen.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
+  // 致命的クラッシュを防ぐため、ダミーキーで確実に初期化します（400エラーは安全の証拠として許容）
+  await FirebaseAppCheck.instance.activate(
+    webProvider: ReCaptchaEnterpriseProvider('YOUR_RECAPTCHA_SITE_KEY'),
+    androidProvider: AndroidProvider.debug,
+    appleProvider: AppleProvider.debug,
+  );
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: '謎掛け学術振興会',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        scaffoldBackgroundColor: const Color(0xFFF9F9F9),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF902A19)),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF902A19),
+          foregroundColor: Colors.white,
+          centerTitle: true,
+          elevation: 0,
+        ),
+        useMaterial3: true,
+      ),
+      builder: (context, child) {
+        return Container(
+          color: Colors.grey[300],
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 450),
+              child: ClipRect(child: child),
+            ),
+
+--- File: patch_tabs_and_format.py ---
+import os
+import sys
+
+# 1. 未実装タブ用のダミー画面（プレースホルダー）を生成
+dummy_screens = {
+    "self_evaluation_screen.dart": "自作鑑定",
+    "grow_evaluation_screen.dart": "評価して育てる",
+    "how_to_enjoy_screen.dart": "楽しみ方"
+}
+
+for filename, title in dummy_screens.items():
+    filepath = f"lib/screens/{filename}"
+    content = f"""import 'package:flutter/material.dart';
+
+class {filename.split('_')[0].capitalize()}{filename.split('_')[1].capitalize()}Screen extends StatelessWidget {{
+  const {filename.split('_')[0].capitalize()}{filename.split('_')[1].capitalize()}Screen({{super.key}});
+
+  @override
+  Widget build(BuildContext context) {{
+    return Scaffold(
+      appBar: AppBar(title: const Text('{title}')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.construction, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text('{title}機能は現在開発中です！', style: const TextStyle(fontSize: 18, color: Colors.grey)),
+          ],
+        ),
+      ),
+    );
+  }}
+}}
+"""
+    with open(filepath, "w", encoding="utf-8") as f:
+        f.write(content)
+
+# 2. 司令塔（main_tab_screen.dart）を5タブ仕様に完全書き換え
+main_tab_content = """import 'package:flutter/material.dart';
+import 'home_screen.dart';
+import 'hall_of_fame_screen.dart';
+import 'self_evaluation_screen.dart';
+import 'grow_evaluation_screen.dart';
+import 'how_to_enjoy_screen.dart';
+
+class MainTabScreen extends StatefulWidget {
+  const MainTabScreen({super.key});
+
+  @override
+
+--- File: patch_ui_overwrite.py ---
+import sys
+
+# 1. main.dart (アプリの根幹・幅制限とテーマカラー) の完全上書き
+main_code = """import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'firebase_options.dart';
+import 'screens/main_tab_screen.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  await FirebaseAppCheck.instance.activate(
+    webProvider: ReCaptchaEnterpriseProvider('YOUR_RECAPTCHA_SITE_KEY'),
+    androidProvider: AndroidProvider.debug,
+    appleProvider: AppleProvider.debug,
+  );
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: '謎掛け学術振興会',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        scaffoldBackgroundColor: const Color(0xFFF9F9F9),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF902A19)),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF902A19),
+          foregroundColor: Colors.white,
+          centerTitle: true,
+          elevation: 0,
+        ),
+        useMaterial3: true,
+      ),
+      // 💡 PCでもスマホ幅(最大450px)に制限し、中央に配置する
+      builder: (context, child) {
+        return Container(
+          color: Colors.grey[300],
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 450),
+              child: ClipRect(child: child),
+            ),
+          ),
+        );
+
+--- File: .dart_tool\dartpad\web_plugin_registrant.dart ---
+// Flutter web plugin registrant file.
+//
+// Generated file. Do not edit.
+//
+
+// @dart = 2.13
+// ignore_for_file: type=lint
+
+import 'package:cloud_firestore_web/cloud_firestore_web.dart';
+import 'package:firebase_app_check_web/firebase_app_check_web.dart';
+import 'package:firebase_core_web/firebase_core_web.dart';
+import 'package:flutter_tts/flutter_tts_web.dart';
+import 'package:speech_to_text/speech_to_text_web.dart';
+import 'package:flutter_web_plugins/flutter_web_plugins.dart';
+
+void registerPlugins([final Registrar? pluginRegistrar]) {
+  final Registrar registrar = pluginRegistrar ?? webPluginRegistrar;
+  FirebaseFirestoreWeb.registerWith(registrar);
+  FirebaseAppCheckWeb.registerWith(registrar);
+  FirebaseCoreWeb.registerWith(registrar);
+  FlutterTtsPlugin.registerWith(registrar);
+  SpeechToTextPlugin.registerWith(registrar);
+  registrar.registerMessageHandler();
+}
+
+--- File: .dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\main.dart ---
+// @dart=3.11
+// Flutter web bootstrap script for package:nazokake_app/main.dart.
+//
+// Generated file. Do not edit.
+//
+
+// ignore_for_file: type=lint
+
+import 'dart:ui_web' as ui_web;
+import 'dart:async';
+
+import 'package:nazokake_app/main.dart' as entrypoint;
+import 'web_plugin_registrant.dart' as pluginRegistrant;
+
+typedef _UnaryFunction = dynamic Function(List<String> args);
+typedef _NullaryFunction = dynamic Function();
+
+Future<void> main() async {
+  await ui_web.bootstrapEngine(
+    runApp: () {
+      if (entrypoint.main is _UnaryFunction) {
+        return (entrypoint.main as _UnaryFunction)(<String>[]);
+      }
+      return (entrypoint.main as _NullaryFunction)();
+    },
+    registerPlugins: () {
+      pluginRegistrant.registerPlugins();
+    },
+  );
+}
+
+--- File: .dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\main.dart.js ---
+(function dartProgram(){function copyProperties(a,b){var s=Object.keys(a)
+for(var r=0;r<s.length;r++){var q=s[r]
+b[q]=a[q]}}function mixinPropertiesHard(a,b){var s=Object.keys(a)
+for(var r=0;r<s.length;r++){var q=s[r]
+if(!b.hasOwnProperty(q)){b[q]=a[q]}}}function mixinPropertiesEasy(a,b){Object.assign(b,a)}var z=function(){var s=function(){}
+s.prototype={p:{}}
+var r=new s()
+if(!(Object.getPrototypeOf(r)&&Object.getPrototypeOf(r).p===s.prototype.p))return false
+try{if(typeof navigator!="undefined"&&typeof navigator.userAgent=="string"&&navigator.userAgent.indexOf("Chrome/")>=0)return true
+if(typeof version=="function"&&version.length==0){var q=version()
+if(/^\d+\.\d+\.\d+\.\d+$/.test(q))return true}}catch(p){}return false}()
+function inherit(a,b){a.prototype.constructor=a
+a.prototype["$i"+a.name]=a
+if(b!=null){if(z){Object.setPrototypeOf(a.prototype,b.prototype)
+return}var s=Object.create(b.prototype)
+copyProperties(a.prototype,s)
+a.prototype=s}}function inheritMany(a,b){for(var s=0;s<b.length;s++){inherit(b[s],a)}}function mixinEasy(a,b){mixinPropertiesEasy(b.prototype,a.prototype)
+a.prototype.constructor=a}function mixinHard(a,b){mixinPropertiesHard(b.prototype,a.prototype)
+a.prototype.constructor=a}function lazy(a,b,c,d){var s=a
+a[b]=s
+a[c]=function(){if(a[b]===s){a[b]=d()}a[c]=function(){return this[b]}
+return a[b]}}function lazyFinal(a,b,c,d){var s=a
+a[b]=s
+a[c]=function(){if(a[b]===s){var r=d()
+if(a[b]!==s){A.aLk(b)}a[b]=r}var q=a[b]
+a[c]=function(){return q}
+return q}}function makeConstList(a,b){if(b!=null)A.d(a,b)
+a.$flags=7
+return a}function convertToFastObject(a){function t(){}t.prototype=a
+new t()
+return a}function convertAllToFastObject(a){for(var s=0;s<a.length;++s){convertToFastObject(a[s])}}var y=0
+function instanceTearOffGetter(a,b){var s=null
+return a?function(c){if(s===null)s=A.aph(b)
+return new s(c,this)}:function(){if(s===null)s=A.aph(b)
+return new s(this,null)}}function staticTearOffGetter(a){var s=null
+return function(){if(s===null)s=A.aph(a).prototype
+return s}}var x=0
+function tearOffParameters(a,b,c,d,e,f,g,h,i,j){if(typeof h=="number"){h+=x}return{co:a,iS:b,iI:c,rC:d,dV:e,cs:f,fs:g,fT:h,aI:i||0,nDA:j}}function installStaticTearOff(a,b,c,d,e,f,g,h){var s=tearOffParameters(a,true,false,c,d,e,f,g,h,false)
+var r=staticTearOffGetter(s)
+a[b]=r}function installInstanceTearOff(a,b,c,d,e,f,g,h,i,j){c=!!c
+var s=tearOffParameters(a,false,c,d,e,f,g,h,i,!!j)
+var r=instanceTearOffGetter(c,s)
+a[b]=r}function setOrUpdateInterceptorsByTag(a){var s=v.interceptorsByTag
+if(!s){v.interceptorsByTag=a
+return}copyProperties(a,s)}function setOrUpdateLeafTags(a){var s=v.leafTags
+if(!s){v.leafTags=a
+return}copyProperties(a,s)}function updateTypes(a){var s=v.types
+var r=s.length
+s.push.apply(s,a)
+return r}function updateHolder(a,b){copyProperties(b,a)
+
+--- File: .dart_tool\flutter_build\b599ead5c3bbe7dfc18ddce26d084a6d\web_plugin_registrant.dart ---
+// Flutter web plugin registrant file.
+//
+// Generated file. Do not edit.
+//
+
+// @dart = 2.13
+// ignore_for_file: type=lint
+
+import 'package:cloud_firestore_web/cloud_firestore_web.dart';
+import 'package:firebase_app_check_web/firebase_app_check_web.dart';
+import 'package:firebase_core_web/firebase_core_web.dart';
+import 'package:flutter_tts/flutter_tts_web.dart';
+import 'package:speech_to_text/speech_to_text_web.dart';
+import 'package:flutter_web_plugins/flutter_web_plugins.dart';
+
+void registerPlugins([final Registrar? pluginRegistrar]) {
+  final Registrar registrar = pluginRegistrar ?? webPluginRegistrar;
+  FirebaseFirestoreWeb.registerWith(registrar);
+  FirebaseAppCheckWeb.registerWith(registrar);
+  FirebaseCoreWeb.registerWith(registrar);
+  FlutterTtsPlugin.registerWith(registrar);
+  SpeechToTextPlugin.registerWith(registrar);
+  registrar.registerMessageHandler();
+}
+
+--- File: backend\main.py ---
+import os
+import json
+import uuid
+from fastapi import FastAPI, HTTPException, Request, Header, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+from google.cloud import firestore
+from google.cloud import tasks_v2
+from google.oauth2 import id_token
+from google.auth.transport import requests as google_requests
+import firebase_admin
+from firebase_admin import credentials, app_check
+from pipeline import run_nazokake_pipeline
+
+# Firebase Admin SDKの初期化 (App Check検証用)
+if not firebase_admin._apps:
+    firebase_admin.initialize_app()
+
+app = FastAPI(title="AI Nazokake Dojo API")
+
+# CORS設定
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+PROJECT_ID = os.environ.get("PROJECT_ID")
+LOCATION = os.environ.get("LOCATION", "asia-northeast1")
+QUEUE_NAME = os.environ.get("QUEUE_NAME", "nazokake-queue")
+# Cloud Runデプロイ時に割り当てられるURLを環境変数から取得（Taskエンキュー時に必要）
+SERVICE_URL = os.environ.get("SERVICE_URL", "Cloud RunのURLをここに設定または環境変数から取得")
+SERVICE_ACCOUNT_EMAIL = os.environ.get("SERVICE_ACCOUNT_EMAIL", f"nazokake-backend-sa@{PROJECT_ID}.iam.gserviceaccount.com")
+
+db_client = firestore.Client(project=PROJECT_ID)
+tasks_client = tasks_v2.CloudTasksClient()
+
+class GenerateRequest(BaseModel):
+    odai: str
+
+# --- 依存関係: App Check トークンの検証 ---
+async def verify_app_check(x_firebase_appcheck: str = Header(None)):
+    if not x_firebase_appcheck:
+        raise HTTPException(status_code=401, detail="Unauthorized: App Check token is missing.")
+    try:
+        app_check_claims = app_check.verify_token(x_firebase_appcheck)
+        return app_check_claims
+    except Exception as e:
+
+--- File: backend\pipeline.py ---
+import os
+import json
+from google.cloud import firestore
+from langchain_core.prompts import PromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+from langchain_google_vertexai import ChatVertexAI, VertexAIEmbeddings
+from langchain_google_firestore import FirestoreVectorStore
+
+PROJECT_ID = os.environ.get("PROJECT_ID", "nazokakeapp-137e5")
+LOCATION = os.environ.get("LOCATION", "asia-northeast1")
+COLLECTION_NAME = "nazokake_fewshots"
+
+db_client = firestore.Client(project=PROJECT_ID)
+
+def build_pipeline():
+    # 全てのステップを、安定稼働が確認できた gemini-2.5-flash に統一
+    gemini_model = ChatVertexAI(
+        model_name="gemini-2.5-flash",
+        project=PROJECT_ID,
+        location="us-central1",
+        temperature=0.7
+    )
+    
+    gemini_json_model = ChatVertexAI(
+        model_name="gemini-2.5-flash",
+        project=PROJECT_ID,
+        location="us-central1",
+        temperature=0.0,
+        model_kwargs={"response_mime_type": "application/json"}
+    )
+
+    # RAG (Firestore Vector Search) の設定
+    embeddings = VertexAIEmbeddings(model_name="text-embedding-004", project=PROJECT_ID, location=LOCATION)
+    vector_store = FirestoreVectorStore(collection=COLLECTION_NAME, embedding_service=embeddings, client=db_client)
+    retriever = vector_store.as_retriever(search_kwargs={"k": 2})
+
+    def format_docs(docs):
+        return "\n".join([f"お題: {d.metadata.get('odai', '')}\n解き: {d.metadata.get('toku', '')}\n心は: {d.metadata.get('kokoro', '')}" for d in docs])
+
+    # Step A: 関連キーワード拡張
+    prompt_a = PromptTemplate.from_template(
+        "あなたは言語学と認知科学の専門家です。\n"
+        "お題「{odai}」から連想される語彙の意味ネットワークを広げ、特徴や関連概念を5つ抽出してください。\n"
+        "出力形式: キーワードのみのカンマ区切り"
+    )
+    step_a = prompt_a | gemini_model | StrOutputParser()
+
+    # Step B: 動的Few-shot生成 (Geminiを使用)
+    prompt_b = PromptTemplate.from_template(
+        "以下の参考例と、お題に関する関連概念を元に、新しいなぞかけを生成してください。\n"
+
+--- File: backend\seed_fewshots.py ---
+import os
+from google.cloud import firestore
+from langchain_google_vertexai import VertexAIEmbeddings
+from langchain_core.documents import Document
+from langchain_google_firestore import FirestoreVectorStore
+
+PROJECT_ID = os.environ.get("PROJECT_ID", "nazokakeapp-137e5")
+LOCATION = os.environ.get("LOCATION", "asia-northeast1")
+COLLECTION_NAME = "nazokake_fewshots"
+
+db_client = firestore.Client(project=PROJECT_ID)
+
+# 良質な「なぞかけ」のFew-shotデータ
+# ※ LLM-jpが「オチの成立（論理的推論）」を学習するための高品質な型を用意します
+few_shots = [
+    {
+        "odai": "インターネット",
+        "toku": "蜘蛛の巣と解きます",
+        "kokoro": "どちらもリンク（輪っか・繋がり）が欠かせません"
+    },
+    {
+        "odai": "学校のテスト",
+        "toku": "満員電車と解きます",
+        "kokoro": "どちらもカイイトウ（解答・快投）が気になります"
+    },
+    {
+        "odai": "花火",
+        "toku": "人生と解きます",
+        "kokoro": "どちらも大きなハナ（花・華）を咲かせたいでしょう"
+    },
+    {
+        "odai": "コーヒー",
+        "toku": "人生の試練と解きます",
+        "kokoro": "どちらもニガミ（苦味）の後に深みが出ます"
+    }
+]
+
+def seed_database():
+    print("Embeddingモデルを初期化中...")
+    embeddings = VertexAIEmbeddings(
+        model_name="text-embedding-004", 
+        project=PROJECT_ID, 
+        location=LOCATION
+    )
+
+    print(f"Firestoreの {COLLECTION_NAME} コレクションにデータを保存します...")
+    vector_store = FirestoreVectorStore(
+        collection=COLLECTION_NAME,
+        embedding_service=embeddings,
+        client=db_client
+
+--- File: ios\Flutter\ephemeral\flutter_lldb_helper.py ---
+#
+# Generated file, do not edit.
+#
+
+import lldb
+
+def handle_new_rx_page(frame: lldb.SBFrame, bp_loc, extra_args, intern_dict):
+    """Intercept NOTIFY_DEBUGGER_ABOUT_RX_PAGES and touch the pages."""
+    base = frame.register["x0"].GetValueAsAddress()
+    page_len = frame.register["x1"].GetValueAsUnsigned()
+
+    # Note: NOTIFY_DEBUGGER_ABOUT_RX_PAGES will check contents of the
+    # first page to see if handled it correctly. This makes diagnosing
+    # misconfiguration (e.g. missing breakpoint) easier.
+    data = bytearray(page_len)
+    data[0:8] = b'IHELPED!'
+
+    error = lldb.SBError()
+    frame.GetThread().GetProcess().WriteMemory(base, data, error)
+    if not error.Success():
+        print(f'Failed to write into {base}[+{page_len}]', error)
+        return
+
+def __lldb_init_module(debugger: lldb.SBDebugger, _):
+    target = debugger.GetDummyTarget()
+    # Caveat: must use BreakpointCreateByRegEx here and not
+    # BreakpointCreateByName. For some reasons callback function does not
+    # get carried over from dummy target for the later.
+    bp = target.BreakpointCreateByRegex("^NOTIFY_DEBUGGER_ABOUT_RX_PAGES$")
+    bp.SetScriptCallbackFunction('{}.handle_new_rx_page'.format(__name__))
+    bp.SetAutoContinue(True)
+    print("-- LLDB integration loaded --")
+
+--- File: lib\firebase_options.dart ---
+// File generated by FlutterFire CLI.
+// ignore_for_file: type=lint
+import 'package:firebase_core/firebase_core.dart' show FirebaseOptions;
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, TargetPlatform;
+
+/// Default [FirebaseOptions] for use with your Firebase apps.
+///
+/// Example:
+/// ```dart
+/// import 'firebase_options.dart';
+/// // ...
+/// await Firebase.initializeApp(
+///   options: DefaultFirebaseOptions.currentPlatform,
+/// );
+/// ```
+class DefaultFirebaseOptions {
+  static FirebaseOptions get currentPlatform {
+    if (kIsWeb) {
+      return web;
+    }
+    switch (defaultTargetPlatform) {
+      case TargetPlatform.android:
+        return android;
+      case TargetPlatform.iOS:
+        return ios;
+      case TargetPlatform.macOS:
+        return macos;
+      case TargetPlatform.windows:
+        return windows;
+      case TargetPlatform.linux:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions have not been configured for linux - '
+          'you can reconfigure this by running the FlutterFire CLI again.',
+        );
+      default:
+        throw UnsupportedError(
+          'DefaultFirebaseOptions are not supported for this platform.',
+        );
+    }
+  }
+
+  static const FirebaseOptions web = FirebaseOptions(
+    apiKey: 'AIzaSyClImunmZDLAzS93-HLGOQG6Q-8MXwnS8s',
+    appId: '1:862686676938:web:64489be095f5102ee6f133',
+    messagingSenderId: '862686676938',
+    projectId: 'nazokakeapp-137e5',
+    authDomain: 'nazokakeapp-137e5.firebaseapp.com',
+    storageBucket: 'nazokakeapp-137e5.firebasestorage.app',
+    measurementId: 'G-QMFX5EHEXQ',
+
+--- File: lib\main.dart ---
+import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'firebase_options.dart';
+import 'screens/main_tab_screen.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await Firebase.initializeApp(options: DefaultFirebaseOptions.currentPlatform);
+  
+  // ⚠️ 致命的エラーを防ぐため、Webでも必ずAppCheckをアクティベートする
+  await FirebaseAppCheck.instance.activate(
+    webProvider: ReCaptchaEnterpriseProvider('YOUR_RECAPTCHA_SITE_KEY'),
+    androidProvider: AndroidProvider.debug,
+    appleProvider: AppleProvider.debug,
+  );
+  
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: '謎掛け学術振興会',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        fontFamilyFallback: const ['Hiragino Sans', 'Meiryo', 'sans-serif'],
+        scaffoldBackgroundColor: const Color(0xFFF9F9F9),
+        colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xFF902A19)),
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Color(0xFF902A19),
+          foregroundColor: Colors.white,
+          centerTitle: true,
+          elevation: 0,
+        ),
+        useMaterial3: true,
+      ),
+      builder: (context, child) {
+        return Container(
+          color: Colors.grey[300],
+          child: Center(
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 450),
+              child: ClipRect(child: child),
+            ),
+          ),
+        );
+
+--- File: lib\nazokake_api.dart ---
+import 'dart:async';
+import 'dart:convert';
+import 'package:http/http.dart' as http;
+
+class NazokakeApi {
+  // デプロイされたCloud RunのエンドポイントURL
+  static const String _baseUrl =
+      'https://nazokake-backend-862686676938.asia-northeast1.run.app';
+
+  /// 非同期でなぞかけ生成を開始し、10秒間隔でステータスを監視するStreamを返す
+  static Stream<Map<String, dynamic>> generateStream({
+    required String odai,
+    required String generation,
+  }) async* {
+    try {
+      // 1. タスクの生成リクエスト (Cloud Tasksへエンキュー)
+      // ※将来的にはここにFirebase App Checkのトークンヘッダーを追加します
+      final startResponse = await http.post(
+        Uri.parse('$_baseUrl/generate'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'odai': odai, 'generation': generation}),
+      );
+
+      if (startResponse.statusCode != 200) {
+        throw Exception('APIの起動に失敗しました: ${startResponse.statusCode}');
+      }
+
+      final startData = jsonDecode(startResponse.body);
+      final String taskId = startData['task_id'];
+
+      // 初期の進捗メッセージをUIに送信
+      yield {'status': 'processing', 'message': startData['message']};
+
+      // 2. 10秒間隔でのポーリング (最大6回 = 60秒)
+      const int maxAttempts = 6;
+      for (int i = 0; i < maxAttempts; i++) {
+        await Future.delayed(const Duration(seconds: 10));
+
+        final statusResponse = await http.get(
+          Uri.parse('$_baseUrl/status/$taskId'),
+        );
+
+        if (statusResponse.statusCode == 200) {
+          final statusData = jsonDecode(statusResponse.body);
+
+          // 最新のステータスとメッセージをUIに送信
+          yield statusData;
+
+          // 完了またはエラーの場合はストリームを終了
+          if (statusData['status'] == 'completed' ||
+
+--- File: lib\nazokake_screen.dart ---
+import 'package:flutter/material.dart';
+import 'nazokake_api.dart';
+
+class NazokakeScreen extends StatefulWidget {
+  const NazokakeScreen({super.key});
+
+  @override
+  State<NazokakeScreen> createState() => _NazokakeScreenState();
+}
+
+class _NazokakeScreenState extends State<NazokakeScreen> {
+  final TextEditingController _odaiController = TextEditingController();
+  final String _selectedGeneration = 'Z世代';
+  Stream<Map<String, dynamic>>? _nazokakeStream;
+
+  void _startGeneration() {
+    if (_odaiController.text.trim().isEmpty) return;
+
+    // キーボードを閉じる
+    FocusScope.of(context).unfocus();
+
+    // StreamをセットしてUIを再構築（処理開始）
+    setState(() {
+      _nazokakeStream = NazokakeApi.generateStream(
+        odai: _odaiController.text.trim(),
+        generation: _selectedGeneration,
+      );
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('AIなぞかけ道場 - テスト')),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _odaiController,
+              decoration: const InputDecoration(
+                labelText: 'お題を入力',
+                border: OutlineInputBorder(),
+              ),
+            ),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: _startGeneration,
+              child: const Text('なぞかけを生成する'),
+
+--- File: lib\models\nazokake_model.dart ---
+// lib/models/nazokake_model.dart
+class NazokakeModel {
+  final String hint;
+  final String ochi;
+  final String kake;
+  final String toku;
+  final String kokoro;
+
+  NazokakeModel({
+    required this.hint,
+    required this.ochi,
+    required this.kake,
+    required this.toku,
+    required this.kokoro,
+  });
+
+  factory NazokakeModel.fromJson(Map<String, dynamic> json) {
+    return NazokakeModel(
+      hint: json['hint'] as String? ?? '',
+      ochi: json['ochi'] as String? ?? '',
+      kake: json['kake'] as String? ?? '',
+      toku: json['toku'] as String? ?? '',
+      kokoro: json['kokoro'] as String? ?? '',
+    );
+  }
+}
+
+--- File: lib\providers\nazokake_provider.dart ---
+import 'dart:convert';
+import 'dart:async';
+import 'package:http/http.dart' as http;
+
+// 1. なぞかけの最終結果を保持するデータモデル
+class NazokakeResult {
+  final String hint;
+  final String toku;
+  final String kokoro;
+
+  NazokakeResult({
+    required this.hint,
+    required this.toku,
+    required this.kokoro,
+  });
+
+  factory NazokakeResult.fromJson(Map<String, dynamic> json) {
+    return NazokakeResult(
+      hint: json['hint'] ?? '',
+      toku: json['toku'] ?? '',
+      kokoro: json['kokoro'] ?? '',
+    );
+  }
+}
+
+// 2. UIにプログレッシブに流す状態モデル
+class NazokakeState {
+  final String status; // 'processing', 'completed', 'error'
+  final String message;
+  final NazokakeResult? result;
+
+  NazokakeState({required this.status, required this.message, this.result});
+}
+
+// 3. API通信とポーリングロジックを担うサービスクラス
+class NazokakeApiService {
+  // デプロイ済みのCloud Run URL
+  static const String baseUrl =
+      'https://nazokake-backend-862686676938.asia-northeast1.run.app';
+
+  /// お題を送信し、進捗状況と結果をStreamで返す
+  Stream<NazokakeState> generateNazokake(String odai) async* {
+    try {
+      // --------------------------------------------------
+      // フェーズ1: タスクの登録 (POSTリクエスト)
+      // --------------------------------------------------
+      final postRes = await http.post(
+        Uri.parse('$baseUrl/generate'),
+        headers: {'Content-Type': 'application/json'},
+        body: jsonEncode({'odai': odai}),
+
+--- File: lib\providers\nazokake_state_provider.dart ---
+import 'dart:async';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+// Serviceファイル（通信処理）をインポート
+import '../services/nazokake_api_service.dart';
+
+final nazokakeApiServiceProvider = Provider<NazokakeApiService>((ref) {
+  return NazokakeApiService();
+});
+
+final nazokakeProvider =
+    AsyncNotifierProvider<NazokakeNotifier, NazokakeState?>(() {
+      return NazokakeNotifier();
+    });
+
+class NazokakeNotifier extends AsyncNotifier<NazokakeState?> {
+  @override
+  FutureOr<NazokakeState?> build() {
+    return null; // 初期状態はnull
+  }
+
+  Future<void> generate(String odai) async {
+    state = const AsyncLoading();
+    final apiService = ref.read(nazokakeApiServiceProvider);
+
+    try {
+      await for (final newState in apiService.generateNazokake(odai)) {
+        state = AsyncData(newState);
+      }
+    } catch (e, st) {
+      state = AsyncError(e, st);
+    }
+  }
+
+  void reset() {
+    state = const AsyncData(null);
+  }
+}
+
+--- File: lib\providers\settings_provider.dart ---
+// lib/providers/settings_provider.dart
+
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
+// --------------------------------------------------
+// 🧠 なぞかけAIのペルソナ状態を保持するデータクラス
+// --------------------------------------------------
+class SettingsState {
+  final String ageContext; // AIがなりきる年代コンテキスト
+
+  const SettingsState({
+    this.ageContext = '40代', // 初期設定は40代
+  });
+
+  // 値の一部だけを更新するためのcopyWithメソッド
+  SettingsState copyWith({String? ageContext}) {
+    return SettingsState(ageContext: ageContext ?? this.ageContext);
+  }
+}
+
+// --------------------------------------------------
+// ⚡ 設定値を更新するためのNotifier
+// --------------------------------------------------
+class SettingsNotifier extends Notifier<SettingsState> {
+  @override
+  SettingsState build() {
+    return const SettingsState(); // 初期状態を返す
+  }
+
+  // UIから呼び出される更新メソッド
+  void updateAgeContext(String value) =>
+      state = state.copyWith(ageContext: value);
+}
+
+// 外部からアクセスするためのProvider
+final settingsProvider = NotifierProvider<SettingsNotifier, SettingsState>(() {
+  return SettingsNotifier();
+});
+
+--- File: lib\repositories\nazokake_repository.dart ---
+// lib/repositories/nazokake_repository.dart
+
+import 'dart:convert';
+import 'package:flutter/foundation.dart';
+import 'package:http/http.dart' as http;
+import '../models/nazokake_model.dart';
+
+class NazokakeRepository {
+  // ⚡ Bプラン：取得したAPIキーを直接ここに貼り付けます
+  static const String _apiKey = 'AIzaSyDVly4bOMt6KnsuTbm3QHLT4WiqkNH9_Ng';
+
+  // ⚡ KPI死守：超軽量・最速モデル「gemini-3.1-flash-lite-preview」を使用
+  static const String _apiUrl =
+      'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-lite-preview:generateContent?key=$_apiKey';
+
+  Future<NazokakeModel> generateNazokake({
+    required String odai,
+    required int hiyakuOdai,
+    required int hiyakuToki,
+    required int rule,
+    required String generationContext,
+  }) async {
+    String ruleDescription = "";
+    switch (rule) {
+      case 1:
+        ruleDescription = "同音異義語を用いた厳格な伝統的スタイル";
+        break;
+      case 2:
+        ruleDescription = "一部の音が似ているダジャレを許容するユーモアスタイル";
+        break;
+      case 3:
+        ruleDescription = "母音の並び（ライム）を合わせるリズミカルなスタイル";
+        break;
+      case 4:
+        ruleDescription = "一つの言葉が持つ複数の意味を利用する知的・文学的なダブルミーニング";
+        break;
+      default:
+        ruleDescription = "同音異義語を用いた厳格な伝統的スタイル";
+    }
+
+    // 🧠 認知科学的プロンプト：5つの構造を指定し、AIの思考を誘導する
+    final requestBody = jsonEncode({
+      "contents": [
+        {
+          "parts": [
+            {
+              "text":
+                  "お題：「$odai」\n対象年代：$generationContext\nお題の解釈の飛躍度：$hiyakuOdai\n結びつけの飛躍度：$hiyakuToki\nルール：$ruleDescription\n\n上記設定に従い、なぞかけを生成してください。",
+            },
+          ],
+
+--- File: lib\screens\dummy_screens.dart ---
+import 'package:flutter/material.dart';
+
+class DummyScreen extends StatelessWidget {
+  final String title;
+  const DummyScreen({super.key, required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: Text(title)),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.construction, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text('$title機能は現在開発中です！', style: const TextStyle(fontSize: 18, color: Colors.grey)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+--- File: lib\screens\grow_evaluation_screen.dart ---
+import 'package:flutter/material.dart';
+
+class GrowEvaluationScreen extends StatelessWidget {
+  const GrowEvaluationScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('評価して育てる')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.construction, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text('評価して育てる機能は現在開発中です！', style: const TextStyle(fontSize: 18, color: Colors.grey)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+--- File: lib\screens\hall_of_fame_screen.dart ---
+import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class HallOfFameScreen extends StatelessWidget {
+  const HallOfFameScreen({super.key});
+
+  // 💡 どんなテキストでも強引に美しい3段落に成型するフォーマッター
+  String _formatNazokake(String rawText) {
+    // 1. 全ての改行を一旦リセット（削除）
+    String s = rawText.replaceAll(RegExp(r'[\r\n]+'), '');
+    
+    // 2. キーワードの直後に改行を強制挿入
+    s = s.replaceAll(RegExp(r'(とかけて、?|とかけて\s?)'), 'とかけて、\n');
+    s = s.replaceAll(RegExp(r'(と解く。?|ととく。?|と解く|ととく)'), 'と解く。\n');
+    s = s.replaceAll(RegExp(r'(その心は、?|そのこころは、?|その心は|そのこころは)'), 'その心は、\n');
+    
+    return s.trim();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('👑 殿堂入り作品')),
+      body: StreamBuilder<QuerySnapshot>(
+        stream: FirebaseFirestore.instance.collection('nazokake_items').where('status', isEqualTo: 2).snapshots(),
+        builder: (context, snapshot) {
+          if (snapshot.hasError) return const Center(child: Text('エラーが発生しました'));
+          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
+
+          final docs = snapshot.data?.docs ?? [];
+          if (docs.isEmpty) return const Center(child: Text('殿堂入りの作品はまだありません。'));
+
+          var items = docs.map((d) => d.data() as Map<String, dynamic>).toList();
+          items.sort((a, b) {
+            final tA = a['timestamp']?.toString() ?? '';
+            final tB = b['timestamp']?.toString() ?? '';
+            return tB.compareTo(tA);
+          });
+
+          return ListView.builder(
+            itemCount: items.length,
+            itemBuilder: (context, index) {
+              final item = items[index];
+              // フォーマッターを通してテキストを描画
+              final cleanText = _formatNazokake(item['nazokake_text'] ?? 'テキストなし');
+              
+              return Card(
+                margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                elevation: 1,
+                color: const Color(0xFFFDFDFD), // 画像に合わせたほんのり明るい背景
+
+--- File: lib\screens\home_screen.dart ---
+import 'package:flutter/material.dart';
+import '../services/nazokake_api_service.dart';
+
+class HomeScreen extends StatefulWidget {
+  const HomeScreen({super.key});
+
+  @override
+  State<HomeScreen> createState() => _HomeScreenState();
+}
+
+class _HomeScreenState extends State<HomeScreen> {
+  final TextEditingController _odaiController = TextEditingController();
+  final NazokakeApiService _apiService = NazokakeApiService();
+  Stream<NazokakeState>? _taskStream;
+  bool _isGenerating = false;
+
+  void _startGeneration() {
+    final odai = _odaiController.text.trim();
+    if (odai.isEmpty) return;
+    FocusScope.of(context).unfocus();
+    setState(() {
+      _isGenerating = true;
+      _taskStream = _apiService.generateNazokake(odai);
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('⛩ 謎掛け学術振興会')),
+      body: SingleChildScrollView(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          children: [
+            Card(
+              elevation: 2,
+              color: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  children: [
+                    const Text('AIに謎掛けを作らせる', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Color(0xFF902A19))),
+                    const SizedBox(height: 24),
+                    TextField(
+                      controller: _odaiController,
+                      decoration: InputDecoration(
+                        labelText: 'お題を入力 (例: 大谷翔平)',
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                        filled: true,
+
+--- File: lib\screens\how_to_enjoy_screen.dart ---
+import 'package:flutter/material.dart';
+
+class HowToEnjoyScreen extends StatelessWidget {
+  const HowToEnjoyScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('楽しみ方')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.construction, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            const Text('楽しみ方機能は現在開発中です！', style: TextStyle(fontSize: 18, color: Colors.grey)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+--- File: lib\screens\main_tab_screen.dart ---
+import 'package:flutter/material.dart';
+import 'home_screen.dart';
+import 'dummy_screens.dart';
+
+class MainTabScreen extends StatefulWidget {
+  const MainTabScreen({super.key});
+
+  @override
+  State<MainTabScreen> createState() => _MainTabScreenState();
+}
+
+class _MainTabScreenState extends State<MainTabScreen> {
+  int _currentIndex = 0;
+
+  final List<Widget> _screens = [
+    const HomeScreen(),
+    const DummyScreen(title: '自作鑑定'),
+    const DummyScreen(title: '評価して育てる'),
+    const DummyScreen(title: '楽しみ方'),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: IndexedStack(
+        index: _currentIndex,
+        children: _screens,
+      ),
+      bottomNavigationBar: BottomNavigationBar(
+        currentIndex: _currentIndex,
+        onTap: (index) => setState(() => _currentIndex = index),
+        type: BottomNavigationBarType.fixed,
+        selectedItemColor: const Color(0xFF902A19),
+        unselectedItemColor: Colors.grey,
+        selectedFontSize: 12,
+        unselectedFontSize: 12,
+        items: const [
+          BottomNavigationBarItem(icon: Icon(Icons.lightbulb), label: 'AI生成'),
+          BottomNavigationBarItem(icon: Icon(Icons.draw), label: '自作鑑定'),
+          BottomNavigationBarItem(icon: Icon(Icons.receipt_long), label: '評価して育てる'),
+          BottomNavigationBarItem(icon: Icon(Icons.help_outline), label: '楽しみ方'),
+        ],
+      ),
+    );
+  }
+}
+
+--- File: lib\screens\self_evaluation_screen.dart ---
+import 'package:flutter/material.dart';
+
+class SelfEvaluationScreen extends StatelessWidget {
+  const SelfEvaluationScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(title: const Text('自作鑑定')),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.construction, size: 64, color: Colors.grey),
+            const SizedBox(height: 16),
+            Text('自作鑑定機能は現在開発中です！', style: const TextStyle(fontSize: 18, color: Colors.grey)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+--- File: lib\screens\settings_bottom_sheet.dart ---
+// lib/screens/settings_bottom_sheet.dart
+
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import '../providers/settings_provider.dart';
+
+class SettingsBottomSheet extends ConsumerWidget {
+  const SettingsBottomSheet({super.key});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    // 状態の監視と更新用メソッドの取得
+    final settings = ref.watch(settingsProvider);
+    final notifier = ref.read(settingsProvider.notifier);
+
+    return Container(
+      padding: const EdgeInsets.all(24.0),
+      decoration: const BoxDecoration(
+        color: Color(0xFF1E1E1E), // AIらしさを出すダークグレー
+        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      child: SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Center(
+                child: Text(
+                  'AI ペルソナ設定',
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.cyanAccent,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 32),
+
+              // --- AIの対象年代コンテキスト（ペルソナ） ---
+              const Text('なりきる年代（語彙・感性の基準）', style: TextStyle(fontSize: 16)),
+              const SizedBox(height: 12),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                decoration: BoxDecoration(
+                  color: Colors.black54,
+                  borderRadius: BorderRadius.circular(12),
+                  // 最新のFlutter仕様に合わせて withValues を使用
+                  border: Border.all(
+                    color: Colors.cyanAccent.withValues(alpha: 0.3),
+
+--- File: lib\services\nazokake_api_service.dart ---
+import 'dart:convert';
+import 'dart:async';
+import 'package:http/http.dart' as http;
+import 'package:firebase_app_check/firebase_app_check.dart'; // 追加
+
+// なぞかけの結果モデル
+class NazokakeResult {
+  final String hint;
+  final String toku;
+  final String kokoro;
+
+  NazokakeResult({
+    required this.hint,
+    required this.toku,
+    required this.kokoro,
+  });
+
+  factory NazokakeResult.fromJson(Map<String, dynamic> json) {
+    return NazokakeResult(
+      hint: json['hint'] ?? '',
+      toku: json['toku'] ?? '',
+      kokoro: json['kokoro'] ?? '',
+    );
+  }
+}
+
+// UIに流す状態モデル
+class NazokakeState {
+  final String status;
+  final String message;
+  final NazokakeResult? result;
+
+  NazokakeState({required this.status, required this.message, this.result});
+}
+
+// API通信処理クラス
+class NazokakeApiService {
+  static const String baseUrl =
+      'https://nazokake-backend-862686676938.asia-northeast1.run.app';
+
+  Stream<NazokakeState> generateNazokake(String odai) async* {
+    try {
+      // 1. Firebase App Check トークンの取得
+      final appCheckToken = await FirebaseAppCheck.instance.getToken();
+
+      // ヘッダーの構築（トークンが存在する場合のみ付与）
+      final headers = {
+        'Content-Type': 'application/json',
+        if (appCheckToken != null) 'X-Firebase-AppCheck': appCheckToken,
+      };
+
+--- File: lib\services\task_stream_service.dart ---
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+class PollingState {
+  final String status;
+  final String message;
+  final String? result; // 最終的ななぞかけJSON文字列
+  final bool isError;
+
+  PollingState({
+    required this.status,
+    required this.message,
+    this.result,
+    this.isError = false,
+  });
+}
+
+class TaskStreamService {
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+
+  /// Firestoreのドキュメント変更をリアルタイムに監視し、状態のStreamを返す
+  Stream<PollingState> watchTaskStatus(String taskId) {
+    return _firestore.collection('tasks').doc(taskId).snapshots().map((
+      snapshot,
+    ) {
+      if (!snapshot.exists || snapshot.data() == null) {
+        return PollingState(status: 'pending', message: 'タスクの開始を待機中...');
+      }
+
+      final data = snapshot.data()!;
+      final status = data['status'] as String? ?? 'pending';
+      final message = data['message'] as String? ?? '処理中...';
+
+      if (status == 'completed') {
+        return PollingState(
+          status: status,
+          message: message,
+          result: data['result'] as String?, // 最終結果
+        );
+      } else if (status == 'failed') {
+        return PollingState(status: status, message: message, isError: true);
+      }
+
+      // 進行中のステータス
+      return PollingState(status: status, message: message);
+    });
+  }
+}
+
+--- File: scripts\generate_arch_base.py ---
+import os
+import re
+from pathlib import Path
+
+# 解析対象の主要ディレクトリ
+TARGET_DIRS = ["backend", "service_api", "service_worker", "service_frontend", "frontend", "utils"]
+# 除外ディレクトリ
+EXCLUDE_DIRS = [".venv", ".venv_ai", ".venv_stable", "node_modules", ".git", "__pycache__", "_ai_context", "unsloth_compiled_cache"]
+
+def analyze_dependencies():
+    project_root = Path(".")
+    summary_lines = [
+        "# Architecture Summary (なぞかけ道場プロジェクト)\n",
+        "## 1. 全体構造と主要な画面 (Screens/UI)",
+        "\n",
+        "## 2. 状態管理とデータフロー (State Management)",
+        "\n",
+        "## 3. ネットワーク・API通信と依存関係 (Network/API & Dependencies)\n",
+        "### 🔗 自動抽出された依存関係ファクト\n"
+    ]
+
+    for root, dirs, files in os.walk(project_root):
+        dirs[:] = [d for d in dirs if d not in EXCLUDE_DIRS]
+        
+        # 対象ディレクトリ配下のみ解析
+        if not any(target in Path(root).parts for target in TARGET_DIRS) and root != ".":
+            continue
+
+        for file in files:
+            filepath = Path(root) / file
+            if file.endswith(".py"):
+                imports = []
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if line.strip().startswith("import ") or line.strip().startswith("from "):
+                                imports.append(line.strip())
+                    if imports:
+                        summary_lines.append(f"**{filepath.as_posix()}**")
+                        for imp in imports:
+                            summary_lines.append(f"- `{imp}`")
+                        summary_lines.append("")
+                except Exception:
+                    pass
+            elif file.endswith(".js"):
+                api_calls = []
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        for line in f:
+                            if "fetch(" in line or "fetch (" in line or "const URL" in line:
+
+--- File: test\widget_test.dart ---
+// This is a basic Flutter widget test.
+//
+// To perform an interaction with a widget in your test, use the WidgetTester
+// utility in the flutter_test package. For example, you can send tap and scroll
+// gestures. You can also use WidgetTester to find child widgets in the widget
+// tree, read text, and verify that the values of widget properties are correct.
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:nazokake_app/main.dart';
+
+void main() {
+  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
+    // Build our app and trigger a frame.
+    await tester.pumpWidget(const MyApp());
+
+    // Verify that our counter starts at 0.
+    expect(find.text('0'), findsOneWidget);
+    expect(find.text('1'), findsNothing);
+
+    // Tap the '+' icon and trigger a frame.
+    await tester.tap(find.byIcon(Icons.add));
+    await tester.pump();
+
+    // Verify that our counter has incremented.
+    expect(find.text('0'), findsNothing);
+    expect(find.text('1'), findsOneWidget);
+  });
+}

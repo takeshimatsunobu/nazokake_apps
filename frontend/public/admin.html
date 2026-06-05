@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⛩️ 謎掛け学術振興会 - 管理コックピット</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="admin.js?v=1780685808" defer></script>
+</head>
+<body class="bg-gray-100 text-gray-800 p-4 md:p-8 font-sans">
+    <div id="toast-container" class="fixed top-5 left-1/2 transform -translate-x-1/2 z-[100] flex flex-col gap-2 pointer-events-none"></div>
+
+    <div class="max-w-[1000px] mx-auto">
+        <header class="mb-8 flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+            <div>
+                <h1 class="text-2xl font-bold text-[#902A19] flex items-center gap-2">
+                    <span class="text-3xl">🛠️</span> RLHF データセット管理コックピット
+                </h1>
+                <p class="text-xs text-gray-500 mt-1">※取扱注意：ここでの操作は本番AIモデルとDBに直結しています。</p>
+            </div>
+            <button onclick="logout()" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded font-bold text-sm transition">
+                🚪 ログアウト
+            </button>
+        </header>
+
+        <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-blue-600">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-blue-800 flex items-center gap-2">
+                    <span>📊</span> アプリ利用状況 (テレメトリ)
+                </h2>
+                <button onclick="loadAdminMetrics()" class="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100 transition border border-blue-200">
+                    🔄 データを最新化
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+                <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm">
+                    <p class="text-xs text-gray-500 font-bold">総ページ閲覧数 (PV)</p>
+                    <p id="adm-pv" class="text-3xl font-black text-blue-700 mt-1">0</p>
+                </div>
+                <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm">
+                    <p class="text-xs text-gray-500 font-bold">総訪問者数 (UU)</p>
+                    <p id="adm-uu" class="text-3xl font-black text-emerald-600 mt-1">0</p>
+                </div>
+                <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm col-span-2 sm:col-span-1">
+                    <p class="text-xs text-gray-500 font-bold">平均滞在時間</p>
+                    <p id="adm-dur" class="text-2xl font-black text-gray-800 mt-1.5">0<span class="text-xs font-normal text-gray-500">秒</span></p>
+                </div>
+            </div>
+
+            <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-inner">
+                <h3 class="text-sm font-bold text-gray-700 mb-3 border-b pb-2">🎯 ユーザーアクション統計</h3>
+                <div class="space-y-3 text-sm" id="adm-events-container">
+                    <p class="text-gray-400 text-center py-2">データを読み込んでいます...</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-[#902A19]">
+            <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+                <span>🎛️</span> AI生成エンジン 操縦パネル
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-2">Temperature (温度: 0.0 〜 2.0)</label>
+                    <input type="range" id="config-temp" min="0" max="2.0" step="0.1" value="0.8" class="w-full accent-[#902A19]">
+                    <div class="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>カタイ(0.0)</span><span id="temp-val-display" class="font-bold text-[#902A19]">0.8</span><span>ブッ飛ぶ(2.0)</span>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-2">使用モデル (LLM)</label>
+                    <select id="config-model" class="w-full p-2 border border-gray-300 rounded focus:ring-[#902A19] focus:border-[#902A19] outline-none">
+                        <option value="gemini-1.5-pro">Gemini 1.5 Pro (本番推論)</option>
+                        <option value="gemini-1.5-flash">Gemini 1.5 Flash (高速検証)</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-bold text-gray-700 mb-2">システムプロンプト (微調整)</label>
+                    <textarea id="config-prompt" rows="3" class="w-full p-3 border border-gray-300 rounded text-sm focus:ring-[#902A19] focus:border-[#902A19] outline-none font-mono">あなたは前衛的な天才なぞかけ芸人です。</textarea>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end">
+                <button onclick="saveConfigs()" class="bg-[#902A19] hover:bg-[#7a2315] text-white px-6 py-2 rounded font-bold shadow-md transition transform hover:-translate-y-0.5">
+                    💾 エンジン設定をバックエンドに反映
+                </button>
+            </div>
+        </section>
+
+        <section class="bg-white p-6 rounded-xl shadow-md border-t-4 border-[#5B8124]">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    <span>📋</span> 承認待ちデータ (ユーザー評価済)
+                </h2>
+                <button onclick="loadPendingData()" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded transition border border-gray-200">
+                    🔄 リロード
+                </button>
+            </div>
+            <div id="pending-container" class="space-y-4">
+                <div class="text-center py-10 text-gray-500">データを読み込んでいます...</div>
+            </div>
+        </section>
+
+    </div>
+</body>
+</html>

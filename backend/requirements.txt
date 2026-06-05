@@ -12,3 +12,4 @@ sentence-transformers
 torch
 
 google-genai
+httpx

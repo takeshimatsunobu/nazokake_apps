@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import firebase_admin
 from firebase_admin import credentials, firestore
 from datetime import datetime
@@ -37,10 +38,11 @@ def inject_to_firestore():
 
     total_items = len(cleaned_items)
     print(f"📊 注入準備完了: {total_items}件のデータを本番に反映します。")
-    print("🚀 Google Cloudへ高速一括送信を開始します (数十秒〜数分かかります)...")
+    print("🚀 Google Cloudへ安全な流量制御付きで一括送信を開始します...")
 
-    # Firestoreは最大500件ずつしか一括処理できないため、チャンク（塊）に分ける
-    CHUNK_SIZE = 400
+    # 🚨 修正: 429エラーと無限リトライを防ぐため、チャンクサイズを縮小しSleepを導入
+    CHUNK_SIZE = 20
+    SLEEP_TIME = 10
     success_count = 0
 
     for i in range(0, total_items, CHUNK_SIZE):
@@ -59,7 +61,8 @@ def inject_to_firestore():
             # チャンクをまとめて送信（コミット）
             batch.commit()
             success_count += len(chunk)
-            print(f"  ... {success_count}/{total_items} 件 反映完了")
+            print(f"  ... {success_count}/{total_items} 件 反映完了 (安全のため {SLEEP_TIME}秒 待機します)")
+            time.sleep(SLEEP_TIME)
         except Exception as e:
             print(f"  🚨 バッチ送信エラー (チャンク {i}〜): {e}")
 

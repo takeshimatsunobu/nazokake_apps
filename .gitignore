@@ -18,3 +18,8 @@ __pycache__/
 
 # AI Models
 models/
+
+# --- 自動追加: プロジェクト完全浄化ルール ---
+data/
+_archive_scripts/
+*.jsonl

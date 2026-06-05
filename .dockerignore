@@ -24,7 +24,3 @@ frontend/
 .vscode/
 __pycache__/
 *.pyc
-
-# --- 自動追加: プロジェクト完全浄化ルール ---
-_archive_scripts/
-*.jsonl
