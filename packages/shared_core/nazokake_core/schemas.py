@@ -117,6 +117,20 @@ class EvaluationOutput(BaseModel):
     overall: str
 
 # ------------------------------------------------------------
+# Phase 4: Firestore user_feedbacks コレクションのスキーマ契約
+# ------------------------------------------------------------
+class UserFeedback(BaseModel):
+    doc_id: str = Field(..., min_length=1, description="対象のnazokake_itemsドキュメントID")
+    user_uid: str = Field(..., min_length=1, description="匿名認証UID")
+    overall_score: int = Field(..., ge=1, le=5)
+    axis_feedback: Dict[str, Literal["good", "bad"]] = Field(
+        default_factory=dict, description="Scoresと同じ11軸キー(S_sur, S_tech...)に対する簡易評価(任意入力)"
+    )
+    comment: str = Field(default="", max_length=500)
+    model_target: Literal["gemini", "elyza"] = Field(..., description="どちらの生成結果への評価か")
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+
+# ------------------------------------------------------------
 # コスト管理: Firestore system_costs コレクションのスキーマ契約
 # ------------------------------------------------------------
 class SystemCostLog(BaseModel):
