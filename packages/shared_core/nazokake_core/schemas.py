@@ -115,3 +115,14 @@ class EvaluationOutput(BaseModel):
     scores: dict
     axis_comments: Dict[str, str]
     overall: str
+
+# ------------------------------------------------------------
+# コスト管理: Firestore system_costs コレクションのスキーマ契約
+# ------------------------------------------------------------
+class SystemCostLog(BaseModel):
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    service_type: str = Field(..., min_length=1, description="Anthropic, Gemini, Ollama, Server 等")
+    input_tokens: int = 0
+    output_tokens: int = 0
+    execution_time_sec: float = 0.0
+    calculated_cost_jpy: float = 0.0
