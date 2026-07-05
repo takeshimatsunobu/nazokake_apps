@@ -1,0 +1,77 @@
+# Cloud Build (gcloud builds submit) がアップロードするソースから除外するファイル。
+#
+# 注意: `#!include:.gitignore` は使わない。ルートの .gitignore は
+# `/apps/evaluator/` と `/apps/batch_factory/` を丸ごと除外しており(埋め込みリポジトリ
+# のため)、それをそのまま取り込むと cloudbuild.yaml がビルドに必要とする
+# apps/evaluator/backend/ と apps/evaluator/Dockerfile まで除外されてしまう。
+# そのため本ファイルは .gitignore に依存せず、Cloud Build用に独立して定義する。
+
+# --- 機密ファイル(絶対にアップロードしない) ---
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+serviceAccountKey.json
+**/serviceAccountKey.json
+*.pem
+*.key
+
+# --- Git ---
+.git/
+**/.git/
+
+# --- Python仮想環境(GBクラスの肥大化要因。全アプリ共通) ---
+.venv/
+.venv*/
+**/.venv/
+**/.venv*/
+venv/
+env/
+__pycache__/
+**/__pycache__/
+*.pyc
+.mypy_cache/
+**/.mypy_cache/
+
+# --- ローカルLLM本体・LoRA成果物・大容量モデルファイル ---
+*.gguf
+*.gguf.bak
+*.safetensors
+*.bin
+*.pt
+models/
+**/models/
+llama-bin/
+**/llama-bin/
+unsloth_compiled_cache/
+**/unsloth_compiled_cache/
+cloudflared.exe
+**/cloudflared.exe
+
+# --- apps/batch_factory: このcloudbuild.yamlはevaluatorのみビルドするため丸ごと不要 ---
+apps/batch_factory/
+
+# --- apps/evaluator: ビルドに必要な backend/ と Dockerfile 以外は不要 ---
+apps/evaluator/frontend/
+apps/evaluator/data/
+apps/evaluator/scripts/
+apps/evaluator/export_context_final/
+apps/evaluator/service_frontend/
+apps/evaluator/.firebase/
+apps/evaluator/*.gguf.bak
+
+# --- ローカル開発ツール・キャッシュ・履歴(リポジトリ全体) ---
+.agents/
+.aider*
+**/.aider*
+.claude/
+.vscode/
+node_modules/
+**/node_modules/
+
+# --- その他の大容量・環境依存ディレクトリ ---
+Nazokake_localLLM/
+*.bak
+*.bak_v*
+nazo_agent.py.bak*
