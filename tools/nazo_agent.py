@@ -37,6 +37,16 @@ class TokenCircuitBreaker:
 # --- ターゲット環境の設定 ---
 BASE_DIR = Path(__file__).resolve().parent.parent
 TOOLS_DIR = Path(__file__).resolve().parent
+
+# `python tools/nazo_agent.py` のように直接実行すると sys.path[0] は tools/ 自身に
+# なり、`from tools.ast_mapper import ...`(tools を「リポジトリ直下のパッケージ」として
+# 参照する絶対import)が ModuleNotFoundError: No module named 'tools' になる。
+# リポジトリルートを明示的に sys.path へ追加して解決する。
+if str(BASE_DIR) not in sys.path:
+    sys.path.insert(0, str(BASE_DIR))
+
+# フロントエンドのバックグラウンド起動タスク(fire-and-forget)を GC から守るための保持先。
+_bg_tasks: set = set()
 # 領域B(アプリ本体)がデフォルト。_route_target_domain() により main_flow 実行時に動的に切り替わる。
 TARGET_APP_DIR = BASE_DIR / "apps" / "evaluator"
 TARGET_CODE_DIR = "backend"
@@ -339,14 +349,31 @@ async def startup_local_services():
         log_path=log_dir / "service_backend.log", extra_env=utf8_env,
     )
 
+    # フロントエンドは開発用プレビューであり、監査(Phase1)・Aider自動修正(Phase3)の
+    # どちらにも必須ではない。Norton等のローカルセキュリティソフトが127.0.0.1への
+    # HTTP接続をブロックする既知の事例があり、その場合 _ensure_service_alive の
+    # ポーリングが最大30秒待たされてパイプライン全体が足止めされていた。
+    # fire-and-forgetタスクとして起動し、結果を待たずに本編へ進む(フォールトトレラント化)。
     frontend_cmd = [str(EVALUATOR_PYTHON), "dev_server.py", "7300"]
     frontend_cwd = EVALUATOR_APP_DIR / "frontend" / "public"
-    await _ensure_service_alive(
+
+    def _on_frontend_task_done(task: asyncio.Task) -> None:
+        _bg_tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc:
+            print(f"⚠️ [Frontend] バックグラウンド起動タスクで例外が発生しました(無視して続行): {exc}")
+
+    frontend_task = asyncio.create_task(_ensure_service_alive(
         name="Frontend (dev_server)", emoji="🖥️", health_url="http://127.0.0.1:7300/",
         start_cmd=frontend_cmd, start_cwd=frontend_cwd,
         already_ok_msg="Frontend は既に稼働しています (Port 7300 OK)。",
         log_path=log_dir / "service_frontend.log", extra_env=utf8_env,
-    )
+        retries=5, interval=1.0,  # 必須サービスではないため待機を短縮
+    ))
+    _bg_tasks.add(frontend_task)
+    frontend_task.add_done_callback(_on_frontend_task_done)
 
     print("✅ Pre-flight 監査完了。パイプライン本編へ移行します。\n")
 

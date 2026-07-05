@@ -3,47 +3,57 @@
 Phase 0〜6のディレクトリ再編・コスト管理・自己進化ループ・MCPサーバー化を通じた
 全域監査で発見された、未解決の課題と改善余地をまとめる。今後の開発の羅針盤とする。
 
-最終更新: Phase 6完了時点の監査結果に基づく。
+最終更新: nazo_agent.py の起動障害修正(ModuleNotFoundError / フロントエンド
+非ブロッキング化)完了時点。
 
 ---
 
-## 🔴 最優先で対応すべき重大ギャップ
+## ✅ 解決済み(旧🔴最優先)
 
-### 1. コスト計測システムが実際の生成/評価フローに一切接続されていない
-`SystemCostLog`・`cost_calculator.py`・ダッシュボード・予算アラートまで一式構築したが、
-`async_log_system_cost`と`calculate_server_cost_jpy`は、それ自体の定義とテストコード
-以外からは一度も呼ばれていなかった(確認済み)。つまり:
-- `system_costs`コレクションは実運用では空のまま
-- ダッシュボードは常に¥0を表示する
-- `is_budget_exceeded`は常に`False`を返し続け、予算アラートが実質機能していない
+### 1. コスト計測システムが実際の生成/評価フローに一切接続されていなかった
+`SystemCostLog`・`cost_calculator.py`・ダッシュボード・予算アラートまで一式構築した
+一方、`async_log_system_cost`と`calculate_server_cost_jpy`は、それ自体の定義と
+テストコード以外からは一度も呼ばれていなかった(配管はあるが蛇口が閉まっていた状態)。
 
-配管は完成しているが、蛇口が開いていない状態。`generate.py`の`process_gemini`/
-`process_elyza`、`evaluation.py`の`run_evaluation`の各呼び出し完了時に
-`async_log_system_cost`を呼ぶ配線が必要(Gemini APIレスポンスの`usage_metadata`
-からトークン数を取得する)。
+**対応済み**: `generate.py`の`generate_via_gemini`/`generate_via_llmjp`、
+`evaluation.py`の`run_evaluation`の各呼び出し完了直後に`async_log_system_cost`を
+配線。Gemini呼び出しは`response.usage_metadata`からトークン数を取得し、ローカル
+(Ollama/ELYZA)は実行時間ベースで記録する。コストログ自体の失敗が生成/評価処理を
+落とさないよう`try/except`で保護済み。フェイクFirestoreで`system_costs`への実書き込み
+(0円ではない実額)を確認済み。
 
-> **対応状況**: 本ドキュメントと同時に着手・修復。
+### 2. 価格テーブルに実際使用中のモデルが欠落していた
+`generation.py`の`fallback_model = "gemini-3.5-flash"`が価格テーブルに未登録で、
+上記1を修正しても「未知モデル=0円」として計上漏れする状態だった。
 
-### 2. 価格テーブルに実際使用中のモデルが欠落している
-`generation.py`は`fallback_model = "gemini-3.5-flash"`を使用しているが、価格テーブル
-(`PRICE_TABLE_USD_PER_M_TOKENS`)には`"gemini-2.5-flash"`・`"gemini-1.5-pro"`・
-`"claude-3-5-sonnet"`しか登録されていなかった。上記1を修正しても、実際の生成コストは
-「未知モデル=0円」として静かに計上漏れする。実運用モデル名と価格テーブルのキーを
-一致させる棚卸しが必要。
+**対応済み**: `PRICE_TABLE_USD_PER_M_TOKENS`に`gemini-3.5-flash`を追加(暫定推定値、
+実請求との照合が今後必要)。
 
-> **対応状況**: 本ドキュメントと同時に着手・修復。
-
-### 3. `admin.py`にエンドポイントが1つも存在しない
+### 3. `admin.py`にエンドポイントが1つも存在しなかった
 過去のマージ事故(`_resolve_statuses`の破損と同根)で、`ConfigUpdateRequest`・
 `FeedbackInvalidateRequest`・`HumanActionRequest`はimportされているのに、それらを
-使う`@router`エンドポイントが0件だった。これは連鎖的な影響がある:
-- 管理者による「golden/approve/reject」キュレーションAPIが存在しない →
-  `gemini_status`/`elyza_status`を書き換える手段がない
-- Phase 4.11で実装したDPO抽出の「管理者キュレーションTier A/B」は、そもそも
-  このステータスを設定するAPIがないため、恒久的に0件抽出になっている可能性が高い
-- AIモデル設定(temperature/system_prompt)を更新する管理画面機能も動いていない
+使う`@router`エンドポイントが0件だった。管理者キュレーション(`gemini_status`/
+`elyza_status`の更新)手段が無く、Phase 4.11のDPO抽出Tier A/Bが恒久的に0件抽出に
+なる連鎖的な影響があった。
 
-> **対応状況**: 本ドキュメントと同時に着手・復旧。
+**対応済み**: `HumanActionRequest`に欠落していた`model`/`action`フィールドを追加し、
+`POST /api/admin/action`を実装。既存(orphanedだった)`_MODEL_STATUS_FIELD`/
+`_ACTION_TO_STATUS`をそのまま活用。フェイクFirestoreで404・ステータス更新の
+非干渉性(片方のモデルのみ更新されること)を確認済み。
+
+### 4. `tools/nazo_agent.py` の起動障害
+- `from tools.ast_mapper import ...`が`ModuleNotFoundError: No module named 'tools'`
+  で失敗していた。`python tools/nazo_agent.py`のように直接実行すると`sys.path[0]`が
+  `tools/`自身になり、リポジトリ直下パッケージとしての`tools`が解決できないため。
+  **対応済み**: ファイル冒頭で`BASE_DIR`(リポジトリルート)を`sys.path`へ明示的に追加。
+- フロントエンド(`dev_server.py`)の自動起動が、環境要因(Norton等のローカル
+  セキュリティソフトが127.0.0.1へのHTTP接続をブロックしていると推測される。ポートは
+  正しくLISTEN状態なのに接続が拒否される事象を確認)でタイムアウトし、最大30秒
+  メインフロー全体をブロックしていた。フロントエンドはPhase1(監査)・Phase3
+  (Aider自動修正)のどちらにも必須ではない。
+  **対応済み**: `asyncio.create_task`によるfire-and-forget化。`startup_local_services()`
+  はフロントエンドの起動結果を待たずに即座に戻り(実測0.01秒)、バックグラウンドタスクは
+  例外を握りつぶして警告ログを出すのみで完了することを確認済み。
 
 ---
 
@@ -108,8 +118,11 @@ Phase 0〜6のディレクトリ再編・コスト管理・自己進化ループ
 
 ## 優先度サマリー
 
-実害・データ損失リスクの観点から、以下の3点が最も緊急度が高いと判断する:
+🔴だった重大ギャップ(コスト計測の配線・価格テーブル・`admin.py`復旧・
+`nazo_agent.py`の起動障害)はすべて対応済み。残る課題のうち、実害・データ損失
+リスクの観点から以下が最も緊急度が高いと判断する:
 
-1. コスト計測の配線と価格テーブル修正(🔴 1, 2)
-2. `admin.py`の復旧(🔴 3)
-3. `apps/batch_factory`・`Nazokake_localLLM`のリモート設定(🟠)
+1. `apps/batch_factory`・`Nazokake_localLLM`のリモート設定(🟠、ディスク障害で
+   全履歴・未コミット作業が失われるリスク)
+2. `user_feedbacks`/`system_costs`用のFirestore複合インデックス定義(🟠)
+3. Lv.1/Lv.2自己進化状態の永続化(🟠、サーバー再起動で学習成果が消える)
