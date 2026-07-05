@@ -1,40 +1,21 @@
-# Cloud Build 定義: apps/evaluator/backend (なぞかけディスカバリー API) を
-# nazo-agent-api として Cloud Run へビルド・デプロイする。
-#
-# 実行方法(リポジトリルートから): docs/DEPLOYMENT.md を参照。
-#   gcloud builds submit --config=cloudbuild.yaml .
-#
-# ビルドコンテキストはリポジトリルート(このcloudbuild.yamlがある場所)。
-# apps/evaluator/Dockerfile が nazokake_core(packages/shared_core)を
-# BuildKitの名前付きビルドコンテキスト(--build-context sharedcore=...)経由で
-# 取り込む設計になっているため、DOCKER_BUILDKIT=1 を明示的に有効化して実行する。
-
 steps:
   # ---- 1. イメージのビルド ----
   - id: Build
     name: 'gcr.io/cloud-builders/docker'
-    entrypoint: 'bash'
     args:
-      - '-c'
-      - |
-        set -e
-        DOCKER_BUILDKIT=1 docker build \
-          -f apps/evaluator/Dockerfile \
-          --build-context sharedcore=packages/shared_core \
-          -t "${_IMAGE}" \
-          .
+      - 'build'
+      - '-f'
+      - 'apps/evaluator/Dockerfile'
+      - '-t'
+      - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE_NAME}:$BUILD_ID'
+      - '.'
 
   # ---- 2. Artifact Registry へpush ----
   - id: Push
     name: 'gcr.io/cloud-builders/docker'
-    args: ['push', '${_IMAGE}']
+    args: ['push', 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE_NAME}:$BUILD_ID']
 
   # ---- 3. Cloud Run へデプロイ ----
-  #    GEMINI_API_KEY / ANTHROPIC_API_KEY は Secret Manager から注入する
-  #    (docs/DEPLOYMENT.md の手順であらかじめ登録しておくこと)。
-  #    serviceAccountKey.json はイメージに含めない(Dockerfile参照)。Cloud Run上では
-  #    Application Default Credentials(実行サービスアカウントのIAM権限)で
-  #    Firestore/Firebase Admin SDKを認証するため、鍵ファイルは不要。
   - id: Deploy
     name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
@@ -42,7 +23,7 @@ steps:
       - 'run'
       - 'deploy'
       - '${_SERVICE_NAME}'
-      - '--image=${_IMAGE}'
+      - '--image=asia-northeast1-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE_NAME}:$BUILD_ID'
       - '--region=${_REGION}'
       - '--platform=managed'
       - '--allow-unauthenticated'
@@ -50,13 +31,13 @@ steps:
       - '--set-env-vars=EXCHANGE_RATE_USD_JPY=160.0,SERVER_COST_PER_HOUR_JPY=5.0'
 
 images:
-  - '${_IMAGE}'
+  - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE_NAME}:$BUILD_ID'
 
 substitutions:
   _SERVICE_NAME: nazo-agent-api
   _REGION: asia-northeast1
   _REPOSITORY: nazo-agent
-  _IMAGE: 'asia-northeast1-docker.pkg.dev/${PROJECT_ID}/${_REPOSITORY}/nazo-agent-api:${SHORT_SHA}'
 
 options:
   logging: CLOUD_LOGGING_ONLY
+  substitutionOption: 'ALLOW_LOOSE'
