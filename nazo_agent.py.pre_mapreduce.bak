@@ -1,0 +1,305 @@
+import asyncio
+import os
+import sys
+import json
+import ssl
+from pathlib import Path
+from dotenv import load_dotenv
+
+# Windowsのデフォルトコンソール(cp932)では絵文字の print が UnicodeEncodeError で
+# クラッシュするため、明示的にUTF-8へ固定する。
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8")
+    sys.stderr.reconfigure(encoding="utf-8")
+
+# APIクライアント
+from google import genai
+from google.genai import types
+from pydantic import BaseModel
+import anthropic
+import httpx
+
+# --- ターゲット環境の設定（ファクトに基づく） ---
+BASE_DIR = Path(__file__).resolve().parent
+TARGET_APP_DIR = BASE_DIR / "nazokake-evaluator"
+TARGET_PYTHON = TARGET_APP_DIR / ".venv_ai" / "Scripts" / "python.exe"
+TARGET_CODE_DIR = "backend"
+
+# --- Structured Output Schema ---
+class TriageResult(BaseModel):
+    files_to_fix: list[str]
+    summary: str
+
+async def run_linter(tool_name: str) -> str:
+    """単一のLintツールを非同期サブプロセスで実行し、生ログを抽出する（タイムアウト防弾版）"""
+    args = [TARGET_CODE_DIR]
+    
+    if tool_name == "radon":
+        args = ["cc", TARGET_CODE_DIR, "-n", "C", "-a"] 
+    elif tool_name == "bandit":
+        args = ["-r", TARGET_CODE_DIR]
+    elif tool_name == "ruff":
+        args = ["check", TARGET_CODE_DIR]
+        
+    cmd = [str(TARGET_PYTHON), "-m", tool_name] + args
+    
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=str(TARGET_APP_DIR),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60.0)
+        except asyncio.TimeoutError:
+            process.kill()
+            return f"### ツール: {tool_name.upper()} (🚨 タイムアウト: 60秒超過で強制終了)\n```text\nプロセスがハングアップしました。\n```\n"
+            
+        out_text = stdout.decode('utf-8', errors='replace')
+        err_text = stderr.decode('utf-8', errors='replace')
+        output = (out_text + "\n" + err_text).strip()
+        
+        if not output:
+            output = "出力なし（正常または検出事項なし）"
+            
+        status = "✅ Success" if process.returncode == 0 else f"⚠️ Exited with code {process.returncode}"
+        return f"### ツール: {tool_name.upper()} ({status})\n```text\n{output}\n```\n"
+        
+    except Exception as e:
+        return f"### ツール: {tool_name.upper()} (🚨 実行エラー)\n```text\n{str(e)}\n```\n"
+
+async def my_import_check():
+    """仮想環境の生存確認"""
+    if not TARGET_PYTHON.exists():
+        print(f"🚨 致命的エラー: ターゲットのPython環境が見つかりません: {TARGET_PYTHON}")
+        sys.exit(1)
+
+async def phase1_audit() -> Path:
+    """フェーズ1: 4ツールの完全非同期実行"""
+    print(f"🔍 [Phase 1] ターゲット環境 ({TARGET_APP_DIR.name}/{TARGET_CODE_DIR}) の静的解析を非同期で開始します...")
+    await my_import_check()
+
+    tools = ["ruff", "mypy", "bandit", "radon"]
+    report_lines = [f"# 🔍 統合静的解析ファクトレポート", f"ターゲット: {TARGET_APP_DIR.name}/{TARGET_CODE_DIR}", "---", ""]
+    
+    tasks = [run_linter(tool) for tool in tools]
+    results = await asyncio.gather(*tasks)
+    
+    for tool, result in zip(tools, results):
+        print(f"✅ {tool.upper()} の解析が完了しました。")
+        report_lines.append(result)
+
+    audit_dir = BASE_DIR / "audit_reports"
+    audit_dir.mkdir(exist_ok=True)
+    out_file = audit_dir / "error_log.txt"
+    
+    with open(out_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(report_lines))
+        
+    print(f"🎉 フェーズ1完了: ファクトレポートを生成しました -> {out_file}")
+    return out_file
+
+async def phase2_triage(error_log_path: Path) -> dict:
+    """フェーズ2: Gemini APIを用いたトリアージとソースコード抽出"""
+    print("\n🔍 [Phase 2] Gemini 3.5 Flash によるエラーログのトリアージと抽出を開始します...")
+    api_key = os.getenv("GEMINI_API_KEY")
+    # Phase 3と同じNorton SSLインスペクション対策。ただし google-genai SDK は
+    # client_args["verify"] が bool False だと「未設定」とみなして自前の厳格な
+    # SSLContext で上書きしてしまう(_api_client.py の `if not ctx` 判定がFalseを
+    # falsyとして扱うバグ的挙動を実機ソース確認済み)。そのため bool ではなく
+    # 検証を無効化した ssl.SSLContext オブジェクト自体を渡す必要がある。
+    _insecure_ctx = ssl.create_default_context()
+    _insecure_ctx.check_hostname = False
+    _insecure_ctx.verify_mode = ssl.CERT_NONE
+    client = genai.Client(
+        api_key=api_key,
+        http_options=types.HttpOptions(
+            client_args={"verify": _insecure_ctx, "trust_env": True}
+        ),
+    )
+    
+    with open(error_log_path, "r", encoding="utf-8") as f:
+        error_log = f.read()
+
+    prompt = f"""
+以下の静的解析エラーログから、Claude（シニアアーキテクト）による深層監査が【本当に必要な致命的エラー】を含むファイルのパスと、エラーの概要を抽出してください。
+
+【厳格な抽出条件】
+1. Mypyの重大な型不整合や、Banditの致命的なセキュリティリスク、Radonの複雑度超過（保守性の危機）のみを抽出すること。
+2. Ruffによる「未使用のインポート(F401)」「1行の複数ステートメント(E701)」「インポート順序(I001)」などの【軽微なスタイル違反・フォーマット違反】は絶対に抽出対象から除外すること。
+3. テスト用の一時ファイル（_temp_*.py 等）は無視すること。
+
+エラーログ:
+{error_log}
+"""
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = await asyncio.to_thread(
+                client.models.generate_content,
+                model='gemini-3.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=TriageResult,
+                    temperature=0.0
+                )
+            )
+            result_json = json.loads(response.text)
+            break
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"🚨 Phase 2 抽出エラー: {str(e)}")
+                sys.exit(1)
+            await asyncio.sleep(3 * (2 ** attempt))
+
+    print("\n" + "="*50)
+    print("📋 【Gemini トリアージ抽出結果（ターミナル表示）】")
+    print(f" ［修正対象ファイル数］: {len(result_json.get('files_to_fix', []))} 件")
+    for idx, f_path in enumerate(result_json.get("files_to_fix", []), 1):
+        print(f"   {idx}. {f_path}")
+    print("\n ［トリアージ・サマリー］:")
+    print(f"  {result_json.get('summary', '記述なし')}")
+    print("="*50 + "\n")
+
+    file_contexts = []
+    for file_path in result_json.get("files_to_fix", []):
+        try:
+            full_path = (TARGET_APP_DIR / file_path).resolve()
+            if not full_path.is_relative_to(TARGET_APP_DIR.resolve()):
+                continue
+                
+            if full_path.exists():
+                with open(full_path, "r", encoding="utf-8") as code_f:
+                    file_contexts.append({"path": file_path, "content": code_f.read()})
+            else:
+                print(f"⚠️ 警告: ファイルが存在しません ({file_path})")
+        except Exception as e:
+             print(f"⚠️ 警告: ファイル読み込み失敗 ({file_path}): {e}")
+             
+    result_json["file_contexts"] = file_contexts
+    triage_path = BASE_DIR / "audit_reports" / "triage_result.json"
+    
+    with open(triage_path, "w", encoding="utf-8") as f:
+        json.dump(result_json, f, indent=2, ensure_ascii=False)
+        
+    print(f"✅ フェーズ2完了: 高純度コンテキストを保存しました -> {triage_path}")
+    return result_json
+
+async def phase3_audit(triage_data: dict) -> str:
+    """フェーズ3: Claude APIを用いた深層監査と修正案の生成"""
+    print("\n🔍 [Phase 3] Claude API による深層監査と修正案生成を開始します...")
+    
+    # .envの手入力ミス（余分な空白・改行の混入）を吸収
+    api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+    
+    # 【真の監査是正 1】 Norton SSLインスペクション対応の境界防衛
+    # 実測済みファクト: Norton の自己生成CA証明書(wscert.pem)は Basic Constraints
+    # 拡張が critical フラグ無しで発行されており、OpenSSL 3.x(Python 3.13標準)の
+    # 厳格な検証ロジックに "Basic Constraints of CA cert not marked critical" として
+    # 一律で拒否される(verify=<wscert.pemのパス> は必ず CERTIFICATE_VERIFY_FAILED に
+    # なることを実機検証済み)。Windows schannel(curl等)は許容するがPython/OpenSSLは
+    # 許容しないため、このCA証明書を信頼CAとして使う分岐は削除し、実測で確実に
+    # 疎通する verify=False + trust_env=True に一本化する。
+    http_client = httpx.AsyncClient(
+        verify=False,
+        trust_env=True,
+        timeout=httpx.Timeout(600.0, connect=30.0)
+    )
+    client = anthropic.AsyncAnthropic(api_key=api_key, http_client=http_client, max_retries=0)
+    context_str = json.dumps(triage_data, indent=2, ensure_ascii=False)
+    
+    # コスト爆発への安全装置（ヒューマン・ゲート）
+    context_length = len(context_str)
+    if context_length > 100000:
+        print(f"\n⚠️ 【厳重警戒】 抽出されたコンテキストが {context_length} 文字を超過しています。")
+        print("   ※APIコストの爆発やLLMの認知限界（Lost in the Middle）を引き起こす危険性があります。")
+        approval = input("   このままClaudeへ送信して監査を続行しますか？ (Y/n): ").strip().lower()
+        if approval != 'y':
+            print("🛑 監査プロセスを安全に中断しました。抽出ロジック（フェーズ2）を見直してください。")
+            await http_client.aclose()
+            sys.exit(0)
+            
+    prompt = f"""
+以下のJSONデータには、静的解析エラーの概要と、関連するファイルの「生ソースコード」が含まれています。
+これらを読み込み、副作用（Side-effect）やアーキテクチャの矛盾を深く推論し、以下の2つを出力してください。
+1. 人間が読みやすいMarkdownレポート（原因と副作用の評価）
+2. 次の修正フェーズに渡すための、明確かつ具体的な仕様記述（Diff要件）
+
+入力データ:
+{context_str}
+"""
+    max_retries = 3
+    report = ""
+    for attempt in range(max_retries):
+        try:
+            print("\n" + "🌟"*25)
+            print("🦅 【Claude 深層監査レポート（リアルタイム受信中...）】")
+            print("="*50)
+            
+            stream = await client.messages.create(
+                model="claude-sonnet-5",
+                max_tokens=8192,
+                system="あなたはシニアソフトウェアアーキテクト兼冷徹な監査官です。事実(ファクト)に基づき、推測を排除して冷徹に監査せよ。",
+                messages=[{"role": "user", "content": prompt}],
+                stream=True
+            )
+            
+            async for chunk in stream:
+                if chunk.type == "content_block_delta":
+                    delta = chunk.delta
+                    if getattr(delta, "type", "") == "text_delta":
+                        text = getattr(delta, "text", "")
+                        print(text, end="", flush=True)
+                        report += text
+                    elif getattr(delta, "type", "") == "thinking_delta":
+                        thinking = getattr(delta, "thinking", "")
+                        print(thinking, end="", flush=True)
+                        report += thinking
+            
+            print("\n" + "="*50)
+            print("🌟"*25 + "\n")
+            
+            report = report.strip()
+            if not report:
+                raise ValueError("レスポンスから有効なテキストデータを抽出できませんでした。")
+            break
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"\n🚨 Phase 3 監査エラー (リトライ上限到達): {type(e).__name__} - {str(e)}")
+                if hasattr(e, '__cause__') and e.__cause__:
+                    print(f"   🔍 根本原因 (Cause): {repr(e.__cause__)}")
+                await http_client.aclose()
+                sys.exit(1)
+            print(f"\n⚠️ Phase 3 APIエラー: {type(e).__name__}. 3秒後にリトライします...")
+            await asyncio.sleep(3 * (2 ** attempt))
+
+    await http_client.aclose()
+
+    report_path = BASE_DIR / "audit_reports" / "claude_audit_report.md"
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(report)
+        
+    print(f"✅ フェーズ3完了: 監査レポートを保存しました -> {report_path}")
+    return report
+
+async def main_flow():
+    load_dotenv(BASE_DIR / ".env")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    
+    if not gemini_key or not anthropic_key:
+        print("🚨 致命的エラー: GEMINI_API_KEY または ANTHROPIC_API_KEY が .env に設定されていません。")
+        sys.exit(1)
+
+    log_path = await phase1_audit()
+    if log_path and log_path.exists():
+        triage_data = await phase2_triage(log_path)
+        await phase3_audit(triage_data)
+
+if __name__ == "__main__":
+    if os.name == 'nt':
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    asyncio.run(main_flow())

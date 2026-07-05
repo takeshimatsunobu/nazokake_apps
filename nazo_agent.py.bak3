@@ -1,0 +1,266 @@
+import asyncio
+import os
+import sys
+import json
+import warnings
+from pathlib import Path
+from dotenv import load_dotenv
+
+# APIクライアント
+from google import genai
+from google.genai import types
+from pydantic import BaseModel
+import anthropic
+import httpx
+
+# SSL警告を抑制
+warnings.filterwarnings("ignore", message="Unverified HTTPS request")
+
+# --- ターゲット環境の設定（ファクトに基づく） ---
+BASE_DIR = Path(__file__).resolve().parent
+TARGET_APP_DIR = BASE_DIR / "nazokake-evaluator"
+TARGET_PYTHON = TARGET_APP_DIR / ".venv_ai" / "Scripts" / "python.exe"
+TARGET_CODE_DIR = "backend"
+
+# --- Structured Output Schema ---
+class TriageResult(BaseModel):
+    files_to_fix: list[str]
+    summary: str
+
+async def run_linter(tool_name: str) -> str:
+    """単一のLintツールを非同期サブプロセスで実行し、生ログを抽出する（タイムアウト防弾版）"""
+    args = [TARGET_CODE_DIR]
+    
+    if tool_name == "radon":
+        args = ["cc", TARGET_CODE_DIR, "-n", "C", "-a"] 
+    elif tool_name == "bandit":
+        args = ["-r", TARGET_CODE_DIR]
+    elif tool_name == "ruff":
+        args = ["check", TARGET_CODE_DIR]
+        
+    cmd = [str(TARGET_PYTHON), "-m", tool_name] + args
+    
+    try:
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            cwd=str(TARGET_APP_DIR),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        try:
+            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60.0)
+        except asyncio.TimeoutError:
+            process.kill()
+            return f"### ツール: {tool_name.upper()} (🚨 タイムアウト: 60秒超過で強制終了)\n```text\nプロセスがハングアップしました。\n```\n"
+            
+        out_text = stdout.decode('utf-8', errors='replace')
+        err_text = stderr.decode('utf-8', errors='replace')
+        output = (out_text + "\n" + err_text).strip()
+        
+        if not output:
+            output = "出力なし（正常または検出事項なし）"
+            
+        status = "✅ Success" if process.returncode == 0 else f"⚠️ Exited with code {process.returncode}"
+        return f"### ツール: {tool_name.upper()} ({status})\n```text\n{output}\n```\n"
+        
+    except Exception as e:
+        return f"### ツール: {tool_name.upper()} (🚨 実行エラー)\n```text\n{str(e)}\n```\n"
+
+async def my_import_check():
+    """仮想環境の生存確認"""
+    if not TARGET_PYTHON.exists():
+        print(f"🚨 致命的エラー: ターゲットのPython環境が見つかりません: {TARGET_PYTHON}")
+        sys.exit(1)
+
+async def phase1_audit() -> Path:
+    """フェーズ1: 4ツールの完全非同期実行"""
+    print(f"🔍 [Phase 1] ターゲット環境 ({TARGET_APP_DIR.name}/{TARGET_CODE_DIR}) の静的解析を非同期で開始します...")
+    await my_import_check()
+
+    tools = ["ruff", "mypy", "bandit", "radon"]
+    report_lines = [f"# 🔍 統合静的解析ファクトレポート", f"ターゲット: {TARGET_APP_DIR.name}/{TARGET_CODE_DIR}", f"Python: {TARGET_PYTHON}", "---", ""]
+    
+    tasks = [run_linter(tool) for tool in tools]
+    results = await asyncio.gather(*tasks)
+    
+    for tool, result in zip(tools, results):
+        print(f"✅ {tool.upper()} の解析が完了しました。")
+        report_lines.append(result)
+
+    audit_dir = BASE_DIR / "audit_reports"
+    audit_dir.mkdir(exist_ok=True)
+    out_file = audit_dir / "error_log.txt"
+    
+    with open(out_file, "w", encoding="utf-8") as f:
+        f.write("\n".join(report_lines))
+        
+    print(f"🎉 フェーズ1完了: ファクトレポートを生成しました -> {out_file}")
+    return out_file
+
+async def phase2_triage(error_log_path: Path) -> dict:
+    """フェーズ2: Gemini APIを用いたトリアージとソースコード抽出"""
+    print("\n🔍 [Phase 2] Gemini 3.5 Flash によるエラーログのトリアージと抽出を開始します...")
+    api_key = os.getenv("GEMINI_API_KEY")
+    client = genai.Client(api_key=api_key)
+    
+    with open(error_log_path, "r", encoding="utf-8") as f:
+        error_log = f.read()
+
+    prompt = f"""
+あなたはシニアエンジニアです。以下の静的解析エラーログから、実際に修正が必要なファイルのパスと、エラーの概要を抽出してください。
+※外部ライブラリ由来のスタブ不足など、修正不要な警告は除外してください。
+
+エラーログ:
+{error_log}
+"""
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            response = await asyncio.to_thread(
+                client.models.generate_content,
+                model='gemini-3.5-flash',
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=TriageResult,
+                    temperature=0.0
+                )
+            )
+            result_json = json.loads(response.text)
+            break
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"🚨 Phase 2 抽出エラー (リトライ上限到達): {str(e)}")
+                sys.exit(1)
+            print(f"⚠️ Phase 2 APIエラー: {str(e)}. 3秒後にリトライします...")
+            await asyncio.sleep(3 * (2 ** attempt))
+
+    print("\n" + "="*50)
+    print("📋 【Gemini トリアージ抽出結果（ターミナル表示）】")
+    print(f" ［修正対象ファイル数］: {len(result_json.get('files_to_fix', []))} 件")
+    for idx, f_path in enumerate(result_json.get("files_to_fix", []), 1):
+        print(f"   {idx}. {f_path}")
+    print("\n ［トリアージ・サマリー］:")
+    print(f"  {result_json.get('summary', '記述なし')}")
+    print("="*50 + "\n")
+
+    file_contexts = []
+    for file_path in result_json.get("files_to_fix", []):
+        try:
+            full_path = (TARGET_APP_DIR / file_path).resolve()
+            if not full_path.is_relative_to(TARGET_APP_DIR.resolve()):
+                print(f"🚨 警告: 不正なパス指定をブロックしました -> {file_path}")
+                continue
+                
+            if full_path.exists():
+                with open(full_path, "r", encoding="utf-8") as code_f:
+                    file_contexts.append({"path": file_path, "content": code_f.read()})
+            else:
+                print(f"⚠️ 警告: 指定されたファイルが見つかりません -> {full_path}")
+        except Exception as e:
+             print(f"⚠️ 警告: パス解決中にエラー -> {file_path}: {e}")
+             
+    result_json["file_contexts"] = file_contexts
+    triage_path = BASE_DIR / "audit_reports" / "triage_result.json"
+    
+    with open(triage_path, "w", encoding="utf-8") as f:
+        json.dump(result_json, f, indent=2, ensure_ascii=False)
+        
+    print(f"✅ フェーズ2完了: 高純度コンテキストを保存しました -> {triage_path}")
+    return result_json
+
+async def phase3_audit(triage_data: dict) -> str:
+    """フェーズ3: Claude APIを用いた深層監査と修正案の生成（SSL検証バイパスパッチ版）"""
+    print("\n🔍 [Phase 3] Claude 3.5 Sonnet による深層監査と修正案生成を開始します...")
+    # .envの手入力ミス（余分な空白・改行の混入）を吸収する。
+    # この空白/改行が混入したままだと x-api-key ヘッダーが不正な値になり、
+    # httpx(h11)がネットワークに出る前に LocalProtocolError を送出し、
+    # Anthropic SDK がそれを "Connection error" として再送出してしまう。
+    api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+
+    # SSL検証を無効化しつつ、環境変数プロキシ（HTTP_PROXY/HTTPS_PROXY）を
+    # 明示的に透過させる（社内SSLインターセプト・プロキシ突破用）。
+    # タイムアウトも延長し、プロキシのTLSハンドシェイク遅延を吸収する。
+    http_client = httpx.AsyncClient(
+        verify=False,
+        trust_env=True,
+        timeout=httpx.Timeout(60.0, connect=30.0),
+    )
+    # SDK自身のリトライ（デフォルト2回）を無効化し、下の外側リトライループのみで
+    # 再試行を一元管理する（二重リトライによる無駄な待機の回避）。
+    client = anthropic.AsyncAnthropic(
+        api_key=api_key,
+        http_client=http_client,
+        max_retries=0,
+    )
+    
+    context_str = json.dumps(triage_data, indent=2, ensure_ascii=False)
+    
+    prompt = f"""
+以下のJSONデータには、静的解析エラーの概要と、関連するファイルの「生ソースコード」が含まれています。
+これらを読み込み、副作用（Side-effect）やアーキテクチャの矛盾を深く推論し、以下の2つを出力してください。
+1. 人間が読みやすいMarkdownレポート（原因と副作用の評価）
+2. 次の修正フェーズに渡すための、明確かつ具体的な仕様記述（Diff要件）
+
+入力データ:
+{context_str}
+"""
+    max_retries = 3
+    report = ""
+    for attempt in range(max_retries):
+        try:
+            response = await client.messages.create(
+                model="claude-3-5-sonnet-20241022",
+                max_tokens=4096,
+                system="あなたはシニアソフトウェアアーキテクト兼冷徹な監査官です。事実(ファクト)に基づき、推測を排除して冷徹に監査せよ。",
+                messages=[{"role": "user", "content": prompt}]
+            )
+            report = response.content[0].text
+            break
+        except Exception as e:
+            if attempt == max_retries - 1:
+                print(f"🚨 Phase 3 監査エラー (リトライ上限到達): {str(e)}")
+                sys.exit(1)
+            print(f"⚠️ Phase 3 APIエラー: {str(e)}. 3秒後にリトライします...")
+            await asyncio.sleep(3 * (2 ** attempt))
+
+    # クライアントを明示的に閉じる
+    await http_client.aclose()
+
+    print("\n" + "="*50)
+    print("📋 【Claude 深層監査レポート（ターミナル表示）】")
+    print("="*50)
+    print(report)
+    print("="*50 + "\n")
+
+    report_path = BASE_DIR / "audit_reports" / "claude_audit_report.md"
+    with open(report_path, "w", encoding="utf-8") as f:
+        f.write(report)
+        
+    print(f"✅ フェーズ3完了: 監査レポートを保存しました -> {report_path}")
+    return report
+
+async def main_flow():
+    load_dotenv(BASE_DIR / ".env")
+    gemini_key = os.getenv("GEMINI_API_KEY")
+    anthropic_key = os.getenv("ANTHROPIC_API_KEY")
+    
+    if not gemini_key or not anthropic_key:
+        print("🚨 致命的エラー: GEMINI_API_KEY または ANTHROPIC_API_KEY が .env に設定されていません。")
+        sys.exit(1)
+
+    log_path = await phase1_audit()
+    if log_path and log_path.exists():
+        triage_data = await phase2_triage(log_path)
+        report = await phase3_audit(triage_data)
+        
+        print("\n==================================================")
+        print("🛡️ [ヒューマン・ゲート] フェーズ1〜3の自動監査が完走しました。")
+        print("audit_reports/claude_audit_report.md を確認してください。")
+        print("==================================================\n")
+
+if __name__ == "__main__":
+    if os.name == 'nt':
+        asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+    asyncio.run(main_flow())
