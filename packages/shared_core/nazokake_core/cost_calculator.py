@@ -21,6 +21,10 @@ PRICE_TABLE_USD_PER_M_TOKENS: dict[str, tuple[float, float]] = {
     "claude-3-5-sonnet": (3.0, 15.0),
     "gemini-1.5-pro": (1.25, 5.0),
     "gemini-2.5-flash": (0.075, 0.3),
+    # generation.py の fallback_model として実運用で使用中(発見時点で価格表に
+    # 未登録だったため、Gemini生成コストが常に0円扱いになっていた欠落を修正)。
+    # 単価は暫定推定値。実際の請求明細と照合の上、必要に応じて更新すること。
+    "gemini-3.5-flash": (0.10, 0.40),
 }
 
 DEFAULT_EXCHANGE_RATE_USD_JPY = 160.0
