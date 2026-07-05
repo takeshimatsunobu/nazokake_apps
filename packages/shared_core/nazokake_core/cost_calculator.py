@@ -25,6 +25,16 @@ PRICE_TABLE_USD_PER_M_TOKENS: dict[str, tuple[float, float]] = {
 
 DEFAULT_EXCHANGE_RATE_USD_JPY = 160.0
 
+# ------------------------------------------------------------
+# ローカルサーバー稼働コスト(電気代)の単価
+# API課金の対象外であるOllama/自前サーバー等の「見えないコスト」を近似する。
+# ------------------------------------------------------------
+DEFAULT_SERVER_COST_PER_HOUR_JPY = 5.0
+
+# service_type がこの集合(大文字小文字を区別しない)に一致する場合は
+# トークン単価ではなく稼働時間ベースの電気代として計算する。
+LOCAL_SERVICE_TYPES = {"ollama", "server"}
+
 
 def _get_exchange_rate() -> float:
     """環境変数 EXCHANGE_RATE_USD_JPY からドル円レートを取得する(未設定時は既定値)。"""
@@ -32,6 +42,14 @@ def _get_exchange_rate() -> float:
         return float(os.environ.get("EXCHANGE_RATE_USD_JPY", DEFAULT_EXCHANGE_RATE_USD_JPY))
     except ValueError:
         return DEFAULT_EXCHANGE_RATE_USD_JPY
+
+
+def _get_server_cost_per_hour() -> float:
+    """環境変数 SERVER_COST_PER_HOUR_JPY からローカルサーバーの時間単価を取得する(未設定時は既定値)。"""
+    try:
+        return float(os.environ.get("SERVER_COST_PER_HOUR_JPY", DEFAULT_SERVER_COST_PER_HOUR_JPY))
+    except ValueError:
+        return DEFAULT_SERVER_COST_PER_HOUR_JPY
 
 
 def calculate_token_cost_jpy(model_name: str, input_tokens: int, output_tokens: int) -> float:
@@ -45,6 +63,13 @@ def calculate_token_cost_jpy(model_name: str, input_tokens: int, output_tokens: 
     return round(cost_jpy, 4)
 
 
+def calculate_server_cost_jpy(execution_time_sec: float) -> float:
+    """実行時間(秒)をSERVER_COST_PER_HOUR_JPYの時間単価で日本円に換算する(ローカル稼働の電気代)。"""
+    execution_time_hours = execution_time_sec / 3600
+    cost_jpy = execution_time_hours * _get_server_cost_per_hour()
+    return round(cost_jpy, 4)
+
+
 async def async_log_system_cost(
     db,
     service_type: str,
@@ -54,9 +79,15 @@ async def async_log_system_cost(
 ) -> SystemCostLog:
     """コストを計算し、SystemCostLogとしてバリデーションした上でFirestoreへ非同期保存する。
 
+    service_type が Ollama/Server 等のローカル実行系であれば稼働時間ベースの電気代
+    (calculate_server_cost_jpy)、それ以外(Claude/Gemini等のAPIモデル名)であれば
+    トークン単価ベースの課金額(calculate_token_cost_jpy)で算出する。
     db の Firestore 書き込み自体は同期APIのため、asyncio.to_thread でイベントループを塞がない。
     """
-    cost_jpy = calculate_token_cost_jpy(service_type, input_tokens, output_tokens)
+    if service_type.lower() in LOCAL_SERVICE_TYPES:
+        cost_jpy = calculate_server_cost_jpy(execution_time_sec)
+    else:
+        cost_jpy = calculate_token_cost_jpy(service_type, input_tokens, output_tokens)
     log = SystemCostLog(
         service_type=service_type,
         input_tokens=input_tokens,
