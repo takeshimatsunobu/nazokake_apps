@@ -35,13 +35,16 @@ __pycache__/
 **/.mypy_cache/
 
 # --- ローカルLLM本体・LoRA成果物・大容量モデルファイル ---
+# 注意: 汎用的な `models/` / `**/models/` は使わない。
+# apps/evaluator/backend/models/ はPydanticスキーマ(DTO)を置く現役のPythonパッケージであり、
+# これを除外するとビルド後のコンテナが ModuleNotFoundError で起動不能になる。
+# 大容量モデル成果物は個別の実ディレクトリ(下記)とファイル拡張子で狙い撃ちする。
 *.gguf
 *.gguf.bak
 *.safetensors
 *.bin
 *.pt
-models/
-**/models/
+apps/evaluator/models/
 llama-bin/
 **/llama-bin/
 unsloth_compiled_cache/
