@@ -34,7 +34,7 @@ images:
   - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE_NAME}:$BUILD_ID'
 
 substitutions:
-  _SERVICE_NAME: nazo-agent-api
+  _SERVICE_NAME: nazokake-backend
   _REGION: asia-northeast1
   _REPOSITORY: nazo-agent
 
