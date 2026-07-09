@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>コスト管理ダッシュボード</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 min-h-screen">
+<div class="max-w-6xl mx-auto px-6 py-10">
+
+  <header class="mb-8">
+    <h1 class="text-2xl font-bold text-gray-900">💰 コスト管理ダッシュボード</h1>
+    <p class="text-sm text-gray-500 mt-1">system_costs コレクション: 直近{{ costs|length }}件を表示</p>
+  </header>
+
+  <!-- サマリーカード -->
+  <section class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-10">
+
+    <div class="bg-white rounded-xl shadow p-6">
+      <p class="text-sm text-gray-500">今月の総利用料金</p>
+      <p class="text-3xl font-bold text-gray-900 mt-2">¥{{ "{:,.2f}".format(total_cost_jpy) }}</p>
+    </div>
+
+    <div class="bg-white rounded-xl shadow p-6">
+      <p class="text-sm text-gray-500">当月の予算制限</p>
+      <p class="text-3xl font-bold text-gray-900 mt-2">¥{{ "{:,.0f}".format(budget_limit_jpy) }}</p>
+    </div>
+
+    <div class="bg-white rounded-xl shadow p-6">
+      <p class="text-sm text-gray-500">予算消化率</p>
+      <p class="text-3xl font-bold mt-2
+        {% if budget_percentage > 100 %}text-red-600
+        {% elif budget_percentage >= 80 %}text-yellow-600
+        {% else %}text-green-600{% endif %}">
+        {{ "%.1f"|format(budget_percentage) }}%
+      </p>
+      <div class="w-full bg-gray-200 rounded-full h-3 mt-4 overflow-hidden">
+        <div class="h-3 rounded-full transition-all duration-500
+          {% if budget_percentage > 100 %}bg-red-500
+          {% elif budget_percentage >= 80 %}bg-yellow-400
+          {% else %}bg-green-500{% endif %}"
+          style="width: {{ [budget_percentage, 100] | min }}%;">
+        </div>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- 履歴テーブル -->
+  <section class="bg-white rounded-xl shadow overflow-hidden">
+    <div class="px-6 py-4 border-b border-gray-200">
+      <h2 class="text-lg font-semibold text-gray-900">利用履歴(直近100件)</h2>
+    </div>
+    <div class="overflow-x-auto">
+      <table class="min-w-full text-sm">
+        <thead class="bg-gray-50 text-gray-500 uppercase text-xs tracking-wider">
+          <tr>
+            <th class="px-6 py-3 text-left">Timestamp</th>
+            <th class="px-6 py-3 text-left">Service Type</th>
+            <th class="px-6 py-3 text-right">Input Tokens</th>
+            <th class="px-6 py-3 text-right">Output Tokens</th>
+            <th class="px-6 py-3 text-right">実行時間(秒)</th>
+            <th class="px-6 py-3 text-right">金額(円)</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-gray-100">
+          {% for row in costs %}
+          <tr class="hover:bg-gray-50">
+            <td class="px-6 py-3 whitespace-nowrap text-gray-500">{{ row.timestamp }}</td>
+            <td class="px-6 py-3">
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-800">
+                {{ row.service_type }}
+              </span>
+            </td>
+            <td class="px-6 py-3 text-right tabular-nums">{{ "{:,}".format(row.input_tokens) }}</td>
+            <td class="px-6 py-3 text-right tabular-nums">{{ "{:,}".format(row.output_tokens) }}</td>
+            <td class="px-6 py-3 text-right tabular-nums">{{ "%.2f"|format(row.execution_time_sec) }}</td>
+            <td class="px-6 py-3 text-right tabular-nums font-medium">¥{{ "{:,.4f}".format(row.calculated_cost_jpy) }}</td>
+          </tr>
+          {% else %}
+          <tr>
+            <td colspan="6" class="px-6 py-10 text-center text-gray-400">コストログがまだありません。</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+</body>
+</html>

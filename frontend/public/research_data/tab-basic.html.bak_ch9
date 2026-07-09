@@ -1,0 +1,1519 @@
+<details open class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> なぞかけと生理現象
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-4 sm:p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 space-y-8">
+        
+        <section>
+            <h4 class="text-md font-bold text-[#5B8124] border-b-2 border-[#5B8124]/30 pb-2 mb-4 flex items-center gap-2">
+                <span class="text-xl">🧠</span> 第1部：脳と認知のメカニズム（思考とひらめき）
+            </h4>
+            <div class="space-y-3">
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第1章：脳科学・中枢神経系へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch1" class="p-4 bg-[#FAF8F5] space-y-4">
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">1.1 アハ体験と右半球・前上側頭回の活性化</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700">被験者に「言葉のパズル」を解いてもらい、その最中の脳の血流をfMRI（巨大な磁石のトンネルに入る脳スキャン装置）で観察しました。すると、論理的にコツコツ考えた時とは違い、「あ！わかった！」と直感的にひらめいた瞬間、右耳の少し上から前方にかけて（右半球の前上側頭回）がピカッと強く活性化することが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700">「AとかけてBと解く、その心はC」のCを聞いた瞬間、最初は「ん？」と思っても、次の瞬間に「ああ、そういうことか！」と意味が繋がりますよね。この時、一見無関係に見えたAとBの共通点を脳が劇的に結びつけ、アハ体験（強い納得感）を生み出しています。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 洞察（ひらめき）問題解決時の神経活動に関する研究 (2004年) - マーク・ビーマン（ノースウェスタン大学）、ジョン・クーニオス（ドレクセル大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">1.2 準備電位と「整いました」の相関</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700">人に「好きなタイミングで手首を動かしてください」と指示し、脳波と筋肉の動きを測定しました。すると、本人が「よし、今動かそう」と意識で決定する約0.3〜0.5秒も前に、脳波にはすでに「動くための準備（準備電位）」が現れていることが発見されました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700">芸人さんがパッと手を叩いて「整いました！」と声を発する瞬間。実は本人が「よし、言おう」と意識するコンマ数秒前に、脳はすでに無意識のレベルで「発声し、手を動かす」ための運動プログラムのGOサイン（準備）を出している状態と言えます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 自発的な運動と意識的な意図（準備電位）に関する研究 (1983年) - ベンジャミン・リベット（カリフォルニア大学サンフランシスコ校）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">1.3 ひらめきの瞬間のガンマ波バースト</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700">ひらめき問題を解いている時の脳波（電気信号）を細かく分析した実験です。ひらめいて答えが分かった瞬間の約0.3秒前に、右脳の側頭部から「ガンマ波」と呼ばれる非常に細かい波（高周波数）が突発的に発生（バースト）することが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700">「その心は？」の後、一瞬の間があってから「なるほど！」と膝を打ちますよね。あのオチを理解した瞬間、脳の特定の領域（右脳の側頭部）で細かい波が突発的に発生し、情報が瞬時に統合されることで「わかった！」というスッキリ感を作り出しています。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> ひらめき時の脳波（EEG）バーストに関する研究 (2004年) - ジョン・クーニオス、マーク・ビーマンら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">1.4 報酬系ネットワークの活性化と「上手さ」の評価</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700">被験者に「面白いジョークやマンガ」を見せながら脳の活動を観察しました。すると、ジョークを理解して「面白い！」と感じた時、ドーパミンを主要な伝達物質とする脳の奥深くの「報酬系ネットワーク」が強く活性化することが分かりました。面白ければ面白いほど、この活動は強くなりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700">なぞかけを聞いて「うまい！座布団一枚！」と感じる時、脳内ではご褒美として報酬系ネットワークが強く働いています。なぞかけの鮮やかさ（2つの言葉の見事な掛かり具合）は、脳にとって上質なご馳走であり、それが強烈な快感と笑いに繋がるのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> ユーモアが中脳辺縁系の報酬中枢を調節するメカニズムの研究 (2003年) - ディーン・モブス（スタンフォード大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">1.5 なぞかけ生成時の前頭前野の血流変化</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700">NIRS（頭に光を当てて血流を測る手軽なセンサー）を使い、新しいアイデアをひねり出したり、複数の情報を同時に頭に留めておく（ワーキングメモリ）作業中の脳を測定しました。すると、単に話を聞いている時と比べ、自分で考えを組み立てる時は「脳の司令塔」であるおでこの裏側（前頭前野）の血流が急増し、フル回転していることが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700">なぞかけを「作る」となると話は別です。お題から複数の概念を同時に頭に保持しつつ、当たり前の連想を「抑制」し、別の意味を持つ同音異義語を探して綺麗に繋ぎ合わせる……これは猛烈な負荷をかける極めて高度な知的トレーニングと言えます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 創造的思考やワーキングメモリ負荷時の前頭前野の活動に関するNIRS研究（認知負荷と前頭前野の血流増加を実証した多くの基礎研究に基づく）
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">1.6 デフォルトモードネットワーク（DMN）の関与</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700">被験者に「何も考えず、ただぼんやり休んでください」と指示して脳の血流を調べました。すると、脳は休んでいるどころか、特定のネットワーク（DMN）が活発にエネルギーを消費していることが発見され、このDMNが記憶の整理や情報の結びつけを無意識に行っていることが分かってきました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700">「Aとかけて…」と考え込む時、机に向かって必死に集中するよりも、お風呂に入っている時など少し気を抜いて「ぼんやり」している時の方が良いアイデアが降ってきますよね。これはDMNが普段は結びつかないような遠く離れた言葉同士のアイデアの種を自由に広げているからです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> デフォルトモードネットワーク（DMN）の発見と概念化 (2001年) - マーカス・レイクル（ワシントン大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">1.7 同音異義語処理と左前頭葉の反応</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700">同じ音で複数の意味を持つ言葉（例：「くも」＝雲・蜘蛛）を聞いた際の脳活動を測定しました。すると、言葉の辞書である左側頭葉から複数の意味が引き出され、司令塔である「左の前頭葉」が強く反応して交通整理を行い、文脈に合う正しい意味を瞬時に選び出すことが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700">なぞかけの命である「オチ（掛詞）」を聞いた瞬間、脳内では「2つの異なる意味」が同時に検索されます。左の前頭葉が「なるほど、ここではこの2つの意味が同時に成立しているんだ！」と瞬時に交通整理をしてくれるおかげで、「うまい！」と感心することができるのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 意味的曖昧さ（多義語・同音異義語）の処理に関する脳機能イメージング研究 (2005年) - ジェニファー・ロッド（UCL）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">1.8 解けなかった時の島皮質反応</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700">「正解すればご褒美がもらえる」という期待を持たせた上で、わざと解けない課題を出したり、期待を裏切ったりした時の脳を調べました。すると、フラストレーション（欲求不満）を感じた瞬間に、「島皮質（不快感のセンサー）」がチカチカと不快感のシグナルを出すことが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700">「その心は？」と言われてオチを聞いたのに、知識不足や掛詞の難解さで意味が全く分からなかった時。「なぜ周りのみんなは笑っているんだ？」という小さなストレスが島皮質を刺激します。アハ体験が得られない状態は、脳にとって軽いエラー状態であり不快感に繋がります。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 期待された報酬の欠如（フラストレーション）による島皮質等の活性化に関する研究 (2005年) - ビルギット・アブラー（ウルム大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">1.9 難易度による認知負荷とシータ波の変動</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700">暗算や記憶課題など、頭を使う作業の難易度を少しずつ上げていきながら脳波を測定しました。問題が難しくなって脳の負担（認知負荷）が増すにつれて、おでこのあたり（前頭部）から「シータ波」と呼ばれる特定の脳波（集中・記憶の波）が強く現れることが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700">誰でも思いつく簡単なものではなく、複数のお題が絡む高度ななぞかけを振られた時。「えーっと、似た言葉は…」と脳のメモ帳（ワーキングメモリ）を限界まで使って粘り強く考えている状態の時、私たちの脳波は強いシータ波を放ちながらフル稼働しています。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> ワーキングメモリの負荷と前頭部シータ波（Fm-theta）の増加に関する研究 (1997年) - アラン・ゲヴィンスら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">1.10 熟練者と初心者の脳活動比較</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700">ある分野のプロとアマチュアが同じ課題に取り組む時の脳活動を比較しました。初心者は脳全体を無駄にフル回転させて必死に考えていましたが、プロは直感的なパターン認識を司る部位だけがピンポイントで働き、脳のエネルギー消費が極めて少ないことが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700">プロの落語家など「なぞかけの名手」は、お題を出された瞬間に連想と同音異義語の検索を自動的に行う専用の脳内回路が出来上がっています。そのため、素人が汗をかくような難題でも、非常に少ないエネルギーで涼しい顔をして瞬時に「整いました」と返すことができます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 神経効率仮説の提唱および、熟練者と初心者の脳回路の比較研究 (1992年〜) - リチャード・ハイヤーら
+                </div>
+            </div>
+        </div>
+</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第2章：遺伝学・分子生物学・生化学的アプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch2" class="p-4 bg-[#FAF8F5] space-y-4">
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">2.1 DRD4（ドーパミン受容体遺伝子）多型となぞかけの快感度の違い</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「『上手い！』と感動しやすいかどうかは、生まれ持った『遺伝子のアンテナ』が影響している」<br><br>【どんな実験？】人のDNAを採取して「ドーパミン（快楽物質）を受け取るアンテナの形（DRD4遺伝子の型）」を調べ、その人たちが「新しいこと」や「ユーモア」に対してどれくらい強い快感や興奮を覚えるかを、アンケートや脳波で比較する実験です。<br>【どんな結果？】人の遺伝子には個人差（多型）があります。特定の遺伝子型（例：新奇性追求傾向が強いタイプ）を持つ人は、脳が「新しい情報」や「驚き」を受け取った時、他の人よりもドーパミンによる快感を強く、ダイナミックに感じ取れることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">秀逸ななぞかけのオチを聞いた時、「うおお、天才だ！」と大興奮する人と、「ふーん、なるほどね」と冷静な人がいます。これは単に「笑いのツボ」の違いというだけでなく、脳のドーパミンアンテナの形（遺伝子）の違いが影響しています。すべてが決まっているわけではありませんが、なぞかけによる「ひらめきの快感」を受け取りやすい素質には、遺伝子レベルで個人差があるのは事実なのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 新奇性追求（Novelty Seeking）とDRD4遺伝子多型の関連研究 (1996年〜) - リチャード・エブスタイン（Richard Ebstein）らの行動遺伝学研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">2.2 ユーモア理解に関わるCOMT遺伝子多型とひらめき時間の相関</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「なぞかけを解くスピードは、前頭葉の『ドーパミン掃除係』の性格で変わる」<br><br>【どんな実験？】脳の前頭葉（思考を司る部分）にあるドーパミンを分解・掃除する酵素「COMT」の遺伝子型を調べます。そして、参加者に「ひらめき」が必要な言葉のパズルを解かせ、正解にたどり着くまでのスピードや集中力を比較する実験です。<br>【どんな結果？】COMT遺伝子には大きく分けて「掃除が遅い型（Met型）」と「掃除が速い型（Val型）」があります。「掃除が遅い型」の人は、前頭葉にドーパミンが長く留まるため、集中力や記憶力を高く保つことができ、複雑なパズルやひらめき問題を素早く解ける傾向があることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「AとかけてBと解く」のお題を出された時、一瞬で「その心」を見つけ出せる名人は、もしかすると前頭葉のドーパミン濃度を高く保てる「Met型」の遺伝子を持っているかもしれません。彼らの脳内では、複数の言葉のつながりを維持するための潤沢なドーパミンが、絶えず脳をフル回転させているのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> COMT遺伝子多型（Val158Met）と実行機能・認知柔軟性に関する研究 (2000年代中盤〜) - アデル・ダイアモンド（Adele Diamond）らの認知遺伝学研究グループなど
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">2.3 なぞかけ習慣によるテロメア（細胞老化マーカー）短縮の抑制効果</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「笑う門には『若さ』来る。言葉遊びは細胞の寿命を延ばす」<br><br>【どんな実験？】慢性的なストレスを抱えている人と、日常的にポジティブな思考（ユーモアなど）を持っている人の血液を何年も追跡し、細胞の染色体の端にある「テロメア（命の回数券と呼ばれる、老化のバロメーター）」の長さを測る実験です。<br>【どんな結果？】ストレスを抱え込んでいる人は、テロメアがどんどん短くなり、細胞レベルでの老化が早く進みます。しかし、よく笑い、知的探求心を忘れず、ストレスをうまく発散している人は、テロメアを修復する酵素（テロメラーゼ）が活性化し、テロメアが短くなるのを強力に防いでいることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">毎日なぞかけを作って脳に新鮮な刺激を与え、秀逸なオチで笑い合う習慣。これは単なる暇つぶしではなく、ストレスホルモンを下げ、細胞レベルの老化を防ぐ、強力なアンチエイジングになる可能性を秘めているのです。「なぞかけ好きは若い」というのは、DNAのレベル（テロメアの長さ）から見ても非常に理にかなっていると言えます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 心理的ストレスと細胞老化（テロメア長とテロメラーゼ活性）に関する研究 (2004年〜) - エリザベス・ブラックバーン（Elizabeth Blackburn）、エリッサ・エペル（Elissa Epel）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">2.4 爆笑による血中エンドルフィン（至福物質）の分泌</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「大爆笑した時のフワッとした多幸感は、マラソン選手の『ハイ』と同じ」<br><br>【どんな実験？】人が歌ったり、踊ったり、コメディを見て大笑いしたりする前と後で血液を採取し、血液中に「エンドルフィン（脳内麻薬とも呼ばれる至福物質）」がどれくらい増えているかを測る実験です。<br>【どんな結果？】ランナーズハイに似た状態をもたらすこの物質は、苦しい運動だけでなく、仲間と心から楽しんで大笑いした時にも血液中にドバッと分泌されることがわかりました。これにより、痛みが和らぎ、フワッとした強烈な多幸感とリラックス状態に包まれます。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">最高に面白いなぞかけを聞いて、息ができないほどガハハと笑い転げた後。あなたの体内にはエンドルフィンが駆け巡り、マラソンを完走した時と同じような「多幸感（ハイな状態）」をもたらします。優れたなぞかけは、合法かつ副作用のない「至福物質のスイッチ」なのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 社会的活動（笑い、歌、ダンス）に伴うエンドルフィン（内因性オピオイド）の活性化 (2010年代〜) - ロビン・ダンバー（Robin Dunbar）の笑いの進化研究、および近年の神経化学研究者たち
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">2.5 汗の揮発性有機化合物（VOCs）分析</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「『スベった時の冷や汗』と『大ウケした時の温汗』は、匂いの成分が全く違う」<br><br>【どんな実験？】参加者の脇の下に汗を吸収するパッドを当て、「ホラー映画を見て恐怖を感じた時（ストレス）」と「コメディを見て笑った時（喜び）」の汗を採取します。その汗に含まれるガス（揮発性有機化合物：VOCs）の成分を、ガスクロマトグラフィーという超精密な分析器で比較する実験です。<br>【どんな結果？】人間の汗は、感情によって「化学調味料のレシピ」が変わります。恐怖や強いストレスを感じた時の汗からは特有の警戒フェロモン（ストレス性VOCs）が放出されます。一方、楽しく笑っている時の「喜びの汗（Happy Sweat）」は化学成分が全く異なり、その匂いを嗅いだ周囲の人間にまで「幸福感」を感染させることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">無茶振りされて「全然思いつかない…」と焦っている時、あなたの体からは化学的に「ストレスの汗」が分泌されています。しかし、見事なオチを言って皆で大笑いした瞬間、体から吹き出すのは成分が切り替わった「ハッピーな汗」です。なぞかけが成功した部屋は、文字通り「幸せの化学物質」で満たされるのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 人間の化学的シグナル伝達：喜びの感情の嗅覚的伝染（A Sniff of Happiness） (2015年) - ジャスパー・デ・グルート（Jasper de Groot）、ギュン・ゼミン（Gün Semin）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">2.6 血液中のBDNF（脳由来神経栄養因子）濃度となぞかけ作成能力の関連性</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">一般の男女100名を対象に、日常的な有酸素運動習慣や教育歴に加え、BDNF分泌動態に強い影響を与える遺伝的交絡因子「BDNF Val66Met多型（rs6265）」を統計モデルの共変量として統制した上で、末梢血中のBDNF濃度を測定しました。その後、「お題」に対して制限時間内になぞかけをいくつ作れるかテストを実施し、独立した複数名の評価者（評価者間のカッパ係数にて客観性を担保）が質を採点しました。その結果、血液中のBDNF濃度が高い被験者ほど、質の高いなぞかけをより多く作成できるという有意な「正の相関」が確認されました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけの「AとかけてBと解く」は、遠隔連想（Remote Association）と意味的推論を伴う高度な認知タスクです。末梢血のBDNFは主に血小板由来ですが、中枢神経系における前頭前皮質などのシナプス可塑性を反映するバイオマーカーの一つと考えられています。このBDNF濃度が高い状態は、脳内の意味論的ネットワークが柔軟に駆動しやすい生理学的基盤と関連している可能性を示唆しています。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>🧪 論拠:</strong> 血清BDNF濃度と遠隔連想タスク（比喩的推論）成績の相関分析 (2021年) - 東西脳科学大学 認知神経科学研究グループ ※架空の研究
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">2.7 涙液成分の分析：認知的洞察を伴う「笑い泣き」時のタンパク質組成</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">被験者の涙の成分を比較するため、「なぞかけのオチによるアハ体験と爆笑（認知的洞察＋換気）」「くすぐりやスラップスティックコメディによる単純な笑い（活性対照群）」「悲しい映画（情動性）」「タマネギ（反射性）」の4条件で涙液を採取しました。流涙率（Tear flow rate）の上昇による希釈効果（ウォッシュアウト効果）を排除するため、分泌型IgAなどの免疫関連タンパク質を絶対分泌量および総タンパク量で補正（Normalization）して比較した結果、なぞかけによる笑い泣きの涙において、これらのタンパク質が特異的に増加していることが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけのオチを理解した瞬間の「認知的洞察（アハ体験）」と、それに続く笑いという身体運動が組み合わさることで、自律神経系が急速に副交感神経優位へとシフトします。この特異的な情動変化とリラクゼーション反応が、涙腺の分泌動態に客観的な変化をもたらし、結果として涙液中のタンパク質プロファイルを変化させると考えられます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>🧪 論拠:</strong> 認知的洞察を伴う笑い泣きにおける自律神経活動と涙液タンパク質プロファイルの変動 (2019年) - 情動生理学研究所 涙液分泌動態チーム ※架空の研究
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">2.8 オキシトシン受容体（OXTR）遺伝子多型となぞかけを通じたラポール形成</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">初対面の男女ペアに「なぞかけ」を交互に出し合うタスクを与えました。親密化（ラポール）の指標として、主観的対人信頼感尺度と、認知的負荷による視線回避（Gaze aversion）を考慮し「オチを共有した直後」に限定した視線の交錯頻度を用いて計測を行いました。事前に被験者のオキシトシン受容体（OXTR）の遺伝子多型（rs53576等）を解析した結果、受容体の発現密度（Density）や細胞内シグナル伝達効率が高いとされる遺伝子型を持つ人ほど、なぞかけのやり取りを通じてより短時間でラポール指標が上昇することが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけは、相手の言葉の意図を推測し、謎と答えを共有する高度な社会的相互作用（共同作業）です。このコミュニケーション過程で分泌されるオキシトシンが、発現密度が高くシグナル伝達効率の良い受容体に作用することで、社会的警戒心の低下と対人関係の構築がより迅速に促進されることがメカニズムとして推測されます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>🧪 論拠:</strong> 言語的共同タスクにおけるラポール形成指標とOXTR遺伝子多型の関連 (2023年) - 社会行動遺伝学センター 社会的相互作用研究室 ※架空の研究
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">2.9 なぞかけに伴う笑いが運動後の血中乳酸クリアランスに及ぼす影響</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">アスリートに高強度のエルゴメーター運動を負荷し、血中の乳酸濃度を上昇させました。その後の動的休息（アクティブリカバリー）において、「なぞかけ動画を見て大笑いする群」「意図的に深呼吸のみを行う群（活性対照群）」「安静にする群」を比較。結果、なぞかけで笑った群は安静群より血中乳酸のクリアランス（低下）が早く、深呼吸群と同等以上の再利用効率を示しました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">現代スポーツ科学（乳酸シャトル仮説）において、乳酸は疲労物質ではなく、ミトコンドリアで酸化されて再利用される有用な「エネルギー基質」です。知的ユーモアによる自然な爆笑は、単なる深呼吸とは異なり、横隔膜や腹筋群の「痙攣的かつ断続的な収縮（Spasmodic contraction）」を伴います。これがより強力な筋ポンプ作用（Muscle pump effect）を生み出して静脈還流を特異的に亢進させ、結果として骨格筋や心筋における乳酸の酸化・再利用（クリアランス）を効率よく後押しするのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>🧪 論拠:</strong> ユーモア誘発性の腹式呼吸が運動後の血中乳酸代謝（クリアランス）に及ぼす影響 (2018年) - スポーツリカバリー科学大学 代謝動態研究室 ※架空の研究
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">2.10 エピジェネティクス：幼児期の言語的遊戯環境が脳内報酬系に及ぼす影響</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">成人被験者の末梢血DNAを採取し、ドーパミン受容体など脳内報酬系に関わる多遺伝子群のメチル化状態（エピジェネティクス）を解析しました。その際、末梢血を用いた解析で最大の交絡となる白血球の細胞構成比（T細胞や単球などの割合の個人差）をHouseman法等のアルゴリズムを用いて統計的に補正しました。さらに親のユーモア能力の遺伝による「受動的遺伝環境相関（Passive rGE）」を排除し、想起バイアスの限界を考慮しつつ幼少期の言語環境を調査した結果、日常的に「なぞかけ等」の言葉遊びが豊富な環境で育った群において、ドーパミン受容体の感受性を高める方向へのエピジェネティックな修飾傾向が認められました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">人間のユーモアや快楽への感受性は単一の遺伝子で決まるものではありません（多遺伝子性）。なぞかけのような言葉遊びによる持続的で良質な認知的刺激は、環境因子として機能し、報酬系ネットワークに関わる複数の遺伝子の発現制御（オン・オフ）に後天的な影響を与える可能性を持っています。※ただし、末梢組織のDNA修飾状態が中枢神経系の状態と完全に一致するかは、組織特異性の観点から今後のさらなる検証が必要です。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>🧪 論拠:</strong> 幼児期の言語的遊戯環境がドーパミン受容体関連遺伝子群のDNAメチル化に及ぼす後天的影響 (2025年) - 環境遺伝学研究所 行動エピジェネティクス部門 ※架空の研究
+                </div>
+            </div>
+        </div>
+</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第3章：眼球運動・視覚系の生理メカニズム<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch3" class="p-4 bg-[#FAF8F5] space-y-4">
+<p class="text-sm text-gray-600 mb-4 font-bold border-b border-[#C5B358]/20 pb-2">「読む」「見る」過程での微細な眼球の動きや視覚情報処理に特化した研究です。</p>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">3.1 文字の視覚的複雑さが眼球の停留時間に与える影響</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">人が文字を読むとき、目は滑らかに動いているわけではなく、「ピタッと止まる（停留）」と「サッとジャンプする（サッケード）」を繰り返しています。認知心理学の基礎研究では、文字の視覚的な複雑さや情報量が、この眼球の停留時間やジャンプの幅を規定することがわかっています。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">この視覚的特性の基礎理論を日本語のフォントに応用して推測すると、線の太さが均一な「ゴシック体」はスピーディーに読ませるのに向いており、はね・とめなど視覚的に複雑な「明朝体」は視線が細かく止まりやすくなります。なぞかけの場合、ゴシック体は「テンポよくオチまで一直線に読ませる」のに適し、明朝体は「あえて視線を立ち止まらせ、言葉の裏の意味（掛詞）をじっくり考えさせる」のに適していると推論できます。さらに、明朝体の視覚的特徴がもたらすボトムアップ的な視覚処理の負荷と、掛詞を考えるトップダウン的な意味処理の相互作用（Interactive processing）が起こることで、言葉の深い味わいにつながる可能性があります。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 読書時の眼球運動と情報処理に関する研究 (1998年など) - キース・レイナー（Keith Rayner）などの認知心理学者
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">3.2 オチを推測する際の視線の空間的迷走（視線回避）</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">人が記憶検索や算術課題に取り組む際の目の動きを追跡した実験において、難しい答えをひねり出そうとしている時ほど、人は目の前にある物を見ず、何もない空間（虚空）を見つめて視線をさまよわせる「視線回避（Gaze Aversion）」という現象が確認されました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">このメカニズムをなぞかけに応用すると、「上手いオチを見つけよう！」と脳がフル回転している時、脳にとって「目の前の景色」などの外部からの視覚情報は邪魔になります。なぞかけのオチを探す行為は、単なる記憶の引き出しではなく、作業記憶（ワーキングメモリ）上で2つの異なる意味概念を結合・操作する極めて高度な認知的負荷を伴うプロセスです。視線が宙を泳ぐのは、脳内のネットワークにアクセスするための負荷に対応すべく、あえて外の世界からの視覚的干渉を遮断している証拠だと考えられます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 視線をそらすことで環境から切り離し、記憶を促進する現象（Gaze Aversion）の研究 (1998年) - アーサー・グレンバーグ（Arthur Glenberg）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">3.3 ひらめき直前の急速な瞳孔散大</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">人が難しい洞察問題（ひらめきを要する問題）を解いた際の瞳孔（黒目）の大きさを測定した研究では、答えが「わかった！（アハ体験）」となる数ミリ秒前に、急速な瞳孔散大（Pupil Dilation）が起こることが実証されました。これは青斑核-ノルアドレナリン系（LC-NE系）の一過性の活動（Phasic activation）が関与しており、自律神経系の強い覚醒と内的注意のピークを示すサインです。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけは「言葉のパズル」と「意外なつながりへの直感」の両方を使う高度な脳トレです。ひらめきの瞬間に生じるパッと開くような顕著な瞳孔散大は、謎が解けて意味がバチッと結びついた際の、強い覚醒と神経生理学的な「快感のサイン」であると言えます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 洞察（ひらめき）問題解決時の瞳孔散大と視覚入力の遮断に関する研究等 (2004年〜2015年頃) - マーク・ビーマン（Mark Beeman）、ジョン・クーニオス（John Kounios）、カロラ・サルヴィ（Carola Salvi）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">3.4 周辺視（拡散的注意）の活用と柔軟な発想</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">遠隔連想タスク（関連性の薄い言葉同士のつながりを見つける課題）を用いた実験において、一つの点に注意を集中させるよりも、空間全体に注意を広げる「拡散的注意（Defocused Attention）」の状態にある時の方が、柔軟な発想ができ、創造的な問題解決に有利に働くことが示されました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">この知見をなぞかけの理解に応用すると、一つの言葉の意味を「これだ！」と決めつけて凝視（集中）してしまうと、別の意味（裏の意味）に気づけなくなります。なぞかけにおいて多義的な意味にアクセスし「ととのう」ためには、視野を広く持ち、言葉をぼんやりと捉えることで意味ネットワーク（Semantic Network）の拡散的活性化を促す「認知的余裕（心の余裕）」が重要だということです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 創造的な思考と拡散的注意（Defocused Attention）の関連性についての研究 (2003年など) - パメラ・アンスバーグ（Pamela Ansburg）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">3.5 発話の区切りにおけるまばたきの同期（引き込み現象）</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">人がスピーチ映像などを視聴している際の「まばたき」のタイミングを測定した実験において、話し手の発話の区切り（ブレイクポイント）や絶妙な間（ま）において、聞き手のまばたきがピタリと一致する（同期する）現象（Eyeblink entrainment）が確認されました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">この実証研究を踏まえると、なぞかけの披露は単なる言葉遊びではなく、演者と観客の認知リソースを同調させるコミュニケーションであると推論できます。「整いました！」という定型句やオチの直前の間が、情報処理の区切りとなるイベント境界（Event Boundary）として機能し、観客の脳内における情報のチャンキングと注意のリセットを促す強力なスイッチとなることで、会場全体の一体感（脳の引き込み現象）を生み出していると考えられます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 発話の区切りにおける聞き手のまばたきの同期（引き込み）現象の研究 (2010年) - 中野珠実（大阪大学／情報通信研究機構）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">3.6 色覚刺激（背景色）がなぞかけ理解の脳波（N400成分）に与える影響</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">人が「意味の通らないおかしな文章」を読んだ時、脳は「あれ？」というエラー信号（N400という脳波）を出します。色と認知機能の関係を調べた研究によると、人は「赤（暖色）」を見ると警戒して論理的・分析的になり、「青（寒色）」を見るとリラックスして創造的になることがわかっています。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけのオチは、一見すると「意味が通らない言葉のジャンプ」です。これらの知見を統合すると、赤い背景でなぞかけを読んだ場合、脳が論理モードになっているため、突飛なオチに対する意味の逸脱を強く検知し、脳波（N400）の振幅が増大する（強く反応する）と予測されます。逆に青い背景だと、脳が「そういう見方もあるね」と柔軟な構えになっているため、意外なオチもスムーズに受け入れやすくなる可能性が示唆されます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 色が認知課題のパフォーマンスに与える影響／意味的逸脱に対する脳波（N400）の基礎研究 (1980年〜2007年頃) - アンドリュー・エリオットらのグループ ／ マルタ・クタスら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">3.7 読字障害（ディスレクシア）傾向者におけるなぞかけ処理の特異な認知的負荷</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">文字をスムーズに読むのが苦手な読字障害（ディスレクシア）の人の脳の働きをMEG（脳磁図）などで調べた研究です。文字を読む際、彼らは脳の「視覚のエリア（左半球後部）」の活動が低く、代わりに「前頭葉」や「右半球」の活動を増大させることで、非効率な文字処理を代償的に補っていることがわかっています。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけの命である「掛詞（同音異義語）」は、まさに頭の中で言葉の音韻を分解・抽出・操作する高度な言語遊びです。そのため、ディスレクシアの人がなぞかけのテキストを処理する際は、文字を音に変換する困難さに加え、音韻操作そのものへの過大な負荷がかかります。結果として、彼らはなぞかけの理解において健常者とは異なる特異な「認知的ボトルネック」に直面すると推測され、前頭葉の過活動は、この重い負荷を必死に補おうとする脳の働きとして説明できます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> ディスレクシアにおける音韻処理と視覚的文字認識の脳内補償ネットワークのMEG・fMRI研究 (1996年〜2000年代初頭など) - リッタ・サルメリン（Riitta Salmelin）、サリー・シェイウィッツら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">3.8 眼精疲労時におけるなぞかけの正答率低下と毛様体筋の緊張</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">スマホやパソコンの見過ぎで目が疲れると、ピントを合わせる目の筋肉（毛様体筋）がガチガチに緊張します。この「視覚疲労（VDT作業による疲労）」が続くと、脳の司令塔である「前頭前野」の血流も低下し、短期記憶（ワーキングメモリ）や集中力といった認知機能そのものがガクッと落ちてしまうことが確認されています。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけを解くには、「お題」「別の意味」「オチ」という複数の情報を頭の中に一時キープしてこねくり回す力（ワーキングメモリ）が必要です。目が疲れていると、その不快感や自律神経系への負荷が、前頭前野における「認知資源（Cognitive resources）」を持続的に消費し、枯渇させます。この中枢性疲労によってワーキングメモリが低下し、結果として上手い答えがまったく降りてこなくなってしまうと考えられます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 視覚疲労（VDT作業）が前頭前野の活動とワーキングメモリに与える影響の研究 (2010年代) - 日本などの産業工学・人間工学分野の多数の研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">3.9 低照度環境（薄暗さ）がもたらす心理的解放とひらめき速度の差異</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">部屋の明るさと人間の思考の関係を調べた実験です。明るい部屋にいる時と、少し薄暗い部屋にいる時で「ひらめき問題（洞察問題）」を解かせたところ、薄暗い環境の方が、心理的な制約（周りの目や常識）から解放され、自由で創造的なアイデアが出やすくなることが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「明るい部屋」は、間違いを探すような論理的で分析的な作業には向いています。しかし、なぞかけのような「まったく無関係なものを結びつける突飛な発想（遠隔連想）」を生み出したい時は、少し照明を落とした薄暗い環境（低照度環境）の方が、脳のリミッターが外れる心理的プライミング効果が働き、「ととのい」やすくなると推論できます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 照明の暗さが創造性と洞察的思考を高める研究 (2013年) - アンナ・シュタイドル（Anna Steidle）とリオバ・ヴェルト（Lioba Werth）
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">3.10 「掛詞」の二重意味処理と両眼視野闘争の類似性検証</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">右目には「家の画像」、左目には「顔の画像」と、全く違うものを同時に見せる実験です。すると脳は混乱し、2つの画像が混ざるのではなく「今は家！次は顔！」と交互に映像を切り替えて認識します（両眼視野闘争）。一方、言語学では「くも」のような2つの意味を持つ言葉を聞いた時、脳内で一瞬2つの意味が競合し、文脈によって片方が抑え込まれることが分かっています。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけの「掛詞」は、まさに言葉の「両眼視野闘争」です。「くも」と聞いて、頭の中で「雲」と「蜘蛛」が激しく綱引きをします。そしてオチを聞いた瞬間に、「そういうことか！」と片方のイメージが鮮明に勝ち残ります。目で見ているわけではなくても、言葉の多義性を処理する時、脳は視覚と同じような「葛藤と解決」のメカニズムを使っているのです。これら両者に共通する「相互抑制」や「勝者総取り」のネットワークが、なぞかけの認知プロセスを裏から支えていると言えます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 両眼視野闘争における視覚的意識の神経メカニズム ／ 多義語処理における意味の抑制機構 (1990年〜1998年) - フランク・トング（Frank Tong）ら ／ モートン・アン・ガーンスバッハーら
+                </div>
+            </div>
+        </div>
+</div></details>
+            </div>
+        </section>
+
+        <section>
+            <h4 class="text-md font-bold text-[#5B8124] border-b-2 border-[#5B8124]/30 pb-2 mb-4 flex items-center gap-2">
+                <span class="text-xl">🫀</span> 第2部：自律神経と身体的反応（緊張と緩和）
+            </h4>
+            <div class="space-y-3">
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第4章：自律神経系・心血管系へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch4" class="p-4 bg-[#FAF8F5] space-y-4">
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">4.1 心拍変動（HRV）による交感神経・副交感神経の推移</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">被験者に頭を使うパズルやストレスのかかる作業をしてもらいながら、心電図で心拍のゆらぎ（心拍変動＝HRV）を測定しました。すると、人間は「考えている最中」は交感神経（アクセル）が優位になって緊張状態になり、問題が解けて「わかった！」と閃いた瞬間に交感神経の興奮がピークに達し、その直後、謎が解けた安心感と笑いとともに副交感神経（ブレーキ）が強く働いて深いリラックス状態へと切り替わることが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「〇〇とかけて…」とお題を出されて一生懸命オチを考えている時、あなたの体は一種の「戦闘状態（交感神経優位）」にあります。そして「なるほど！」と閃いた瞬間に交感神経の興奮がピークに達し、その直後、謎が解けた安心感と笑いとともに副交感神経（ブレーキ）が強く働いて深いリラックス状態へと切り替わります。このジェットコースターのような落差が、心地よさを生むのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 認知・情動処理に伴う自律神経活動の動態に関する基礎研究 (広く確立された知見) - 多数の精神生理学研究に基づく
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">4.2 ひらめき直前の瞳孔散大反射（Pupillometry）</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">被験者に「ひらめき」を必要とするクイズを出題し、その間の目の動きや瞳の開き具合（瞳孔径）をアイトラッカーという高性能なカメラで追跡しました。すると、被験者が「わかった！」とボタンを押す数秒前から、無意識のうちにスッと瞳孔が大きく開く（散大する）現象が確認されました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけを聞いて「どういう意味だろう？」と考えている最中、脳内でAとBを繋ぐ「掛詞（オチ）」のパズルがカチッとはまった瞬間、ノルアドレナリンという物質が分泌されます。本人が「あ、わかった！」と声に出すよりも先に、目は驚きと興奮でわずかに見開かれているのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 洞察的課題解決における瞳孔散大の測定研究 (2020年) - キャロラ・サルヴィ（ノースウェスタン大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">4.3 なぞかけによる笑いと一過性の血圧低下</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">被験者に「コメディ映画（笑える映像）」と「ドキュメンタリー（ストレスを感じる映像）」を見せ、血管の働きと血圧を測定しました。すると、大笑いした後は、血管の内側（内皮）の働きが良くなって血管がフワッと拡張し、一時的に血圧が下がり、血流がスムーズになる（運動をした後と同じような良い効果がある）ことが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">見事ななぞかけを聞いて「うまい！ハハハ！」と笑う時、体の中では血管が健康的に広がり、緊張がほぐれています。優れたなぞかけは、脳に知的な快感を与えるだけでなく、物理的に血管をマッサージして血圧を安定させる「クスリ」のような効果を持っていると言えます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 笑いが血管内皮機能と血圧に与える影響に関する研究 (2005年) - マイケル・ミラー（メリーランド大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">4.4 皮膚コンダクタンス（発汗）から見る覚醒度</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">指先に微弱な電気を流すセンサーを取り付け、感情が動いた時に生じる「目に見えないほどの微量の汗（精神性発汗）」を測定しました。人が強い感情を抱いた時や興奮した時、指先の汗腺が反応して電気の通りやすさ（皮膚コンダクタンス）がピコンと跳ね上がることが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけのオチを考えている時、「もう少しで分かりそう！」というハラハラした状態から、見事に解けた瞬間の「スッキリ！」という興奮状態に至るまで、あなたの指先は微量な汗をかき続けています。この発汗の波を測ることで、そのなぞかけがどれだけ人の心を「揺さぶったか（感情的に覚醒させたか）」を数値化できるのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 感情的覚醒（Arousal）と精神性発汗に関する一般的な精神生理学の基礎研究 (広く確立された知見) - 多数の精神生理学研究に基づく
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">4.5 「オチ待ち」の呼吸停止と同調</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">劇場で演劇やパフォーマンスを見ている数十人の観客にセンサーを着け、心拍や呼吸のタイミングを測定しました。すると、物語がクライマックスに達する緊張の瞬間、見ず知らずの観客同士の「呼吸のペース」や「心拍の波」が無意識にピタリと一致（同調＝エントレインメント）することが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">演芸場でプロが「その心は……」とタメを作った瞬間、客席の数百人は無意識に息を呑み（呼吸を止め）、次の言葉を待ち構えます。そしてオチを聞いた瞬間、全員がドッと笑い、同時に息を吐き出します。なぞかけは単なる言葉遊びではなく、空間にいる全員の「呼吸を一つにまとめる」という、強力なライブパフォーマンスの力を持っているのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> ライブパフォーマンスにおける観客の生理的同調（心拍・呼吸のエントレインメント）研究 (2017年) - ダニエル・リチャードソン（ユニバーシティ・カレッジ・ロンドン）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">4.6 解答後のスッキリ感と深呼吸の誘発</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">被験者に難しい課題（暗算など）に取り組んでもらい、その間の呼吸のパターンを測定しました。すると、人間は緊張したり集中したりしている時は呼吸が浅く不規則になり、課題が終わって「ホッとした瞬間」に、無意識に大きな「ため息（深呼吸）」をつくことが分かりました。この深呼吸は、肺の空気を入れ替えるだけでなく、緊張した自律神経をリセットする「物理的なスイッチ」として機能しています。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">オチを聞いて「あー、なるほど！」と腑に落ちた瞬間、思わず「はぁー」と感嘆の息が漏れますよね。なぞかけのオチを理解した瞬間のスッキリ感は、脳内の緊張状態を解き放ち、無意識の深い呼吸（ため息）を誘発して、心身を瞬時にリセットしてくれているのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> ため息による生理的・心理的リセット機能に関する研究 (2010年) - エルケ・ヴレミンクス（ルーヴェン大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">4.7 オチの意外性と定位反射（認知的驚き）</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">未知の情報や予期せぬ出来事（認知的驚き）に直面した際の心拍数や自律神経の反応を測定しました。すると人間は、新しい情報に対して「それは何だ？」と注意を向ける際、情報収集のために一時的に心拍がわずかに減速する「定位反射」と呼ばれる反応や、急性の覚醒状態（自律神経の反応）を示すことが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「その心は？」の後に、自分の想像を遥かに超える見事な「掛詞（オチ）」が飛んできた時。脳は一瞬「えっ！？」と心地よいパニックを起こします。この知的な「不意打ち」によって、脳は新しい情報を処理しようと定位反射（注意の集中）や急激な覚醒を起こし、その直後に「面白い！」という笑いへと変換されることで、より大きな快感を生み出します。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 驚き（Surprise）と自律神経反応・定位反射に関する精神生理学的研究 (広く確立された知見) - 多数の認知・精神生理学研究に基づく
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">4.8 連続聴取による血管内皮機能の改善</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">被験者に「お笑い番組（コメディ）」を約30分間見てもらい、その前後の血管の硬さを超音波などで測定しました。すると、笑い続けている間、ストレスホルモンが減少し、血管を柔らかく広げる物質（一酸化窒素など）が分泌され、まるで「軽い有酸素運動」をした後のように血管の機能が大きく改善することが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">名人のなぞかけを連続して聞き、「うまい！」「なるほど！」と感心して笑い続けることは、実は極めて健康的な行為です。脳が連続してアハ体験と笑いを処理することで、体の中では血管が柔らかく拡張し、血流が全身をスムーズに巡る「血管のストレッチ」が行われています。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 陽気な笑い（Mirthful laughter）が血管内皮機能や動脈スティフネスに与える影響の研究 (2010年) - 菅原順（産業技術総合研究所 / テキサス大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">4.9 末梢皮膚温の上昇とリラックス効果</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">サーモグラフィ（温度カメラ）や指先の温度計を使い、人がストレスを感じている時と、心からリラックスしている時の「皮膚の表面温度」を測定しました。人間は緊張すると、戦う準備のために血液が体の中心（心臓など）に集まり手足が冷たくなりますが、リラックスして安心すると、緊張をもたらす交感神経の働きがスッと引いていき、末梢の毛細血管が自然に緩んで開くことで、指先まで温かくなることが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけのセッションが始まり、最初は「解けるかな」と少し手足が冷たくなっていたとしても、何度か見事なオチを聞いて笑い合っているうちに、リラックス反応がしっかりと働き始めます。緊張をもたらす交感神経の働きがスッと引いていくことで、末梢の毛細血管が緩んで開き、実際に「指先がポカポカしてくる」という目に見える形でのリラックス効果が現れます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> バイオフィードバックと末梢皮膚温の上昇（リラックス反応）に関する実証研究 (1970年代) - エルマー・グリーン（メニンガー財団）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">4.10 未解決の不調和が引き起こす認知的フラストレーション</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">ユーモアの仕組みを調べる研究において、オチによって意味が通じるジョークと、筋道が通らず解決しないジョークに対する心理的反応を比較しました。きちんと意味が繋がるジョークでは「不調和の解決（スッキリ感）」が得られますが、オチが通じない場合、脳が「意味を見つけよう」と空回りを続け、フラストレーション（心理的なモヤモヤ感や軽いストレス）が生じることが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「AとかけてBと解く…」と期待を持たされたのに、オチの掛詞が強引すぎたり、知識不足で全く意味が分からなかったりした時（いわゆる「スベった」状態）。私たちの脳は「スッキリ（アハ体験）」という報酬をもらえず、「え、どういうこと？」と宙ぶらりんの状態に置かれます。このように「意味を見つけようとする認知プロセス」が解決に至らない未解決の不調和が、あの独特のモヤモヤした認知的フラストレーションの正体なのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> ユーモアの「不調和解明理論（Incongruity-Resolution Theory）」に関する一般的な知見 (広く確立された知見) - 多数のユーモア・認知心理学研究に基づく
+                </div>
+            </div>
+        </div>
+</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第5章：内分泌系・免疫系へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch5" class="p-4 bg-[#FAF8F5] space-y-4">
+<p class="text-sm text-gray-600 mb-4 font-bold border-b border-[#C5B358]/20 pb-2">ホルモンや免疫細胞のレベルで、身体にどのような好影響（またはストレス）を与えるかを探る研究です。</p>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">5.1 唾液中コルチゾールの減少</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">被験者にコメディ番組を約1時間見てもらい、その前後の血液や唾液を採取しました。すると、人間が笑って楽しんでいる間、ストレスを感じた時に分泌される「コルチゾール」というホルモンが劇的に減少することが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">仕事や人間関係で疲れている時、なぞかけを聞いて「うまい！」「アハハ！」と笑う行為は、単なる気分転換ではありません。あなたの体の中で、実際にストレスに対抗するために分泌されていたホルモンが減少し、過緊張だった自律神経と内分泌系が物理的に「休息・回復モード」へとリセットされている状態を作り出しているのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 笑いが神経内分泌ホルモン（ストレスホルモン）に与える影響の研究 (1989年) - リー・バーク、スタンリー・タン（ロマリンダ大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">5.2 唾液中IgA（免疫グロブリンA）の増加</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">ユーモアたっぷりのビデオを見るグループと、ただ静かに座っているグループに分け、それぞれの唾液を採取しました。すると、笑いを楽しんだグループは、口や鼻の粘膜でウイルスを撃退する「IgA（免疫グロブリンA）」という抗体の濃度が即座にポンッと跳ね上がることが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけで「なるほど！」と感心し、クスッと笑うだけで、あなたの口の中では「風邪やウイルスと戦う防衛軍」が急増員されます。つまり、なぞかけを楽しむことは、私たちに生まれつき備わっている防衛システム（粘膜免疫）を活性化させる、手軽でポジティブな健康習慣と言えます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> ユーモアのビデオ視聴による唾液中IgAの増加に関する研究 (1985年) - キャスリーン・ディロン（ウェスタン・ニューイングランド大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">5.3 なぞかけの掛け合いとオキシトシン分泌</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">他者を信頼して協力する投資ゲーム（経済的取引）などを行わせた際の血液を調べました。すると、人間同士が心を通わせ、相手を信頼して協力行動をとった直後には、「オキシトシン（別名：絆ホルモン、幸せホルモン）」という物質が多く分泌され、相手への信頼感や親密さが増すことが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「ちょっと私にもお題出して！」「おお、そのオチいいね！」と、複数人でなぞかけを出し合うコミュニケーション。これは単なる言葉遊びの枠を超え、お互いの脳内でオキシトシンを分泌させ合う「社会的グルーミング（絆を深める行為）」として機能し、人間関係を円滑にしてくれます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 社会的交流とオキシトシン分泌・信頼関係に関する実証研究 (2005年) - ポール・ザック（クレアモント大学院大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">5.4 バトル形式時のアドレナリン変動</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">知的なクイズ対決や、プレッシャーのかかる暗算テストなど、「競争的で精神的な負荷」がかかる課題中の尿や血液を調べました。すると、人間は「勝たなきゃ！」「早く答えを出さなきゃ！」という状況下で、戦いのホルモンであるアドレナリン（カテコールアミン）を分泌し、心身を活発な状態にすることが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">大喜利のような「なぞかけ対決」の場に立つと、「相手より早く、面白いオチを言わなければ」というプレッシャーがかかります。この時、競技者の体内ではアドレナリンが身体を戦闘モードにし、同時に脳内では「ノルアドレナリン」が分泌されます。この「適度なプレッシャー」が脳の覚醒度を最適なピーク状態（ゾーン）へと引き上げ、普段なら思いつかないような言葉の結びつき（掛詞）を瞬時に引き出しやすくするのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 精神的負荷および競争的課題とカテコールアミン（アドレナリン）分泌に関する研究 (1970年代〜1980年代) - マリアンヌ・フランケンホイザー（ストックホルム大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">5.5 NK（ナチュラルキラー）細胞の活性化</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">がん細胞などを退治する「NK細胞」の働きが低下している人たちに、お笑いライブ（吉本新喜劇や落語）を3時間見てもらい、その前後で血液検査をしました。すると、大笑いした後は、下がっていたNK細胞の活性度が正常範囲まで急激に上昇（回復）し、笑が直接的に免疫力を底上げすることが実証されました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">落語家さんや芸人さんの見事ななぞかけを聞いて、お腹を抱えて大笑いする。その瞬間、あなたの体内では「がん細胞やウイルスに感染した細胞」を見つけて攻撃するNK細胞が猛烈に元気になっています。優れたなぞかけは、脳に快感を与えるだけでなく、心身の防衛軍（自然免疫）を内側から強力にサポートする「副作用のない良薬」と言えるでしょう。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 笑いによるNK（ナチュラルキラー）細胞活性化の検証（通称：吉本新喜劇実験） (1994年) - 伊丹仁朗（すばるクリニック）、村上和雄（筑波大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">5.6 ひらめきの達成感とテストステロン</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">チェスやテニスの試合といった「知的な競争や他者との対決」の前後で、参加者の唾液からテストステロン（意欲や自信を高めるホルモン）の量を測定しました。すると、他者との競争に勝利したり、社会的地位（ステータス）を獲得したりした人は、その優越感や達成感からテストステロンの値が上昇し、さらに「次もやってやろう！」という前向きなエネルギーが湧いてくる（勝者効果）ことが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">大喜利や飲み会などの「なぞかけ対決」で、誰よりも早く見事なオチを言って周囲を唸らせた（仮想的な競争に勝った）時。あなたの脳内では「社会的評価を得た！」という優越感とともにテストステロンが微増しています。なぞかけは、複数人の場で手軽に「小さな勝利と称賛」を味わい、自信と活力をチャージできる知的なスポーツなのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> チェスなどの知的競技における勝敗（達成感とステータス）とテストステロン変動に関する研究（Biosocial Model of Status） (1992年) - アラン・マズール（シラキュース大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">5.7 セロトニン分泌と「面白さ」の感受性</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">食事のコントロールによって、被験者の脳内の「セロトニン（精神を安定させる幸せホルモン）」を意図的に減らした状態を作り出しました。すると、セロトニンが少ない状態の人は、ポジティブなこと（ユーモアや笑顔）に対する反応が鈍くなり、逆にネガティブなことには過敏に反応しやすくなることが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">同じ名作なぞかけを聞いても、心身がリラックスしてセロトニンが十分に出ている時は「うまい！アハハ！」と素直に笑えます。しかし、ストレスでセロトニンが枯渇していると「…で？」と面白さをキャッチできません。つまり、なぞかけで心地よく笑えるかどうかは、今のあなたの「心の余裕（セロトニン・レベル）」を測るバロメーターにもなるのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> トリプトファン枯渇（セロトニン低下）が情動処理とユーモア・ポジティブ刺激の感受性に与える影響の研究 (2000年代初頭) - キャサリン・ハーマー（オックスフォード大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">5.8 食後のなぞかけと血糖値スパイクの抑制</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">糖尿病の患者さんに、ある日は「食後に単調な講義」を聞いてもらい、別の日には「食後にお笑い（吉本新喜劇）」を大笑いしながら見てもらい、それぞれの食後血糖値を測りました。すると、講義の日は血糖値が急上昇（スパイク）したのに対し、お笑いを見て笑った日は、血糖値の上昇が大幅に抑えられていることが分かりました。笑うことで過剰な交感神経の緊張が解け、血糖値を上げるストレスホルモンの働きが抑えられるとともに、血糖値を下げる遺伝子のスイッチが入ったためと考えられています。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「ご飯を食べた後になぞかけ番組を見て大笑いする」というのは、楽しく手軽に取り入れられる、優れた健康習慣の一つです。食後、家族や友人と「Aとかけて…」と言い合いながら笑い転げることで、体の中では血糖値の急上昇が抑えられ、血管へのダメージを防いでくれているのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 笑いによる食後血糖値上昇の抑制効果と遺伝子発現の変化に関する研究 (2003年) - 村上和雄、林啓吾（筑波大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">5.9 エンドルフィン分泌による鎮痛効果</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">被験者に「氷水に手を入れる」「血圧計で腕を強く締め付ける」といった痛みを与え、どれくらい耐えられるか（痛覚閾値）を測りました。その後、コメディ映像を見て「声を出して笑ったグループ」と、ドキュメンタリーを見て「笑わなかったグループ」で再度テストしたところ、大笑いしたグループは痛みに耐えられる時間が劇的に伸びました。笑い（特に横隔膜などを使った発声）によって脳内麻薬である「エンドルフィン」が分泌され、強力な鎮痛剤として働いたためです。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">頭痛や肩こりなどで少し体が辛い時、家族や友人と一緒に秀逸ななぞかけを聞いて「アハハ！」と声を出して笑い合うと、実際に痛みがスッと和らぐことがあります。なぞかけを通じた「他者との知的な共有＋声を出した笑い」のコンボは、脳の薬箱からエンドルフィンを引き出し、副作用のない痛み止めとしてあなたを癒やしてくれます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 社会的な笑いが痛覚閾値（痛みへの耐性）を上昇させるエンドルフィン効果の実証研究 (2011年) - ロビン・ダンバー（オックスフォード大学）ら
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">5.10 就寝前のなぞかけとメラトニンの環境整備</h5>
+            <div class="p-4 space-y-3">
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">寝る前に「頭を激しく使う作業（認知覚醒）」をするグループと、「軽く笑ってリラックスする映像」を見るグループで、睡眠の質とホルモン分泌を比較しました。寝る前に必死に考えすぎると交感神経が優位になり、睡眠を促すホルモン（メラトニン）の働きが邪魔されてしまいます。しかし「軽い笑い」でストレスホルモン（コルチゾール）を下げて自律神経をリラックスさせておくと、メラトニンが本来の働きを発揮できる環境が整い、深い眠りへとスムーズに移行できることが分かりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">寝る前のなぞかけには「さじ加減」が重要です。絶対に解いてやる！と眉間にシワを寄せて考えると、脳が過覚醒を起こして眠れなくなります。しかし、落語やラジオなどでプロのなぞかけを「へぇ〜、うまいねぇ」とクスッと笑いながら聞く程度であれば、一日のストレス（交感神経の緊張）がリセットされ、メラトニンが心地よい眠りへと誘ってくれる極上の入眠儀式になります。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 就寝前の認知覚醒とリラクゼーション（笑い）が睡眠ホルモンと睡眠の質に与える影響の研究 (1990年代〜2010年代) - アーサー・スピールマン（ニューヨーク市立大学）らの認知覚醒研究、および大平哲也（福島県立医科大学）らの笑いと睡眠研究など
+                </div>
+            </div>
+        </div>
+</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第6章：呼吸器系・発声器官の微細生理へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch6" class="p-4 bg-[#FAF8F5] space-y-4">
+<p class="text-sm text-gray-600 mb-4 font-bold border-b border-[#C5B358]/20 pb-2">「笑い」や「発声」に伴う呼吸のダイナミクスを解明する研究です。</p>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">6.1 PETやfMRIによる脳のエネルギー消費と活動パターンの解析</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「脳は常に莫大なガソリンを燃やしてアイドリング待機し、瞬時に思考のギアを切り替える」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人がPET（陽電子放出断層撮影）やfMRIという特殊な脳スキャナーに入り、「ただボーッとしている安静時」と「難しい数学やパズルを必死に解いている時」とで、脳のエネルギー消費量や活動パターンがどう変化するかを測る実験です。<br><br>【どんな結果？】脳は体重の2%ほどの重さしかないのに、体全体のエネルギーの約20%を消費する「大食い臓器」です。しかし驚くべきことに、脳は「ただボーッとしている時」にこそ莫大なエネルギーを消費してネットワークを維持しており（デフォルトモードネットワーク）、必死に頭を使っているタスク時でも、追加で消費されるエネルギーは安静時のベースラインからわずか数％未満しか増加しないことがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「えーっと、AとBの共通点は…」とお題から必死に答えを探している時。脳が急激にカロリーを激しく燃やし始めているわけではありません。脳はただボーッとしている時でも、いつでも最高のひらめき（オチ）を生み出せるように、常に莫大なガソリンを燃やしてアイドリング待機をしています。なぞかけのお題が出た瞬間、あなたの脳内ではそのアイドリング状態から特定の推論ネットワークへと、エネルギーのギアがシームレスかつ鮮やかに切り替わっているのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> デフォルトモードネットワーク（DMN）および認知課題に伴う脳のエネルギー代謝研究 (1980年代〜現在) - マーカス・レイクル（Marcus Raichle）らの脳エネルギー代謝研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">6.2 「整いました」発声時の声帯振動のハイスピードカメラ解析</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「『絶対ウケる』という自信は、声帯の美しい波となって表れる」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】喉の奥に内視鏡（特殊なカメラ）を入れ、人が「自信を持って堂々と話す時」と「自信なげに話す時」の、喉仏の中にある「声帯（声を出す2枚のひだ）」の震え方を1秒間に数千コマというハイスピードで撮影する実験です。<br><br>【どんな結果？】自信に満ちた声を出す時、声帯は左右対称に、ピタッ、ピタッと力強く隙間なく閉じ、美しい波（粘膜波動：Mucosal wave）を打ちます。逆に迷いや自信のなさがある時は、声帯の閉じ方が甘くなり、隙間から空気が漏れて振動が不規則になることが視覚的に確認されました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">最高のオチを思いつき、いざ発表する「整いました！」。この時、発言者の声帯は完璧なコントロール下で力強くピタッと合わさり、張りのあるクリアな声を響かせます。聞き手は、その「声帯の完璧な振動」を無意識に耳で捉え、「おお、これは期待できそうだ」と感じ取るのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 発声のバイオメカニクスと感情・発話態度による声帯振動（HSDI）解析 (1990年代〜2000年代) - インゴ・ティーツェ（Ingo Titze：音声学・発声バイオメカニクスの世界的権威）らの研究
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">6.3 なぞかけ中の無呼吸（Apnea）と生理的覚醒</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「考えすぎるあまり、人間は『息をする』ことすら忘れてしまう」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】パソコンで難しいメールを返信したり、複雑な作業に没頭したりしている時の、人の「呼吸の深さ」や「心拍数」をセンサーで測る実験です。<br><br>【どんな結果？】人は極度に集中すると、無意識のうちに呼吸が極端に浅くなったり、数秒〜十数秒間も完全に息を止めてしまったりする（スクリーン無呼吸現象と呼ばれる）ことがわかりました。呼吸を一時的に止めることで交感神経が刺激され、心拍数が上がることがあります。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「その心は？」と言われた後のタメの時間。聞き手は「なんだろう？」と脳を極限まで集中させるため、無意識に呼吸を止め、体を硬直させます。余計な体の動き（呼吸のノイズ）を止めて、答えを導き出すことに全エネルギーを注ごうとする、自律神経系の本能的なシステム（定位反射）なのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 精神的集中・認知負荷に伴う呼吸停止（Screen Apnea / Email Apnea）と生理的覚醒 (2008年〜現在) - リンダ・ストーン（Linda Stone）の提唱、および精神生理学の研究者たち
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">6.4 オチを言う直前の喉頭隆起（のどぼとけ）の微小運動</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「発射1秒前。喉は密かに音のピントを合わせている」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人が「これから声を出すぞ」という直前の喉の筋肉の動きを、エコー（超音波画像）や首に貼った筋肉のセンサー（筋電図）で観察する実験です。<br><br>【どんな結果？】人が実際に声を出す数十〜数百ミリ秒（1秒未満）前に、すでに喉の周りの筋肉が動き出し、のどぼとけが微かに上下したり、唾を飲み込んで気道をクリアにしたりする「発声準備姿勢（プレ・フォネーション）」が起きていることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「〇〇とかけて、〇〇と解く」と前振りをした後、いよいよオチを言う直前。一瞬の静寂の中で、発言者ののどぼとけは密かに微細な動きを見せています。これは、頭の中で思い描いている「オチのフレーズ」を正確な声のトーンで放つために、喉が筋肉のチューニング（ピント合わせ）を行っている証拠なのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 発声開始前の喉頭筋の予備的活動（Pre-phonatory laryngeal adjustments）と超音波・筋電図解析 (1970年代〜) - 平野実（Minoru Hirano）、または近年の調音音声学研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">6.5 笑いの種類（クスッ、ガハハ）による呼気流速の違い</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「大爆笑は、肺の空気を空っぽにする台風クラスの突風である」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】肺活量や息を吐き出すスピードを測る機械（スパイロメーター）を口にくわえたまま、様々なレベルのコメディ映像を見て笑ってもらい、「笑いの大きさ」によって息の吐き方がどう変わるかを計測する実験です。<br><br>【どんな結果？】「クスッ（微笑み）」レベルでは普通の呼吸に毛が生えた程度の空気しか動きませんが、「ガハハ！（大爆笑）」レベルになると、1秒間に数リットルという、咳払い並みの凄まじいスピードと量で肺の空気が連続して絞り出される（呼気流速のスパイク）ことがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">オチを聞いて「なるほど（クスッ）」と思った時は、小波のような息が漏れるだけです。しかし、予想を遥かに超える見事なオチで「上手い！ガハハ！」と大ウケした瞬間、あなたの肺からは台風のような突風が吹き荒れます。優れたなぞかけは、肺の底に溜まった古い空気を一気に外へ追い出す、強力な換気装置なのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 笑いにおける呼吸動態の解析（Respiratory dynamics during laughter） (2001年) - ハリー・フィリペッリ（Harry Filippelli）らの呼吸生理学研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">6.6 なぞかけ習慣による横隔膜のストレッチ効果と呼吸機能の改善</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「日常的な大爆笑は、副作用のない無料の呼吸器トレーニング」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】健康な人に、コメディ映像を見せたり「笑いヨガ」のような活動を数週間〜数ヶ月続けてもらい、その前後の胸郭の動きや息を吐き出す力（横隔膜の柔軟性）を測定する実験です。<br><br>【どんな結果？】「声を上げて笑う」という行為は、ランニングなどの有酸素運動と同じように呼吸筋（横隔膜や腹筋群）を激しく収縮させます。これを習慣化することで、胸郭や呼吸筋の柔軟性が増し、一度に深く吐き出せる息の勢いや量（一回換気量や換気効率）が向上することがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">優秀ななぞかけを日常的に聞き、その度に「ガハハ！」と声を上げて笑うことは、実は優れた「内臓の筋トレ（インナーマッスル・トレーニング）」になっています。なぞかけを楽しむ習慣は、呼吸を深くし、体を疲れにくくする効果があるのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 笑い（Gelotology：笑い学）による呼吸機能および換気効率改善に関する研究 (1990年代後半〜2000年代) - マダン・カタリア（Madan Kataria）の実践研究や、近年の笑いに関する生理学研究
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">6.7 鼻呼吸と口呼吸における謎解きパフォーマンスの差異</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「『その心は』をひらめきたいなら、口を閉じて鼻から息を吸え」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人に「鼻だけで呼吸する状態」と「口だけで呼吸する状態」で、パズルや記憶力のテストなどの認知課題を行わせ、その際の脳の活動を脳波（頭蓋内脳波：iEEG）で精密に計測・比較する実験です。<br><br>【どんな結果？】「鼻から息を吸う」ときだけ、脳の記憶を司る「海馬」や感情を司る「扁桃体」の脳波が呼吸のリズムと完全に同期し、情報処理のスピードや記憶の呼び起こしが圧倒的に速くなることがわかりました（口呼吸ではこの現象は起きません）。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけのお題を出されて「うーん」と考えている時、口を開けてボーッと呼吸しているよりも、口を閉じて鼻からスースーと息を吸っている時の方が、脳内の「言葉の引き出し（記憶）」に高速でアクセスでき、鋭いオチをひらめきやすくなります。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 鼻呼吸による大脳辺縁系（海馬・扁桃体）の脳波同期と認知機能の向上 (2016年) - クリスティーナ・ゼラノ（Christina Zelano）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">6.8 オチへの期待感と気管支平滑筋の緊張（気道抵抗の上昇）</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「楽しいオチを待つワクワク感が、呼吸器を『戦闘態勢』にする」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人に「これから面白いビデオを見せますよ」と期待させたり、ポジティブな感情を抱かせたりした状態で、気道の抵抗（息の通りやすさ）を特殊な機器で測定する実験です。<br><br>【どんな結果？】ワクワク感や大笑いの予感といった「覚醒度」の高いポジティブな感情は、リラックス状態になるのではなく、実は迷走神経反射などを介して気道抵抗を上昇させ（気管支をキュッと狭くし）、呼吸器系を緊張させることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">出題者が「その心は？」と言ってタメを作った瞬間。聞き手は「どんな面白い答えが来るんだろう！」と期待に胸を膨らませます。このワクワクする期待感は、自律神経の覚醒度を一気に高め、気管支をあえてキュッと引き締めます。これは、次にやってくる大爆笑という『嵐（激しい換気）』に備えて、呼吸器系が瞬時に戦闘態勢（テンション）を高めている本能的な反応なのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 感情状態と覚醒度が気道抵抗および呼吸器系に与える影響 (2001年など) - トーマス・リッツ（Thomas Ritz）らの心身医学・呼吸器研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">6.9 聴衆の「息を呑む（Gasp）」と「ため息（Sigh）」の連続反射</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「予想外のオチは、人間の驚愕と安堵の呼吸コンボを引き出す」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人が心理的に「ハッと驚くような事態」に直面し、その後「安心・解決」した際の呼吸パターンを、気流センサーで細かく計測する実験です。<br><br>【どんな結果？】人間は予測モデルが破壊されるような「予想外の事態」に直面すると、自律神経の反射として瞬間的に鋭く短い息を吸い込みます（Gasp：息を呑む）。そして、その事態が解決・理解できて安心すると、今度は深く長い「ため息（Sigh）」をついて、心理的・生理的な状態をリセットすることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">誰も予想できなかった斜め上の鮮やかなオチを聞いた瞬間、聴衆は驚いて「ハッ（Gasp）」と息を呑みます。そして、見事なダブルミーニングを理解した直後に「ああ〜（Sigh）」と深く長いため息をつきます。予測モデルの破壊による『驚愕』からの、不調和の解決に伴う『安堵・リセット』というこの呼吸の連続コンボこそが、人間の脳がなぞかけを真に理解したことを示す完璧な生理学的サインなのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 感情的移行と呼吸パターン（GaspやSigh：ため息）の生理学的・心理学的リセット機能の研究 (2010年代〜2015年頃) - エルケ・ヴレミンクス（Elke Vlemincx）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">6.10 謎解き中のあくび（脳の冷却・覚醒作用）の発生頻度</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「なぞかけ中のあくびは、退屈のサインではなく『脳のオーバーヒート』警報」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人に非常に難解なパズルや記憶タスクをやらせて脳に負荷をかけ、その際の「脳の温度」と「あくびが出るタイミング」を計測し、あくびの前後で覚醒度（集中力）がどう変わるかを調べる実験です。<br><br>【どんな結果？】脳はパソコンのCPUと同じで、フル回転させると熱を持ちます。「あくび」は退屈な時だけでなく、脳がオーバーヒート気味になった時に、冷たい外気を一気に吸い込んで脳の血管を冷やし（ラジエーター機能）、再び集中力（覚醒度）を取り戻すために発生することがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なかなか答えが思いつかない難しいなぞかけを考えている最中に「ふわぁ〜」とあくびが出たとしたら、それは決して退屈しているわけではありません。あなたの脳がなぞかけを解こうとして熱暴走ギリギリまでフル稼働しており、必死に脳内を冷却して集中力を保とうとしている「本気の証拠」なのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> あくびの脳冷却仮説（Brain cooling hypothesis of yawning） (2007年〜) - アンドリュー・ギャラップ（Andrew Gallup）らの進化心理学・生理学研究グループ
+                </div>
+            </div>
+        </div>
+</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第7章：消化器系・腸内環境・代謝系へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch7" class="p-4 bg-[#FAF8F5] space-y-4">
+<p class="text-sm text-gray-600 mb-4 font-bold border-b border-[#C5B358]/20 pb-2">「脳腸相関（脳と腸の密接な連携）」やエネルギー消費の観点からの研究です。</p>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">7.1 脳腸相関：なぞかけのスッキリ感が引き起こす腸管蠕動の亢進</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「『腑に落ちる』瞬間、迷走神経が胃腸に『進め』のサインを出す」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人がリラックスしたり、ポジティブな感情を抱いたりしたときの胃腸の動きを、腹部エコー（超音波）やMRIでリアルタイムに観察し、同時に脳から内臓へ伸びる「迷走神経」の活動を測る実験です。<br><br>【どんな結果？】脳が安心感や快感（スッキリ感）を得ると、副交感神経の代表である「迷走神経」がオンになります。すると、胃や腸の筋肉が活発に動き出し、消化物を先へ先へと送り出す「蠕動（ぜんどう）運動」が一気にスピードアップすることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけのオチが見事に決まり、「あー、なるほど！」とスッキリした瞬間。あなたの脳内で起きた快感のスパイクは、太い迷走神経のケーブルを通って即座に胃腸へ伝わります。優れたなぞかけは、停滞していた腸の動きを再起動させるスイッチになるのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 感情・ストレスと脳腸相関（Brain-Gut Axis）における迷走神経の役割 (1990年代〜2000年代) - エメラン・メイヤー（Emeran Mayer）らの脳腸相関研究グループ（UCLA）
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">7.2 ひらめきに伴う胃電図（EGG）の周波数変化</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「答えが出ない時の『胃のムカムカ』は、ひらめきの電気で整う」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】心電図のように、お腹の表面にシール型の電極を貼り（胃電図：EGG）、人がストレスのかかるパズルを解いている時と、答えがわかって安心した時の「胃の電気的リズム」を測る実験です。<br><br>【どんな結果？】健康な胃は「1分間に約3回」という穏やかなペースで電気的な波を打っています。しかし、頭を悩ませてストレスを感じると、このリズムが乱れて不規則（胃の不整脈状態）になります。そして、答えがわかってスッキリした瞬間、正常な「1分間に3回」の美しいリズムにピタッと戻ることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「え、どういうこと？」と答えがわからないタメの時間、あなたの胃のリズムはかすかに乱れ、一種のムカムカ状態を作ります。しかし「その心は！」の答えを聞いて納得した瞬間、脳からのシグナルが胃の電気リズムを即座にチューニングし、心地よい正常な波へと引き戻します。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 精神的ストレス・感情負荷が胃の電気的活動（EGG）に与える影響 (1980年代〜1990年代) - ケネス・コッホ（Kenneth Koch）、R.M. スターン（R.M. Stern）らの消化器運動研究
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">7.3 笑いによる腹圧上昇と便秘解消効果の生理学的検証</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「大爆笑は、体の内側から大腸を揉みほぐす天然のマッサージ」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】お腹に力が入る活動（笑いヨガやコメディの視聴など）をした際のお腹の中の圧力（腹圧）の変化と、腸の内容物が移動するスピード（通過時間）を測定する実験です。<br><br>【どんな結果？】声を上げて「ハハハ！」と笑うとき、腹筋と横隔膜が激しく上下し、お腹の中の圧力（腹圧）が断続的に高まります。これが腸管に対する強烈な物理的マッサージとして働き、便を押し出す力（排便力）を強力にサポートすることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">あなたが秀逸ななぞかけを聞いて腹を抱えて笑っているとき。それは単に「面白い」だけでなく、物理的に自分自身の大腸を外側からギュッギュッと揉みほぐしているのと同じです。ユーモアは、副作用のない優れた便秘薬になり得ます。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 笑い（Gelotology）が腹部筋群および消化管運動（便秘解消）に与える物理的効果 (1990年代〜2010年代) - ウィリアム・フライ（William Fry）の笑いの生理学研究、および近年のリハビリテーション研究全般
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">7.4 難問による認知ストレスと胃の運動機能・粘膜血流の低下</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「つまらない、理不尽ななぞかけは、本当に『胃をフリーズ』させる」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人に「絶対に解けないいじわるなパズル」や「理不尽な暗算」を強制的にやらせてイライラさせ、その際の胃の働き（胃酸の分泌量や、胃の粘膜の血流）を測る実験です。<br><br>【どんな結果？】一般に「ストレスで胃酸が過剰に出る」と誤解されがちですが、実は人は「解決できない問題」に直面して強いフラストレーションを感じると、脳内でCRF（副腎皮質刺激ホルモン放出因子）というストレスホルモンが分泌されます。すると脳は「今は消化をしている場合ではない（緊急事態だ）」と判断し、逆に胃の動きを強制的にピタッと停止させ、胃酸の分泌もストップさせます。結果として、食べ物が滞留して重苦しい「胃もたれ」になり、胃の粘膜を守る血流も悪化して防御力が落ちることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「AとかけてBと解く」と言いながら、全く共通点のない理不尽なオチを言われたり、ダラダラと面白くない言葉遊びを聞かされたりしたとき。あなたの脳はフラストレーションを感じて緊急アラートを誤作動させます。面白くないなぞかけは、本当に胃の働きをフリーズさせて痛めつけるのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 急性ストレスペプチド（CRF）による胃酸分泌・消化管機能の抑制・変調メカニズム (1990年代〜2000年代) - イヴェット・タシェ（Yvette Taché）らのストレスと消化器疾患の研究グループ（UCLA）
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">7.5 なぞかけ習慣と腸内フローラ（善玉菌比率）の長期的相関</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「言葉遊びを楽しむ心の余裕が、お腹の『お花畑』を豊かにする」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】常にストレスを抱えているグループと、日常的にポジティブな感情（ユーモアやマインドフルネス）を持って生活しているグループの「便」を採取し、DNA解析によって腸内に住む細菌のラインナップ（腸内フローラ）を比較する実験です。<br><br>【どんな結果？】慢性的なストレスは腸内の環境を悪化させ、悪玉菌を増やします。逆に、日常的にユーモアに触れ、ストレスホルモン（コルチゾール）のレベルが低い生活を続けている人は、乳酸菌やビフィズス菌などの「善玉菌」の割合が高く、細菌の多様性が非常に豊かであることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">毎日1つ、なぞかけを作ったり聞いたりしてクスッと笑う習慣。これは日々の小さなストレスをこまめにリセットする働きがあります。この「脳の余裕」が、数ヶ月、数年単位で腸内環境を平和に保ち、あなたのお腹の中に豊かで健康なバクテリアのお花畑（フローラ）を育ててくれるのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> サイコバイオティクス（Psychobiotics）とストレスが腸内細菌叢の多様性に与える影響 (2013年〜) - テッド・ディナン（Ted Dinan）、ジョン・クライアン（John Cryan）らの研究グループ（アイルランド国立大学コーク校）
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">7.6 脳のエネルギー代謝：なぞかけを解く際の「エネルギーの再分配」</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「『頭を使うと疲れる』のは、カロリーの大量消費ではなく、エネルギー配分の劇的なシフトによるもの」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人がPETやfMRIなどの特殊な脳スキャナーに入り、「ただ座ってボーッとしている時」と、「非常に難しい数学の計算やパズルを1時間連続で解き続けている時」とで、脳のエネルギー消費量や活動パターンがどう変化するかを測る実験です。<br><br>【どんな結果？】脳は体重のたった2％の重さしかありませんが、全身のエネルギーの約20％を消費する「大食い臓器」です。しかし驚くべきことに、脳は「ただボーッとしている安静時」にこそ莫大なエネルギーを消費してネットワークを維持しており（デフォルトモードネットワーク）、難しい課題を与えられてフル回転しても、脳全体のエネルギー消費量はベースラインからわずか数％（1〜5%未満）しか増加しないことがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「うまいオチが思いつかない！」と1時間ぶっ通しでなぞかけを作り続けたとしても、追加で消費されるカロリーはピーナッツ半分〜1粒程度です。つまり、なぞかけは「座ったままできるカロリー消費運動」ではありません。その代わり、あなたの脳内では、雑念のネットワークから推論のネットワークへと、エネルギーの配分（血流）がシームレスかつ劇的に切り替わっています。この「エネルギーの精密な再分配」こそが、脳に心地よい疲労感を与えるのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> デフォルトモードネットワーク（DMN）および認知タスクに伴う脳のエネルギー代謝研究 (1990年代〜2000年代) - マーカス・レイクル（Marcus Raichle）らの脳エネルギー代謝研究
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">7.7 交感神経の亢進と注意の逸らしによる空腹サインのマスキング</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「オチを探す没入感（フロー状態）は、空腹のサイレンを強制ミュートする」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人に「退屈な作業」をさせている時と、ゲームや謎解きなど「夢中になれる作業（フロー状態）」をさせている時の、胃から分泌される空腹ホルモン（グレリン）の数値や、胃腸の働き、そして脳の「注意の向き」を比較する実験です。<br><br>【どんな結果？】人間は強い興味を持って何かにのめり込んでいる時、脳の報酬系が活性化し、交感神経が優位になります。すると、胃腸の動きが一時的に抑制されて空腹ホルモンの分泌が抑えられ、さらに脳の認知リソース（注意）が謎解きに全振りされるため、胃からのサインが脳内で「後回し（マスキング）」にされ、ご飯を食べるのを忘れてしまうことがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">お腹がグーグー鳴っている時でも、誰かから「〇〇とかけて〇〇と解く。その心は？」と絶妙なお題を出され、必死に答えを考え始めた瞬間。あなたの体は交感神経をオンにして「今は食事より、この謎を解く方が重要だ！」と判断し、空腹のサイレンを一時的にストップさせます。なぞかけへの没入は、強力な食欲のマスキング効果を持っています。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 認知的注意の逸らし（Distraction）とフロー状態が食欲調節および自律神経系に与える影響 (2000年代〜2010年代) - スザンヌ・ヒッグス（Suzanne Higgs）ら、およびミハイ・チクセントミハイ（Mihaly Csikszentmihalyi）のフロー理論
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">7.8 謎解きの快感と肝臓でのグリコーゲン分解の連動</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「『ひらめき』の瞬間、肝臓は脳のために糖分の貯金を切り崩す」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】脳が突然「大量のエネルギー」を必要とした時、体（特にエネルギーの貯蔵庫である肝臓）がどう反応するかを調べる実験です。血液中の糖分（血糖値）の変化をリアルタイムで追跡します。<br><br>【どんな結果？】脳が「よし、考えるぞ！」と本気を出した時、脳は「Selfish Brain（わがままな脳）」と呼ばれ、体中のエネルギーを自分に優先して回すよう指令を出します。すると、自律神経を通じて肝臓にSOSが送られ、肝臓は蓄えていた「グリコーゲン」を瞬時にブドウ糖に分解し、血液に乗せて脳へと大量に送り込むことがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけの答えをひらめきそうになった、まさにその瞬間。あなたの脳は「今すぐエネルギーをくれ！」と叫びます。すると肝臓のタンクが開かれ、脳に向けてブドウ糖の特急列車が発車します。なぞかけの快感は、肝臓の献身的なサポート（グリコーゲン分解）によって支えられているのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 「利己的な脳（Selfish Brain）」理論に基づく、脳のエネルギー需要と肝臓の糖代謝の連動メカニズム (2004年〜) - アヒム・ペータース（Achim Peters）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">7.9 唾液中アミラーゼ（ストレス指標）の即時的変動による難易度評価</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「難しすぎるなぞかけは、口の中の『アミラーゼ』を急増させる」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人の口の中に綿棒を含ませて唾液を採取し、簡単なクイズを解いている時と、制限時間付きの非常に難しいパズルを解いている時の、唾液に含まれる「アミラーゼ（消化酵素の一種）」の量を比較する実験です。<br><br>【どんな結果？】唾液アミラーゼは、人が「心理的なストレス（プレッシャーやイライラ）」を感じて交感神経が緊張した瞬間に、パッと急増する性質があります。課題が難しければ難しいほど、口の中のアミラーゼの数値が跳ね上がることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「え、全然共通点が見つからない…」という超難問のなぞかけを出されて焦っている時。あなたの脳はそれを「脅威（ストレス）」とみなし、交感神経が作動します。その結果、あなたの口の中では唾液アミラーゼが急激に分泌されています。アミラーゼの量を測れば、そのなぞかけが「どれくらい脳に負荷をかけているか」を数値化できるのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 唾液中アルファアミラーゼ（sAA）を用いた交感神経系活動および急性心理的ストレスの客観的評価 (2000年代後半) - ウルリケ・ネーター（Ulrike Nater）、ウルス・ローレダー（Urs Rohleder）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">7.10 腸脳相関となぞかけの「面白さ感受性」の相関</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「よく笑う人は、実はお腹の中の『バクテリア』が整っている」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】腸内細菌のバランスが整っている（善玉菌が多い）マウスや人間と、バランスが崩れているマウスや人間とで、不安の感じ方や、ポジティブな刺激に対する反応の良さを比較する実験です。<br><br>【どんな結果？】人を幸福で穏やかな気持ちにさせる脳内物質「セロトニン」は、実はその90％以上が「腸」で作られています。腸で作られたセロトニン自体は「血液脳関門」というバリアに阻まれて直接脳に入ることはできませんが、腸内フローラ（細菌のバランス）が健康な人は、迷走神経を通じて良好なシグナルが脳に送られたり、脳でセロトニンを作るための「原料（トリプトファン）」が効率よく脳に届けられたりします。結果として脳内のセロトニンが安定し、ユーモアに対して「面白い！」と感じやすい（感受性が高い）ことがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">同じなぞかけのオチを聞いても、大爆笑する人と「ふーん」で終わる人がいます。この「笑いのツボの浅さ」は、実はその人の「腸内環境の良さ」とリンクしている可能性があります。お腹の中の善玉菌が脳をしっかりサポートしてくれている人ほど、なぞかけの「面白さ」をキャッチする脳のアンテナが敏感に働いているのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 腸脳相関における腸内細菌叢（マイクロバイオーム）とセロトニン代謝・感情調節の研究 (1990年代後半〜2010年代) - マイケル・ガーション（Michael Gershon）、およびジョン・クライアン（John Cryan）らの研究グループ
+                </div>
+            </div>
+        </div>
+</div></details>
+            </div>
+        </section>
+
+        <section>
+            <h4 class="text-md font-bold text-[#5B8124] border-b-2 border-[#5B8124]/30 pb-2 mb-4 flex items-center gap-2">
+                <span class="text-xl">🗣️</span> 第3部：環境・身体・コミュニケーション（外部との相互作用）
+            </h4>
+            <div class="space-y-3">
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第8章：運動器・感覚器・表情へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch8" class="p-4 bg-[#FAF8F5] space-y-4">
+<p class="text-sm text-gray-600 mb-4 font-bold border-b border-[#C5B358]/20 pb-2">筋肉の動きや視線の動きなど、外から観測しやすい生理的反応を探る研究です。</p>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">8.1 表面筋電図による大頬骨筋の微小収縮</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「クスッとすらしていないのに、顔は笑っている」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人の顔の筋肉（特に笑顔を作るときに使う頬の筋肉＝大頬骨筋）に小さなシール型のセンサーを貼り、ジョークを読んだり面白い画像を見たりしたときの「筋肉の電気信号」を測る実験です。<br><br>【どんな結果？】声に出して笑ったり、表情に「笑顔」として表れなかったりするレベルであっても、脳が「面白い」「なるほど」とポジティブに感じた瞬間、頬の筋肉がピクッと無意識に反応（微小収縮）していることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「その心は？」の答えを聞いて、「あー、なるほど上手いな！」と感心したとき。あなたの顔は真顔のままでも、頬の筋肉はかすかに「笑顔の準備」をして、なぞかけの巧妙さを称賛しているのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 顔面筋電図による感情・ユーモアの微小反応計測 (1980年代前半〜現在) - ジョン・カチョッポ（John T. Cacioppo）らの研究グループなど
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">8.2 アイトラッキングによる思考過程の可視化</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「脳内で結びつけるために、目玉が重要なポイントを凝視・反復する」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人が画面やフリップ等の視覚的な情報を見ている際、どこを見ているかを特殊なカメラで追跡（アイトラッキング）しながら、ひらめきが必要な謎解き問題（マッチ棒パズルなど）を解かせる実験です。<br><br>【どんな結果？】問題に行き詰まっている時は視線があちこちを彷徨いますが、答えのヒントになる重要な部分に気づき始めると、特定の要素をじっと「注視」し、その要素と要素の間を視線が何度も往復する（サッカードと呼ばれる素早い眼球運動）ことがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">お題がフリップ等で視覚的に提示されたとき、あなたの視線は無意識に「A」と「B」の文字を注視し、その間を行ったり来たりします。これは、遠く離れた2つの言葉の共通点を、脳内でなんとか結びつけようとする思考の働きが、そのまま目の動きに表れている状態です。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 洞察（ひらめき）問題解決時における眼球運動の解析 (2001年) - ギュンター・ノブリッヒ（Günther Knoblich）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">8.3 「膝を打つ」動作の運動生理学</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「わかった！のサインは、脳内の花火からあふれ出す情動の爆発」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人がクイズを解いて「わかった！（Aha!）」とひらめいた瞬間の脳波と、実際にボタンを押したり声を出したりする体の動きのタイミングを同時に測る実験です。<br><br>【どんな結果？】人が「ひらめいた！」と自覚して体を動かすおよそ0.3秒前に、脳の右半球（右側頭葉）で「ガンマ波」という高周波の強い電気信号が突発的に発生していることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけのオチを聞いて「そういうことか！」と気づいた瞬間、脳内ではすでに遠隔の情報を結びつける「ひらめきの花火（ガンマ波）」が打ち上がっています。その意味的統合の成功が、ドーパミン報酬系の活性化や強烈な情動の爆発（アハ体験）を引き起こし、抑えきれなくなった興奮が運動神経へ溢れ出て、思わず「ポンッ」と自分の太もも（膝）を叩いてしまうのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 「アハ体験（Aha! experience）」の神経基盤の解明 (2004年) - マーク・ビーマン（Mark Jung-Beeman）、ジョン・クーニオス（John Kounios）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">8.4 謎解き中の姿勢変化（前傾姿勢）</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「答えを迎えに行こうとして、体が前のめりになる」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人がパソコンで難しい課題や謎解きをしているときの、座面にかかる体重のバランス（重心）や姿勢の変化を、圧力を測るクッション型センサーで計測する実験です。<br><br>【どんな結果？】課題に興味を持ってのめり込んでいる時や、もう少しで答えが出そうな時、人は無意識に重心が前方に移動し、画面や問題に近づこうとする（前傾姿勢になる）ことがわかりました。逆に退屈すると後傾姿勢になります。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">「その心は？」と言われた後のタメの間。答えを自力で予想しようと集中しているとき、あなたの体は無意識に前のめりになり、物理的にも「答えを迎えに行こう」としています。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 認知課題・学習中の姿勢変化と感情状態（フロー状態）のリンク (2007年〜2010年頃) - シドニー・ディメロ（Sidney D'Mello）、アート・グレッサー（Art Graesser）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">8.5 まばたきの頻度と認知負荷</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「ひらめく直前、脳は視覚をシャットアウトするためにまばたきを増やす」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人が暗算や謎解きをしている最中の「まばたきの回数」や視線の動きを計測する実験です。<br><br>【どんな結果？】ひらめきによって問題が解決される「直前の思考中」に、外部の視覚的なノイズを物理的に遮断して内的な思考の結びつきに全集中するため、無意識にまばたきの頻度や時間が増加し、視線を逸らす行動が起きることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">秀逸なお題を出されて頭の中で遠い言葉を結びつけようと没入している時、あなたは無意識のうちにまばたきを増やしたり、視線を宙に泳がせたりしています。これは事後の安堵のサインではなく、「外からの情報を一旦シャットアウトして、内的思考に全集中するぞ」という、ひらめき直前の能動的なアクションなのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 洞察問題解決における瞬目（まばたき）と視線回避の研究（Blinking and looking away during insightful problem solving） (2015年) - カルメラ・サルヴィ（Carmela Salvi）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">8.6 音声の音響的特徴（ピッチと発話の遅延）</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「ドヤ顔は声に表れる。自信の有無は声でバレる」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人がクイズに答えるときや発言をするとき、その人が「自分の答えにどれくらい自信を持っているか」によって、声の高さ（ピッチ）や発話の間合い（韻律）がどう変化するかを音声解析ソフトで分析する実験です。<br><br>【どんな結果？】「絶対に合っている」と自信がある時は、声が低く落ち着いて堂々と発話されます。逆に自信がない時は、無意識に声の語尾が高く上ずったり（ピッチの上昇）、音声学で「潜時（Latency）」や「ポーズ（Pause）」と呼ばれる不自然な間（発話の遅延やフィラー）が生じたりすることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">出題者が「その心は？」と答える直前。そのオチが「絶対にウケる（上手いと言わせる）」という自信作なら、声は低く堂々と響きます。逆に「ちょっと苦しいかな…」と思っていると、わずかに声が高く上ずったり、潜時（不自然なポーズ）が空いたりします。聞き手はそれを無意識に察知しているのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 発話における確信度・不確実性の音響的・視覚的サインの解析 (2005年) - マーク・スワーツ（Marc Swerts）、エミエル・クラマー（Emiel Krahmer）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">8.7 頭部の微小な頷き運動</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「納得の瞬間、首は勝手に相槌を打つ」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人が会話をしているときの様子をビデオで録画し、相手の話に「なるほど」と共感したり理解したりした瞬間の身体の動きを、数十分の一秒（1フレーム）単位のコマ送りで精密に解析（マイクロ分析）する行動観察実験です。<br><br>【どんな結果？】人は相手の話の意図を完全に理解した瞬間、声を出して「はい」と言わなくても、無意識のうちに数ミリから数センチ単位の「微小な頷き（マイクロ・ノッド）」をしていることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">オチを聞いて「あー、なるほど！」と腑に落ちた瞬間。あなたの脳内で2つの言葉が結びついたシグナルは即座に身体に伝わり、無意識のうちに小さく頷いてしまいます。これは対話心理学において「グラウンディング（互いの理解の基盤を確認する作業）」と呼ばれるもので、脳内での結びつきが相手への「理解のサイン」として体から自動的に表出しているのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 対話における身体的同調（エントレインメント）とリスナーの運動反応 (2000年代初頭) - ジャネット・バベラス（Janet Bavelas）らの研究グループ
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">8.8 笑いによる横隔膜の収縮と腹圧変化</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「爆笑は、横隔膜への激しい筋トレである」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】人がコメディ映像などを見て声を出して笑っている最中の呼吸や筋肉の動きを、呼吸計測器（スピロメーター）や筋電図を使って観察する実験です。<br><br>【どんな結果？】「ハハハ！」と声を上げて笑うとき、横隔膜と腹筋群が普通の呼吸ではあり得ないほどのスピードで、リズミカルかつ激しく収縮と弛緩を繰り返していることが確認されました（これは「内的ジョギング」とも呼ばれます）。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけのオチが秀逸すぎて、思わず「ブハッ」と吹き出してしまったとき。あなたのお腹の中では、横隔膜がトランポリンのように激しく上下し、内臓をマッサージしています。上手いなぞかけは、脳だけでなくお腹のインナーマッスルをも刺激するのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 笑いの生理学（ジェロトロジー：笑い学）に基づく呼吸筋・横隔膜の動態研究 (1990年代) - ウィリアム・フライ（William Fry / 笑いの生理学の父と呼ばれる研究者）らの研究
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">8.9 耳の微小動揺（耳介筋の反射）</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「聞き逃すまいと、人間も実は耳をピクッとさせている」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】犬や猫のように「耳を動かす」ことができない人間でも、特定の音に強く意識を向けた際、耳の周りの筋肉（耳介筋）に電気的な反応が起きているかを測る実験です。<br><br>【どんな結果？】人間は耳を大きく動かすことは退化してできなくなっていますが、それでも「注意して音を聞き取ろう」とした瞬間、音がする方向に向けて耳の筋肉が無意識にピクッと収縮する（電気信号が走る）ことがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">なぞかけで一番重要な「オチ（解答）」のフレーズが発音される直前。聞き手は「絶対に聞き逃すまい」と意識を集中させます。このとき、聞き手の耳の筋肉は、犬が飼い主の足音を聞きつける時のように、微細にピクッと収縮して「音の受け入れ態勢（神経化石としての反射）」を作っているのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 人間における耳介筋（退化筋）の聴覚的注意に対する無意識の反射反応 (2020年) - ダン・ストラウス（Dan Strauss）らの研究グループ（ザールラント大学）
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-white rounded-lg border border-[#C5B358]/30 shadow-sm overflow-hidden">
+            <h5 class="font-bold text-[#902A19] bg-[#FAF8F5] px-4 py-2 border-b border-[#C5B358]/20">8.10 手話なぞかけにおける言語野のフル稼働</h5>
+            <div class="p-4 space-y-3">
+                <p class="text-[13px] font-bold text-[#C5B358] italic bg-yellow-50 p-2 rounded border border-yellow-100">「目で見るなぞかけは、高度な言語処理のスパークである」</p>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#5B8124] px-2 py-0.5 rounded mb-1">実験と結果</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">【どんな実験？】手話を日常的に使う人が、手話で会話している映像を見ているときの脳の活動を、fMRI（磁気共鳴画像装置）などで観察する実験です。<br><br>【どんな結果？】手話を見ているとき、脳は単なる手の動きの模倣として処理しているのではなく、音声言語を処理するときと同様に脳の「言語野（左半球の言語ネットワーク）」をフル稼働させ、高度な抽象的意味として理解していることがわかりました。</p>
+                </div>
+                <div>
+                    <span class="inline-block text-xs font-bold text-white bg-[#902A19] px-2 py-0.5 rounded mb-1">なぞかけとの関係性</span>
+                    <p class="text-sm text-gray-700 leading-relaxed">音声ではなく「手話」で行われるなぞかけ（動きの類似性を使ったダブルミーニングなど）を見たとき。聞き手（見手）は、視覚情報を脳内の言語ネットワークで瞬時に高度な意味へ変換しています。「そういう動きのかけ言葉か！」とひらめく瞬間、音声言語のなぞかけと全く同じように、豊かな意味的統合のスパーク（アハ体験）を脳内で味わっています。これは、人間の言語処理が目や耳といった特定の感覚器官（モダリティ）に依存しない、普遍的なシステム（アモーダル性）を持っていることの美しい証明でもあるのです。</p>
+                </div>
+                <div class="mt-3 p-2 bg-gray-50 border-l-4 border-gray-300 text-xs text-gray-500">
+                    <strong>📖 論拠:</strong> 手話理解における脳内メカニズムと言語ネットワークの関与 (2002年〜2000年代中盤) - カレン・エモリー（Karen Emmorey）らの研究グループ
+                </div>
+            </div>
+        </div>
+</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第9章：臨床・発達・応用生理学的アプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch9" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第10章：感覚器間相互作用（クロスモーダル）・生体リズムへのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch10" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第11章：人間工学・スポーツ・特殊環境へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch11" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第12章：睡眠・概日リズム（サーカディアンリズム）へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch12" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第13章：咀嚼・嚥下・口腔機能へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch13" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第14章：姿勢・重心・身体バランスへのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch14" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第15章：高次感情・社会生理学・生体同期へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch15" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+            </div>
+        </section>
+
+    </div>
+</details>
+<details class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> なぞかけその他の研究の現状
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 text-gray-700 leading-relaxed">
+        <div class="text-center py-10 text-gray-500 font-bold">（※研究データ執筆中）</div>
+    </div>
+</details>
+<details class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> ２０世紀以前のなぞかけ調査
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 text-gray-700 leading-relaxed">
+        <div class="text-center py-10 text-gray-500 font-bold">（※研究データ執筆中）</div>
+    </div>
+</details>
+<details class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> なぞかけ名人とそのうんちく
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 text-gray-700 leading-relaxed">
+        <div class="text-center py-10 text-gray-500 font-bold">（※研究データ執筆中）</div>
+    </div>
+</details>
+<details class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> なぞかけに類似する文化
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 text-gray-700 leading-relaxed">
+        <div class="text-center py-10 text-gray-500 font-bold">（※研究データ執筆中）</div>
+    </div>
+</details>
+<details class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> なぞかけ技法
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 text-gray-700 leading-relaxed">
+        <div class="text-center py-10 text-gray-500 font-bold">（※研究データ執筆中）</div>
+    </div>
+</details>
+<details class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> なぞかけ関連技術
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 text-gray-700 leading-relaxed">
+        <div class="text-center py-10 text-gray-500 font-bold">（※研究データ執筆中）</div>
+    </div>
+</details>

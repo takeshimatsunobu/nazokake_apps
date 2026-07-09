@@ -1,0 +1,39 @@
+# 機密ファイル（絶対にイメージへ含めない）
+.env
+.env.*
+!backend/.env.example
+serviceAccountKey.json
+*.pem
+*.key
+
+# 仮想環境（GBクラスの肥大化要因）
+.venv*
+env/
+venv/
+
+# ローカルLLMバイナリ・大容量モデル成果物（バックエンドAPIの実行に不要）
+llama-bin/
+*.gguf
+*.gguf.bak
+
+# ローカルLLMのキャッシュ・学習データ
+unsloth_compiled_cache/
+.agents/
+_ai_context/
+_archive_trash/
+data/
+models/*.safetensors
+models/*.bin
+models/*.gguf
+models/*.pt
+
+# フロントエンド（Firebase管轄のためバックエンドからは除外）
+frontend/
+.firebase/
+.streamlit/
+
+# 開発用ファイル・キャッシュ
+.git/
+.vscode/
+__pycache__/
+*.pyc

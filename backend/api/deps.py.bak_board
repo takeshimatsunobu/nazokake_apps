@@ -1,0 +1,80 @@
+"""共有依存・ユーティリティ（DDD再編の足場）。
+
+各機能ルーター(api/routers/*.py)が import して利用する共通要素を集約する。
+- get_db            : Firestore クライアントを返す依存（import時生成を避け DI 化）
+- serialize_doc     : ドキュメント→dict 変換（datetime ガード付きの統一版）
+- handle_exceptions : sync/async 両対応の例外ハンドラデコレータ
+- verify_admin_token: Firebase Auth による管理者トークン検証の依存
+- security          : HTTPBearer スキーム
+
+※本ファイルは足場として新設。エンドポイントの移植は後続フェーズで行う。
+"""
+import sys
+import inspect
+from datetime import datetime
+from functools import wraps
+from typing import Any, Callable
+
+from fastapi import Depends, HTTPException
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from firebase_admin import auth, firestore
+
+# 管理者APIで用いる Bearer 認証スキーム
+security = HTTPBearer()
+
+
+def get_db():
+    """Firestore クライアントを返す依存。ルーターでは Depends(get_db) で受け取る。"""
+    return firestore.client()
+
+
+def serialize_doc(doc) -> dict:
+    """Firestore ドキュメントを dict 化し、doc_id/id を付与する統一版。
+
+    timestamp は datetime のときのみ文字列化する（型ガード付き＝安全側）。
+    """
+    data = doc.to_dict()
+    data["doc_id"] = doc.id
+    data["id"] = doc.id
+    if "timestamp" in data and isinstance(data["timestamp"], datetime):
+        data["timestamp"] = str(data["timestamp"])
+    return data
+
+
+def handle_exceptions(func: Callable) -> Callable:
+    """例外を一元処理するデコレータ。HTTPException はそのまま再送出する。
+
+    - async 関数: 例外時に {"status": "error", "message": ...} を返す。
+    - sync 関数 : 例外時に HTTP 500 を送出する。
+    """
+    if inspect.iscoroutinefunction(func):
+        @wraps(func)
+        async def async_wrapper(*args, **kwargs) -> Any:
+            try:
+                return await func(*args, **kwargs)
+            except HTTPException:
+                raise
+            except Exception as e:
+                return {"status": "error", "message": f"Internal Server Error: {str(e)}"}
+        return async_wrapper
+    else:
+        @wraps(func)
+        def sync_wrapper(*args, **kwargs) -> Any:
+            try:
+                return func(*args, **kwargs)
+            except HTTPException:
+                raise
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+        return sync_wrapper
+
+
+def verify_admin_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
+    """Firebase Auth の ID トークンを検証する依存。失敗時は HTTP 401。"""
+    token = credentials.credentials
+    try:
+        decoded_token = auth.verify_id_token(token)
+        return decoded_token
+    except Exception as e:
+        print(f"🚨 トークン検証エラー: {e}", file=sys.stderr, flush=True)
+        raise HTTPException(status_code=401, detail=f"Invalid Token: {str(e)}")

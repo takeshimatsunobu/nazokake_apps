@@ -1,0 +1,240 @@
+import json
+import os
+import re
+import asyncio
+import httpx
+from firebase_admin import firestore
+from google import genai
+from google.genai.types import GenerateContentConfig
+from google.cloud.firestore_v1.vector import Vector
+from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
+
+# ==========================================
+# 🛡️ 構造化出力（Structured Outputs）の辞書型スキーマ定義
+# ==========================================
+nazokake_schema = {
+    "type": "OBJECT",
+    "properties": {
+        "hint": {"type": "STRING", "description": "AIの思考プロセス、連想したことの解説"},
+        "toku": {"type": "STRING", "description": "短い単語（例：打率）"},
+        "kokoro": {"type": "STRING", "description": "落ちの文章。必ずしも「〜でしょう」で終わる必要はなく、「〜が欠かせません」「〜で決まります」など、最も自然で面白い結びの言葉にすること。"}
+    },
+    "required": ["hint", "toku", "kokoro"]
+}
+
+# ==========================================
+# 🧠 RAG (検索拡張生成) エンジン (Gemini Embedding)
+# ==========================================
+async def get_rag_context(db, odai: str) -> str:
+    api_key = os.environ.get("GEMINI_API_KEY")
+    if not api_key:
+        return "※APIキー未設定のためRAG無効"
+        
+    try:
+        def fetch_vectors():
+            client = genai.Client(api_key=api_key)
+            res = client.models.embed_content(
+                model='text-embedding-004',
+                contents=odai,
+            )
+            query_vector = res.embeddings[0].values
+
+            collection_ref = db.collection("nazokake_rag_knowledge")
+            results = collection_ref.find_nearest(
+                vector_field="embedding",
+                query_vector=Vector(query_vector),
+                distance_measure=DistanceMeasure.COSINE,
+                limit=3
+            ).stream()
+            
+            rag_text = ""
+            count = 0
+            for doc in results:
+                data = doc.to_dict()
+                count += 1
+                rag_text += f"[参考例 {count}] お題: {data.get('odai')}\nなぞかけ: {data.get('nazokake')}\n\n"
+            
+            if count == 0:
+                return "※参考データなし"
+            return rag_text
+            
+        return await asyncio.to_thread(fetch_vectors)
+    except Exception as e:
+        print(f"⚠️ [RAG Error] ベクトル検索中にエラー発生: {e}")
+        return "※参考データ取得エラー"
+
+async def chat_completion_local(url, system_prompt, user_prompt, max_tokens=256, temperature=0.8):
+    if not url:
+        raise ValueError("対象のエンドポイントURLが設定されていません。")
+    payload = {
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt}
+        ],
+        "max_tokens": max_tokens,
+        "temperature": temperature,
+        "top_p": 0.9
+    }
+    # ★ 35秒まで信じて待つ仕様
+    async with httpx.AsyncClient(timeout=35.0) as client:
+        res = await client.post(url, json=payload)
+        res.raise_for_status()
+        return res.json().get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+
+async def generate_nazokake(odai: str) -> dict:
+    db = firestore.client()
+    dyn_temp = 0.8
+    dyn_model = "gemini-3.5-flash"
+    dyn_persona = "あなたは前衛的な天才なぞかけ芸人です。"
+    
+    try:
+        config_doc = await asyncio.to_thread(db.collection("system_configs").document("ai_settings").get)
+        if config_doc.exists:
+            c_data = config_doc.to_dict()
+            dyn_temp = float(c_data.get("temperature", 0.8))
+            dyn_model = c_data.get("model_name", "gemini-3.5-flash")
+            dyn_persona = c_data.get("system_prompt", dyn_persona)
+    except Exception as e:
+        print(f"⚠️ 設定取得エラー。デフォルトを使用: {e}")
+
+    sys_prompt = f"""{dyn_persona}
+【重要】提供される例は「型」の参考のみとし、言葉や内容は絶対にコピーせず100%オリジナルの発想で出力してください。
+
+【思考プロセス】
+1. お題(A)から連想される言葉を挙げる。
+2. その言葉と同じ「ひらがな」で、全く別の意味を持つ言葉(B)を探す。
+3. (B)から連想される言葉を「とく(××)」にする。
+【絶対制約】「××ととく」の「××」は絶対に10文字以内の短い単語にしてください。
+
+【出力フォーマット】
+必ず以下のJSONフォーマット【のみ】で出力してください。Markdown装飾（`jsonなど）は絶対に使用しないでください。
+{{
+  "hint": "AIの思考プロセス、連想したことの解説",
+  "toku": "短い単語（例：打率）",
+  "kokoro": "落ちの文章（例：どちらもヒットが求められるでしょう）"
+}}"""
+    
+    user_prompt = f"お題「{odai}」でなぞかけを作成し、JSONフォーマットで出力してください。"
+    raw_result = ""
+
+    # 🌟 スマート・ルーティング 兼 35秒フェイルセーフ・ロジック
+    if dyn_model.startswith("us-local-"):
+        
+        # 💡 ここが3手先を読んだ「遅延評価」。リクエストの瞬間に最新のインフラ設定を取得する
+        vm_ip = os.environ.get("GCP_L4_IP", "")
+        local_ngrok = os.environ.get("LOCAL_NGROK_URL", "")
+        
+        target_url = ""
+        if dyn_model == "us-local-llmjp" and vm_ip:
+            target_url = f"http://{vm_ip}:8080/v1/chat/completions"
+            print(f"🔍 GCP要塞 LLM.jp (ポート8080) へ接続します...")
+        elif dyn_model == "us-local-gemma" and local_ngrok:
+            target_url = f"{local_ngrok}/v1/chat/completions"
+            print(f"🚀 開通した ngrok トンネル経由でローカルGemma要塞へ接続します...")
+
+        if target_url:
+            try:
+                raw_result = await chat_completion_local(target_url, sys_prompt, user_prompt, max_tokens=250, temperature=dyn_temp)
+                print(f"✅ ローカル/GCP要塞での生成に成功しました！")
+            except Exception as e:
+                print(f"⚠️ 要塞からの応答なし、または35秒タイムアウト発生({e})。最新鋭 Gemini 3.5 Flash へ緊急自動フォールバックします！")
+
+    # フェイルセーフ発動: 要塞が落ちていた場合は Gemini が救済
+    if not raw_result:
+        fallback_model = "gemini-3.5-flash"
+        print(f"☁️ バックアップ防衛線: クラウドGemini ({fallback_model}) でなぞかけを即時救済生成します...")
+        client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+        res_create = await client.aio.models.generate_content(
+            model=fallback_model, 
+            contents=f"{sys_prompt}\n\n{user_prompt}", 
+            config=GenerateContentConfig(response_mime_type="application/json", temperature=dyn_temp)
+        )
+        raw_result = res_create.text
+        
+    try:
+        cleaned_result = re.sub(r'`json\n?|`\n?', '', raw_result).strip()
+        match = re.search(r'\{.*\}', cleaned_result, re.DOTALL)
+        if match: 
+            return json.loads(match.group(0))
+        else: 
+            return json.loads(cleaned_result)
+    except Exception as e:
+        print(f"解析エラー: {e}")
+        return {"hint": "AIの思考(JSONパース失敗)", "toku": raw_result[:20], "kokoro": raw_result}
+
+async def evaluate_and_update_task(db, doc_id: str, odai: str, nazokake_text: str):
+    doc_ref = db.collection("nazokake_items").document(doc_id)
+    try:
+        doc = await asyncio.to_thread(doc_ref.get)
+        if doc.exists and doc.to_dict().get("eval_status") == "completed": 
+            return
+        
+        dyn_eval_model = "gemini-3.1-pro-preview"
+        try:
+            config_doc = await asyncio.to_thread(db.collection("system_configs").document("ai_settings").get)
+            if config_doc.exists:
+                dyn_eval_model = config_doc.to_dict().get("evaluator_model", "gemini-3.1-pro-preview")
+        except Exception:
+            pass
+
+        ctx_sys = "あなたは日本の現代カルチャーに精通したエージェントです。事実と文脈だけを簡潔に出力してください。"
+        ctx_user = f"お題「{odai}」となぞかけ「{nazokake_text}」の同音異義語と文化的背景を解説してください。"
+        context_text = "※文化背景の自動抽出なし"
+        
+        rag_context = await get_rag_context(db, odai)
+
+        judge_sys = "あなたは最高峰の採点AIシステムです。\n以下の11項目の評価軸（0.0〜1.0）でなぞかけを評価し、結果をJSONフォーマット【のみ】で出力してください。Markdown装飾は絶対に使用しないでください。\n\n{\n  \"scores\": {\n    \"S_sur\": 0.0, \"S_tech\": 0.0, \"S_emo\": 0.0, \"S_rhy\": 0.0, \"S_sensory\": 0.0, \n    \"S_visual\": 0.0, \"S_ontology\": 0.0, \"S_cultural\": 0.0, \"S_cm\": 0.0, \"S_prosody\": 0.0, \"S_nat\": 0.0\n  },\n  \"reasoning\": \"ここに200文字以内で講評を記述\"\n}"
+        
+        judge_user = f"""【評価の参考データ（過去の似たお題の傑作）】
+以下のなぞかけは、過去に人間が高く評価した「お手本（正解）」のデータです。これを基準（アンカー）として、今回の作品を相対的に比較・採点してください。
+---
+{rag_context}
+---
+
+【評価対象のなぞかけ】
+お題: {odai}
+作品: {nazokake_text}
+
+【文化背景】
+{context_text}
+
+結果（JSONのみ）:"""
+        
+        print(f"☁️ クラウドGeminiで評価します... (Model: {dyn_eval_model})")
+        client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+        full_judge_prompt = f"{judge_sys}\n\n{judge_user}"
+        res_eval = await client.aio.models.generate_content(
+            model=dyn_eval_model, 
+            contents=full_judge_prompt, 
+            config=GenerateContentConfig(response_mime_type="application/json", temperature=0.1)
+        )
+        raw_result = res_eval.text
+
+        eval_data = {}
+        try:
+            cleaned_result = re.sub(r'`json\n?|`\n?', '', raw_result).strip()
+            match = re.search(r'\{.*\}', cleaned_result, re.DOTALL)
+            if match: 
+                eval_data = json.loads(match.group(0))
+            else: 
+                raise ValueError("JSON形式が見つかりません")
+        except Exception as parse_err:
+            await asyncio.to_thread(doc_ref.update, {"status": "error", "eval_status": "error", "message": f"AIの評価フォーマットエラー: {parse_err}"})
+            return 
+
+        scores = eval_data.get("scores", {})
+        final_scores = {k: float(scores.get(k, 0.5)) for k in ["S_sur", "S_tech", "S_emo", "S_rhy", "S_sensory", "S_visual", "S_ontology", "S_cultural", "S_cm", "S_prosody", "S_nat"]}
+        s_total = (sum(final_scores.values()) / 11.0) * 5.0
+
+        await asyncio.to_thread(doc_ref.update, {
+            "eval_status": "completed", 
+            "status": "completed", 
+            "context_extracted": context_text, 
+            "scores": final_scores, 
+            "s_total": s_total, 
+            "reasoning": eval_data.get("reasoning", "講評が取得できませんでした。"), 
+            "message": "生成・鑑定が完了しました！",
+            "evaluated_at": firestore.SERVER_TIMESTAMP
+        })
+    except Exception as e:
+        await asyncio.to_thread(doc_ref.update, {"status": "error", "eval_status": "error", "message": f"システムエラー: {str(e)}"})

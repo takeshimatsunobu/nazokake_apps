@@ -1,28 +1,36 @@
 // firestore.rules
+//
+// 【セキュリティ方針：意図的な完全封鎖（Deny-All）】
+// 本プロジェクトのフロントエンドは Firestore クライアントSDKを一切使用せず、
+// データの読み書きは全て FastAPI(バックエンド) 経由で行う。よってクライアントからの
+// 直接アクセス（read / write とも）を完全に遮断する。
+// ※Cloud Run で動くバックエンド(Admin SDK)はセキュリティルールを自動でバイパスするため、
+//   下記の deny-all はサーバー側の正規処理には一切影響しない。
+// ※将来の開発者へ：これは設定漏れではなく「意図的な完全封鎖」である。
+//   クライアント直読みが必要になった場合も、ここを緩めず公開専用コレクションの分離を検討すること。
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // nazokake_items コレクションへのアクセスルール
-    match /nazokake_items/{documentId} {
-      
-      // 【Read】誰でも読み取り可能
-      allow read: if true; 
 
-      // 【Create】フロントエンドからの新規作成(未処理データ)のみ許可
-      allow create: if 
-          request.resource.data.status == 0
-          && request.resource.data.keys().hasAll([
-               'A_TITLE', 'B_TITLE', 'C_READING', 
-               'A_CONTEXT_DETAIL', 'GENERATION_TYPE', 'nazokake_text'
-             ])
-          && !('scores' in request.resource.data)
-          && !('error_message' in request.resource.data)
-          && request.resource.data.status is int;
+    // --- 機微データ：絶対にクライアントへ露出しない ---
+    match /telemetry_logs/{id} {          // 計測ログ・人間評価/コメント・gen_eval
+      allow read, write: if false;
+    }
+    match /system_configs/{id} {          // 温度・system_prompt・モデル名等の機密設定
+      allow read, write: if false;
+    }
+    match /nazokake_rag_knowledge/{id} {  // RAG用の内部ナレッジ／ベクトル
+      allow read, write: if false;
+    }
 
-      // 【Update / Delete】クライアントからは一切禁止（完全ブロック）
-      // ※Cloud Runワーカー(Admin権限)はこれを自動でバイパスします
-      allow update, delete: if false;
+    // --- 作品データ：公開/下書き/評価途中/内部フィールドが同居するため直読みも禁止 ---
+    match /nazokake_items/{id} {
+      allow read, write: if false;
+    }
+
+    // --- 既定：上記以外（将来追加される新規コレクション含む）も全て遮断 ---
+    match /{document=**} {
+      allow read, write: if false;
     }
   }
 }

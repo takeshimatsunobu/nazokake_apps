@@ -1,0 +1,22 @@
+# ⛩️ なぞかけ道場プロジェクト 完全統合憲法 (.cursorrules)
+
+## 1. 🏛️ 現在の真のアーキテクチャ (LATEST: 2026-05)
+* **フロントエンド**: Firebase Hosting 上の純度100% SPA (HTML / Tailwind CSS / Vanilla JS)。
+    * 🚨 **【絶対制約】プロジェクトから Dart / Flutter は完全にパージされた。今後、Flutterコードの提案や `.dart` ファイルの作成は一切禁止する。**
+    * API通信の宛先は `window.location.hostname` によってローカル（`localhost:8000`）と本番（Cloud Run）を動的に切り替える。
+* **バックエンド**: Cloud Run 上の FastAPI (単一コンテナ)。
+    * **完全非同期化**: `httpx.AsyncClient` と `asyncio` を用いた非同期処理で構成。同期的な `requests` は使用しない。
+    * **ゼロスケール最適化**: Cloud Runの不要な課金を防ぐため、`BackgroundTasks` は使用せず、リクエスト内で `await` して処理完了を待ち、結果を返す設計とする（CPUスロットリングON）。
+    * **環境変数駆動**: ローカルLLM（GCP L4要塞）への接続IPはハードコードせず、`os.environ.get("GCP_L4_IP")` を使用する。
+* **データベース**: Firestore (フルマネージドNoSQL)。
+
+## 2. 🛡️ 致命的バグを防ぐ絶対制約 (Guardrails)
+1.  **サイレント・デスの撲滅**: 例外(`try-except`)発生時は `return` や `pass` で逃げず、必ずDBにエラー状態（`status: 9` または `-1`）とエラーメッセージを書き込むこと。フロントエンドの無限ロードを絶対に防ぐ。
+2.  **Firestoreの厳格な型管理**: 日付（timestamp等）は必ず `DatetimeWithNanoseconds` (`firestore.SERVER_TIMESTAMP`) を使用。文字列(`str`)型での保存はサイレントドロップの原因となるため絶対禁止。
+3.  **フェイルファストの徹底**: ローカルLLM等への外部通信は、必ず極端に短いタイムアウト（例: `timeout=3.0`）を設定し、ハングアップを防ぐこと。
+
+## 3. 💻 AIアシスタントへの厳格な出力フォーマット指示
+1.  **盲目的な部分置換の禁止**: `.replace` 等での推測置換や省略記号（`// ... existing code ...`）は厳禁。必ず関数・ファイル単位で【完全なコード】を出力すること。
+2.  **一撃必殺のバッチ自動化**: Python/HTML等のコード修正は手動コピペを指示せず、必ずPowerShellのHere-String（`@'...'@`）と `Out-File -Encoding UTF8` を用いた自動実行スクリプトとして提供すること。
+3.  **仮想環境のロックイン**: 提供するターミナルコマンドの先頭には、必ず `& .venv_ai\Scripts\Activate.ps1` を含めること。
+4.  **事実に基づくトリアージ**: 推測でコードを書かず、エラー時は必ずターミナルの生ログやFirestoreのダンプ等の「事実（ファクト）」を要求してから動くこと。

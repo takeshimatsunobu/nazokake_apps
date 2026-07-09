@@ -1,0 +1,97 @@
+"""フィード関連ルーター（DDD再編で endpoints.py から切り出し）。
+GET  /feed/items              : 通常作品フィード（編集済み/ゴールデンを除外）
+GET  /feed/golden             : ゴールデン作品フィード
+POST /feed/evaluate/{doc_id}  : ユーザーによる作品の評価・添削
+
+admin_db グローバル参照を廃し、Depends(get_db) で DI する。
+※フィード取得は取得失敗時に {"items": []} を返す既存挙動を維持（フロントの無限ロード防止）。
+@handle_exceptions は外側の安全網として付与する。
+"""
+import html
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, Request
+from google.cloud import firestore
+
+from api.deps import get_db, serialize_doc, handle_exceptions
+
+router = APIRouter()
+
+@router.get("/feed/items")
+@handle_exceptions
+async def get_user_feed(last_doc_id: Optional[str] = None, limit: int = 5, db=Depends(get_db)):
+    try:
+        # Firestoreネイティブのページネーション（Readコストとメモリを最小化）
+        query = db.collection("nazokake_items").where("feed_ready", "==", True)\
+                                               .where("is_user_edited", "==", False)\
+                                               .where("is_golden_data", "==", False)\
+                                               .order_by("timestamp", direction=firestore.Query.DESCENDING)
+        
+        # カーソルが指定された場合は、そのドキュメントの次から取得
+        if last_doc_id:
+            cursor_doc = db.collection("nazokake_items").document(last_doc_id).get()
+            if cursor_doc.exists:
+                query = query.start_after(cursor_doc)
+        
+        # データベース側で正確に limit 件だけを取得（全件スキャンを防止）
+        docs = query.limit(limit).stream()
+        
+        all_items = [serialize_doc(doc) for doc in docs]
+        return {"items": all_items}
+        
+    except Exception as e:
+        # 💡 防弾仕様へのアップグレード：インデックス作成中のエラーのみ握り潰し、それ以外は再送出（例外伝播）
+        error_msg = str(e).lower()
+        if "index" in error_msg or "precondition" in error_msg:
+            print(f"⚠️ Feed Load Warning (Index Required): {e}")
+            return {"items": []}
+        raise e  # 真のシステムエラーは @handle_exceptions へ投げる
+
+@router.get("/feed/golden")
+@handle_exceptions
+async def get_golden_feed(last_doc_id: Optional[str] = None, limit: int = 5, db=Depends(get_db)):
+    try:
+        query = db.collection("nazokake_items").where("is_golden_data", "==", True)\
+                                               .order_by("timestamp", direction=firestore.Query.DESCENDING)
+        if last_doc_id:
+            cursor_doc = db.collection("nazokake_items").document(last_doc_id).get()
+            if cursor_doc.exists:
+                query = query.start_after(cursor_doc)
+                
+        docs = query.limit(limit).stream()
+        all_items = [serialize_doc(doc) for doc in docs]
+        return {"items": all_items}
+    except Exception as e:
+        error_msg = str(e).lower()
+        if "index" in error_msg or "precondition" in error_msg:
+            return {"items": []}
+        raise e
+
+@router.post("/feed/evaluate/{doc_id}")
+@handle_exceptions
+async def evaluate_user_item(doc_id: str, request: Request, db=Depends(get_db)):
+    try:
+        data = await request.json()
+        odai = html.escape(str(data.get("odai", "") or "").strip())
+        toku = html.escape(str(data.get("toku", "") or "").strip())
+        kokoro = html.escape(str(data.get("kokoro", "") or "").strip())
+        if len(odai) < 1 or len(toku) < 1 or len(kokoro) < 1:
+            raise HTTPException(status_code=400, detail="入力が短すぎます")
+        
+        update_data = {
+            "human_evaluations": firestore.ArrayUnion([{
+                "user_score": data.get("s_total", 0),
+                "timestamp": firestore.SERVER_TIMESTAMP,
+                "user_slug": data.get("user_slug", "anonymous")
+            }]),
+            "human_comments": firestore.ArrayUnion([{
+                "comment": data.get("human_comment", ""),
+                "timestamp": firestore.SERVER_TIMESTAMP,
+                "user_slug": data.get("user_slug", "anonymous")
+            }]),
+            "is_user_edited": True,
+            "feed_ready": False # 一般フィードから隠す
+        }
+        db.collection("nazokake_items").document(doc_id).update(update_data)
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

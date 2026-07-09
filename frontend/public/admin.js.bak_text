@@ -1,0 +1,520 @@
+const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://127.0.0.1:7800/api' : 'https://nazokake-backend-r6jq2erkta-an.a.run.app/api';
+
+function showToast(msg, type='info') {
+    const container = document.getElementById('toast-container'); if(!container) return;
+    const toast = document.createElement('div');
+    toast.className = `bg-[#902A19] text-white px-6 py-3 rounded-full shadow-lg mb-2 text-sm font-bold transition-all duration-300 transform translate-y-0 opacity-100 z-50`;
+    toast.innerText = msg;
+    container.appendChild(toast);
+    setTimeout(() => { toast.classList.add('opacity-0', '-translate-y-2'); setTimeout(() => toast.remove(), 300); }, 3000);
+}
+
+// 🔥 FirebaseUI の初期化
+const ui = new firebaseui.auth.AuthUI(firebase.auth());
+
+const uiConfig = {
+    callbacks: {
+        signInSuccessWithAuthResult: function(authResult, redirectUrl) {
+            showToast("認証成功しました！");
+            return false; // リダイレクトさせない
+        },
+        uiShown: function() {
+        }
+    },
+    signInFlow: 'popup', 
+    signInOptions: [
+        firebase.auth.GoogleAuthProvider.PROVIDER_ID
+    ],
+    tosUrl: '<your-tos-url>',
+    privacyPolicyUrl: '<your-privacy-policy-url>'
+};
+
+// 🔐 Firebase Auth 状態の監視
+firebase.auth().onAuthStateChanged((user) => {
+    const loginScreen = document.getElementById('login-screen');
+    const adminScreen = document.getElementById('admin-screen');
+    if (user) {
+        if(loginScreen) loginScreen.style.display = 'none';
+        if(adminScreen) adminScreen.classList.remove('hidden');
+        initAdmin();
+    } else {
+        if(loginScreen) loginScreen.style.display = 'flex';
+        if(adminScreen) adminScreen.classList.add('hidden');
+        ui.start('#firebaseui-auth-container', uiConfig);
+    }
+});
+
+window.logout = async function() {
+    await firebase.auth().signOut();
+    showToast("ログアウトしました");
+    setTimeout(() => location.reload(), 1000);
+};
+
+window.authFetch = async function(url, options = {}) {
+    const user = firebase.auth().currentUser;
+    if (!user) throw new Error("ログインしていません");
+    const token = await user.getIdToken();
+    const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
+    const res = await fetch(url, { ...options, headers });
+    if (!res.ok) {
+        if (res.status === 401) { window.logout(); throw new Error("認証切れ"); }
+        throw new Error(`APIエラー: ${res.status}`);
+    }
+    return res.json();
+};
+
+async function loadConfig() {
+    try {
+        const data = await window.authFetch(`${API_BASE}/admin/config`);
+        if(document.getElementById('config-temp')) document.getElementById('config-temp').value = data.temperature || 0.8;
+        if(document.getElementById('temp-val-display')) document.getElementById('temp-val-display').innerText = data.temperature || 0.8;
+        if(document.getElementById('config-model')) document.getElementById('config-model').value = data.model_name || "gemini-3.5-flash";
+        const evalEl = document.getElementById('config-evaluator');
+        if(evalEl) evalEl.value = data.evaluator_model || "gemini-3.1-pro-preview";
+        if(document.getElementById('config-prompt')) document.getElementById('config-prompt').value = data.system_prompt || "";
+        if(document.getElementById('config-temp')) document.getElementById('config-temp').addEventListener('input', (e) => document.getElementById('temp-val-display').innerText = e.target.value);
+    } catch(e) { console.error("Config load error:", e); }
+}
+
+async function saveConfigs() {
+    const t = parseFloat(document.getElementById('config-temp').value);
+    const m = document.getElementById('config-model').value;
+    const p = document.getElementById('config-prompt').value;
+    const evalEl = document.getElementById('config-evaluator');
+    const em = evalEl ? evalEl.value : "gemini-3.1-pro-preview";
+    try {
+        await window.authFetch(`${API_BASE}/admin/config`, { method: 'POST', body: JSON.stringify({ temperature: t, model_name: m, evaluator_model: em, system_prompt: p }) });
+        showToast("設定を反映しました");
+    } catch(e) { showToast("設定の保存に失敗しました", "warning"); }
+}
+
+// モデル別ステータス → 表示バッジ
+function _pendStatusBadge(status) {
+    const map = {
+        pending: ['⏳未評価', 'bg-gray-100 text-gray-600 border-gray-300'],
+        golden:  ['🏆殿堂', 'bg-yellow-50 text-yellow-700 border-yellow-400'],
+        approved:['🆗承認', 'bg-blue-50 text-blue-700 border-blue-400'],
+        rejected:['🔄棄却', 'bg-gray-100 text-gray-500 border-gray-300'],
+        deleted: ['🗑️削除', 'bg-red-50 text-red-700 border-red-400'],
+        'n/a':   ['— 対象外', 'bg-transparent text-gray-400 border-transparent'],
+    };
+    const [t, c] = map[status] || map.pending;
+    return `<span class="text-[11px] font-bold px-2.5 py-1 rounded-full border ${c}">${t}</span>`;
+}
+
+function _pendModelButtons(docId, model) {
+    const mk = (action, emoji, text, cls) =>
+        `<button onclick="modelAction('${docId}','${model}','${action}')"
+                 class="${cls} text-white py-2 px-1 rounded-xl shadow-sm transition active:scale-95 flex flex-col items-center justify-center gap-1">
+            <span class="text-base leading-none">${emoji}</span>
+            <span class="text-[10px] font-bold leading-none">${text}</span>
+        </button>`;
+    return `<div class="pend-actions grid grid-cols-4 gap-2 mt-4">
+        ${mk('golden', '🏆', '殿堂', 'bg-gradient-to-b from-yellow-500 to-yellow-600')}
+        ${mk('approve', '🆗', '承認', 'bg-gradient-to-b from-blue-500 to-blue-600')}
+        ${mk('reject', '🔄', '棄却', 'bg-gradient-to-b from-gray-500 to-gray-600')}
+        ${mk('delete', '🗑️', '削除', 'bg-gradient-to-b from-red-500 to-red-600')}
+    </div>`;
+}
+
+function _renderSingleModelCard(item, modelKey, label, color, m, status) {
+    if (status === 'n/a') return '';
+    const esc = window.uiEscapeHtml || ((s) => String(s == null ? '' : s));
+    const h = item.human || {};
+    const hAvg = (h.s_total || 0).toFixed(2);
+    const hCount = h.count || 0;
+    
+    let bodyHtml = '<div class="text-gray-400 py-4 text-center">（生成なし）</div>';
+    if (m.toku || m.kokoro) {
+        bodyHtml = `
+            <div class="text-base font-bold text-gray-800 leading-relaxed mb-2 tracking-wide">
+                「${esc(item.odai)}」とかけまして、<br>
+                「${esc(m.toku)}」と解く。<br>
+                <span class="text-gray-600 text-sm">その心は…</span><br>
+                <span class="text-[#902A19] pl-2 font-bold">「${esc(m.kokoro)}」</span>
+            </div>
+        `;
+    }
+
+    return `
+        <div class="mb-6 bg-white rounded-2xl border-2 shadow-md overflow-hidden transition-all duration-500 relative"
+             id="pend-${item.doc_id}-${modelKey}" data-pending="1" style="border-color: ${color}40;">
+            
+            <div class="bg-gray-50 px-4 py-3 border-b border-gray-100 flex justify-between items-center">
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold px-2 py-0.5 rounded text-white" style="background-color: ${color}">${label}</span>
+                    <span class="text-xs text-gray-500">お題：<span class="font-bold text-gray-700">${esc(item.odai)}</span></span>
+                </div>
+                <span class="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap shadow-sm">
+                    👤 ★${hAvg} (${hCount}件)
+                </span>
+            </div>
+            
+            <div class="px-5 pt-4 pb-2" id="pendcol-${item.doc_id}-${modelKey}">
+                <div class="flex justify-between items-start mb-2">
+                    <span class="font-bold text-xs" style="color:${color}">AI総合評価: ${(m.s_total || 0).toFixed(2)}</span>
+                    <span id="pendstatus-${item.doc_id}-${modelKey}">${_pendStatusBadge(status)}</span>
+                </div>
+                ${bodyHtml}
+                ${_pendModelButtons(item.doc_id, modelKey)}
+            </div>
+
+            <div class="bg-gray-50 px-4 py-3 border-t border-gray-100 flex gap-2">
+                <button onclick="showPendingDetail('${item.doc_id}', '${modelKey}')"
+                        class="flex-1 bg-white border border-[#C5B358] text-[#902A19] py-2 rounded-lg text-xs font-bold shadow-sm active:scale-95 transition">
+                    🔍 11軸詳細
+                </button>
+                <button onclick="resetToDojo('${item.doc_id}', '${modelKey}')"
+                        class="flex-1 bg-white border border-gray-300 text-gray-600 py-2 rounded-lg text-xs font-bold shadow-sm hover:bg-gray-100 active:scale-95 transition">
+                    🔙 戻す(リセット)
+                </button>
+            </div>
+        </div>`;
+}
+
+function _renderPendingCard(item) {
+    const gStatus = item.gemini_status || 'pending';
+    const eStatus = item.elyza_status  || 'pending';
+    let html = '';
+    if (gStatus !== 'n/a') html += _renderSingleModelCard(item, 'gemini', '☁️ Gemini', '#902A19', item.gemini || {}, gStatus);
+    if (eStatus !== 'n/a') html += _renderSingleModelCard(item, 'elyza', '🏠 ELYZA', '#5B8124', item.elyza || {}, eStatus);
+    return html;
+}
+async function loadPendingData(append = false) {
+    const container = document.getElementById('pending-container');
+    if (!container) return;
+    if (window._pendingLoading) return;
+    window._pendingLoading = true;
+    if (!append) {
+        container.innerHTML = '<div class="text-center py-10 text-gray-500">読み込み中...</div>';
+        window._adminPending = {}; window._pendingCursor = null; window._pendingHasMore = true;
+    }
+    try {
+        const q = `?limit=30${window._pendingCursor ? `&last_doc_id=${encodeURIComponent(window._pendingCursor)}` : ''}`;
+        const data = await window.authFetch(`${API_BASE}/admin/pending${q}`);
+        if (!append) container.innerHTML = '';
+        window._pendingHasMore = !!data.has_more;
+        if (data.next_cursor) window._pendingCursor = data.next_cursor;
+        if (!data.items || data.items.length === 0) {
+            if (!append) container.innerHTML = '<div class="text-center py-10 text-gray-500">承認待ちのデータはありません</div>';
+            return;
+        }
+        data.items.forEach(item => {
+            window._adminPending[item.doc_id] = item;   // モーダル/アクション参照用に保持
+            container.insertAdjacentHTML('beforeend', _renderPendingCard(item));
+        });
+    } catch (e) {
+        if (!append) container.innerHTML = `<div class="text-red-500 text-center py-4">承認待ちデータの取得に失敗しました</div>`;
+    } finally {
+        window._pendingLoading = false;
+    }
+}
+
+// 画面内の未評価カードが0件になったら次の30件を自動補充する。
+function checkAndRefill() {
+    const container = document.getElementById('pending-container');
+    if (!container) return;
+    const remaining = container.querySelectorAll('[data-pending="1"]').length;
+    if (remaining === 0 && window._pendingHasMore && !window._pendingLoading) {
+        loadPendingData(true);
+    }
+}
+
+// モデル別の評価アクション。完了カラムを淡色化し、両モデル完了でカード消去→自動補充。
+window.modelAction = async function(docId, model, action) {
+    const labels = { golden: '殿堂入り', approve: '承認', reject: '棄却', delete: '削除' };
+    try {
+        const res = await window.authFetch(`${API_BASE}/admin/item/${docId}/${model}/${action}`, { method: 'POST' });
+        showToast(`${model === 'gemini' ? 'Gemini' : 'ELYZA'}を${labels[action] || action}しました`);
+        const item = (window._adminPending || {})[docId];
+        if (item) { item.gemini_status = res.gemini_status; item.elyza_status = res.elyza_status; }
+        const col = document.getElementById(`pendcol-${docId}-${model}`);
+        if (col) col.classList.add('opacity-50');
+        const badge = document.getElementById(`pendstatus-${docId}-${model}`);
+        if (badge) badge.innerHTML = _pendStatusBadge(res[`${model}_status`]);
+        if (true) { // 完全独立カード化のため、アクション即時解決アニメーションを発動
+            const card = document.getElementById(`pend-${docId}-${model}`);
+            const resolvedBox = document.getElementById('resolved-container');
+            if (card) {
+                card.removeAttribute('data-pending');                 // 未評価カウントから除外
+                card.querySelectorAll('.pend-actions').forEach(el => el.classList.add('hidden'));  // ボタン非表示
+                if (!card.querySelector('.resolved-badge')) {
+                    card.insertAdjacentHTML('afterbegin', '<div class="resolved-badge mb-2 text-center text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 rounded py-1">✅ 処理済み</div>');
+                }
+                card.classList.add('opacity-0');                       // フェードアウト（transition-all 適用済み）
+                setTimeout(() => {
+                    if (resolvedBox) {
+                        resolvedBox.querySelector('.resolved-empty')?.remove();  // 初回の空表示を除去
+                        resolvedBox.prepend(card);                     // 処理済みリストの先頭へ移動
+                        card.classList.remove('opacity-0');            // 移動先でフェードイン
+                        while (resolvedBox.children.length > 10) {     // 10件超過は古い順に削除
+                            resolvedBox.lastElementChild.remove();
+                        }
+                    } else {
+                        card.remove();
+                    }
+                    checkAndRefill();
+                }, 300);
+            }
+        }
+    } catch (e) { showToast("操作に失敗しました", "warning"); }
+};
+
+// 「道場に戻す（Reset）」: ユーザー編集・評価を取り消し公開フィードへ戻す（カード単位・全モデル一括）。
+// 旧 doc 単位の approveGolden/approveNormal/deleteItem/resetItem（per-model modelAction に置換済みの
+// 死コード）はパージ済み。承認/棄却/削除は modelAction、リセットのみ本関数が担う。
+window.resetToDojo = async function(docId, model) {
+    if(!confirm("このAI生成結果を評価前の状態(道場)に戻しますか？")) return;
+    try {
+        await window.authFetch(`${API_BASE}/admin/reset/${docId}`, { method: 'POST' });
+        showToast("道場に戻しました", "info");
+        const card = document.getElementById(`pend-${docId}-${model}`);
+        if (card) {
+            card.removeAttribute('data-pending');
+            card.classList.add('opacity-0', 'scale-95');
+            setTimeout(() => { card.remove(); checkAndRefill(); }, 300);
+        }
+    } catch (e) { showToast("リセットに失敗しました", "warning"); }
+};
+window.showPendingDetail = function(docId, modelKey) {
+    const item = (window._adminPending || {})[docId];
+    const body = document.getElementById('admin-detail-body');
+    if (!item || !body) return;
+    const esc = window.uiEscapeHtml || ((s) => String(s == null ? '' : s));
+    const critique = window.uiBuildCritiqueHtml || (() => '');
+    
+    const h = item.human || {};
+    const evals = h.evaluations || {};
+    const comments = h.comments || {};
+    const slugs = Array.from(new Set([...Object.keys(evals), ...Object.keys(comments)]));
+    const humanRows = slugs.length ? slugs.map(s => 
+        `<div class="text-[11px] mb-2 p-2 bg-white rounded border border-gray-100 shadow-sm">
+            <span class="text-emerald-700 font-bold">★${evals[s] != null ? esc(String(evals[s])) : '-'}</span> 
+            <span class="text-gray-500">(${esc(s)})</span><br>
+            ${comments[s] ? `<span class="text-gray-700 mt-1 block">💬 ${esc(comments[s])}</span>` : ''}
+        </div>`
+    ).join('') : '<div class="text-xs text-gray-500">人間の評価はまだありません</div>';
+
+    const mData = item[modelKey] || {};
+    const title = modelKey === 'gemini' ? '☁️ Gemini' : '🏠 ELYZA';
+    const color = modelKey === 'gemini' ? '#902A19' : '#5B8124';
+
+    body.innerHTML = `
+        <div class="mb-4 text-center">
+            <span class="text-xs font-bold px-3 py-1 rounded-full text-white shadow-sm" style="background-color: ${color}">${title} の詳細分析</span>
+        </div>
+        <div class="font-bold text-[#902A19] mb-3 text-sm border-b pb-2">お題：${esc(item.odai)}</div>
+        
+        <div class="bg-gray-50 p-4 rounded-xl border border-gray-200 mb-4 shadow-inner">
+            <div class="text-base font-bold text-gray-800 leading-relaxed mb-3">
+                「${esc(item.odai)}」とかけまして、<br>
+                「${esc(mData.toku)}」と解く。<br>
+                <span class="text-gray-600 text-sm">その心は…</span><br>
+                <span class="text-[#902A19] pl-2 font-bold">「${esc(mData.kokoro)}」</span>
+            </div>
+            <div class="font-bold mb-3" style="color:${color}">AI総合評価: ${(mData.s_total || 0).toFixed(2)} / 5.0</div>
+            <div class="border-t border-gray-200 pt-3 bg-white p-3 rounded border">
+                ${critique({ overall: mData.overall, axis_comments: mData.axis_comments, scores: mData.scores })}
+            </div>
+        </div>
+        
+        <div class="bg-emerald-50 p-4 rounded-xl border border-emerald-100 shadow-inner">
+            <h4 class="font-bold text-emerald-800 text-sm mb-3">👤 人間評価＋コメント</h4>
+            ${humanRows}
+        </div>
+    `;
+    
+    document.getElementById('admin-detail-modal').classList.remove('hidden');
+};
+window.closeAdminDetail = function() {
+    document.getElementById('admin-detail-modal')?.classList.add('hidden');
+};
+
+// RLHFレビュー表: モデル別の人間評価（星＋コメント）を /admin/model_feedback から取得して描画。
+async function loadModelFeedback() {
+    const container = document.getElementById('model-feedback-container');
+    if (!container) return;
+    container.innerHTML = '<div class="text-center py-6 text-gray-500">読み込み中...</div>';
+    try {
+        const data = await window.authFetch(`${API_BASE}/admin/model_feedback`);
+        const esc = window.uiEscapeHtml || ((s) => String(s == null ? '' : s));
+        if (!data.items || data.items.length === 0) {
+            container.innerHTML = '<p class="text-gray-400 text-center py-4">モデル評価データはまだありません</p>'; return;
+        }
+        container.innerHTML = data.items.map(r => {
+            const isElyza = r.model === 'elyza';
+            const badge = isElyza ? 'bg-[#5B8124]' : 'bg-[#902A19]';
+            const label = isElyza ? '🏠 ELYZA' : '☁️ Gemini';
+            return `<div id="mfb-${r.log_id}" class="bg-white p-3 rounded border border-gray-100 shadow-sm text-xs transition-all duration-300">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="${badge} text-white font-bold px-2 py-0.5 rounded">${label}</span>
+                    <div class="flex items-center gap-2">
+                        <span class="font-bold text-emerald-700">★ ${esc(String(r.score))}</span>
+                        <button onclick="invalidateFeedback('${r.log_id}')" class="text-[10px] bg-gray-100 hover:bg-red-200 text-gray-600 px-2 py-0.5 rounded border border-gray-200">🗑️ 無効化(没)</button>
+                    </div>
+                </div>
+                <div class="text-gray-500">お題：${esc(r.odai)}</div>
+                <div class="text-gray-700">${esc(r.text)}</div>
+                ${r.comment ? `<div class="mt-1 text-[#902A19]">💬 ${esc(r.comment)}</div>` : ''}
+            </div>`;
+        }).join('');
+    } catch (e) {
+        container.innerHTML = '<p class="text-red-500 text-center py-4">取得に失敗しました</p>';
+    }
+}
+
+// RLHFレビュー行の「無効化(没)」: 評価を論理削除し学習対象から除外。成功で行を退場アニメで消す。
+window.invalidateFeedback = async function(logId) {
+    if (!logId) return;
+    try {
+        await window.authFetch(`${API_BASE}/admin/feedback/invalidate`, {
+            method: 'POST', body: JSON.stringify({ log_id: logId })
+        });
+        // インラインstyleではなくTailwindクラスで確実にアニメ（行は transition-all duration-300 を保持）。
+        const row = document.getElementById(`mfb-${logId}`);
+        if (row) {
+            row.classList.add('opacity-0', 'translate-x-full');
+            row.addEventListener('transitionend', () => row.remove(), { once: true });
+            setTimeout(() => row.remove(), 400);  // transitionend が来ない環境のフォールバック
+        }
+        showToast("評価を無効化（学習対象から除外）しました");
+    } catch (e) { showToast("無効化に失敗しました", "warning"); }
+};
+
+async function loadAdminMetrics() {
+    try {
+        const data = await window.authFetch(`${API_BASE}/admin/metrics`);
+        if(document.getElementById('adm-pv')) document.getElementById('adm-pv').innerText = data.total_pvs || 0;
+        if(document.getElementById('adm-uu')) document.getElementById('adm-uu').innerText = data.total_uus || 0;
+        if(document.getElementById('adm-dur')) document.getElementById('adm-dur').innerText = `${data.avg_duration_sec || 0}秒`;
+        
+        // 🌟 イベント統計の描画ロジック（日本語マッピング復活）
+        const eventsContainer = document.getElementById('adm-events-container');
+        if (eventsContainer) {
+            eventsContainer.innerHTML = ''; 
+            if (data.events && Object.keys(data.events).length > 0) {
+                const fNames = { 'page_view': '👥 初期訪問', 'tab_click': '🎛️ タブ切替', 'generate_requested': '🤖 生成リクエスト', 'human_submit': '🖌️ 自作鑑定依頼', 'evaluate_feed': '📤 道場破り送信', 'share_sns': '🔗 SNSシェア', 'page_leave': '🚪 ページ離脱 (セッション終了)', 'submit_feedback': '📮 ご意見箱投稿', 'gen_eval:gemini': '⭐ Gemini評価', 'gen_eval:elyza': '⭐ ELYZA評価' };
+                const sortedEvents = Object.entries(data.events).sort((a, b) => b[1] - a[1]);
+                sortedEvents.forEach(([eventName, count]) => {
+                    const displayName = fNames[eventName] || eventName;
+                    eventsContainer.insertAdjacentHTML('beforeend', `
+                        <div class="flex justify-between items-center bg-white p-2 rounded border border-gray-100 shadow-sm mb-2">
+                            <span class="text-gray-700 font-medium">📍 ${displayName}</span>
+                            <span class="bg-[#C5B358] text-white text-xs font-bold px-2 py-1 rounded-full">${count} 回</span>
+                        </div>
+                    `);
+                });
+            } else {
+                eventsContainer.innerHTML = '<p class="text-gray-400 text-center py-2">まだアクションデータがありません</p>';
+            }
+        }
+    } catch(e) { 
+        console.error("Metrics load error:", e); 
+        const eventsContainer = document.getElementById('adm-events-container');
+        if (eventsContainer) eventsContainer.innerHTML = '<p class="text-red-500 text-center py-2">データの取得に失敗しました</p>';
+    }
+}
+
+async function initAdmin() {
+    loadConfig();
+    loadPendingData();
+    loadAdminMetrics();
+    loadModelFeedback();
+}
+
+
+// ==========================================
+// 🛡️ [Architecture Rule] イベントデリゲーション・ルーター
+// ==========================================
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('[onclick]').forEach(el => {
+        el.setAttribute('data-action', el.getAttribute('onclick'));
+        el.removeAttribute('onclick');
+    });
+});
+
+document.addEventListener('click', (e) => {
+    const targetBtn = e.target.closest('[data-action], [onclick]');
+    if (!targetBtn) return;
+    const actionStr = targetBtn.getAttribute('data-action') || targetBtn.getAttribute('onclick');
+    
+    if (targetBtn.hasAttribute('onclick')) {
+        targetBtn.setAttribute('data-action', actionStr);
+        targetBtn.removeAttribute('onclick');
+    }
+
+    if (actionStr.includes('logout')) {
+        e.preventDefault();
+        logout();
+    } else if (actionStr.includes('loadAdminMetrics')) {
+        e.preventDefault();
+        loadAdminMetrics();
+    } else if (actionStr.includes('saveConfigs')) {
+        e.preventDefault();
+        saveConfigs();
+    } else if (actionStr.includes('loadPendingData')) {
+        e.preventDefault();
+        loadPendingData();
+    } else if (actionStr.includes('loadModelFeedback')) {
+        e.preventDefault();
+        loadModelFeedback();
+    } else if (actionStr.includes('showPendingDetail')) {
+        e.preventDefault();
+        const match = actionStr.match(/'([^']+)'/);
+        if (match) window.showPendingDetail(match[1]);
+    } else if (actionStr.includes('closeAdminDetail')) {
+        e.preventDefault();
+        window.closeAdminDetail();
+    }
+});
+
+
+// ==========================================
+// 🛡️ [Human Feedback Moderation]
+// ==========================================
+document.addEventListener('click', async (e) => {
+    const btn = e.target.closest('button[data-action]');
+    if (!btn) return;
+    const actionStr = btn.getAttribute('data-action');
+    if (actionStr.includes('deleteHumanComment')) {
+        e.preventDefault();
+        e.stopPropagation();
+        const match = actionStr.match(/'([^']+)'.*?'([^']+)'/);
+        if(match) window.deleteHumanComment(match[1], match[2]);
+    } else if (actionStr.includes('promoteHumanComment')) {
+        e.preventDefault();
+        e.stopPropagation();
+        const match = actionStr.match(/'([^']+)'.*?'([^']+)'/);
+        if(match) window.promoteHumanComment(match[1], match[2]);
+    }
+});
+
+window.deleteHumanComment = async function(docId, userSlug) {
+    if (!confirm(`ユーザー「${userSlug}」の評価とコメントを完全にパージしますか？`)) return;
+    try {
+        await window.authFetch(`${typeof API_BASE !== 'undefined' ? API_BASE : ''}/admin/item/${docId}/human/delete`, { 
+            method: 'POST',
+            body: JSON.stringify({ target_slug: userSlug })
+        });
+        if (typeof showToast === "function") showToast("コメントをパージしました", "info");
+        if (typeof closeAdminDetail === "function") closeAdminDetail();
+        if (typeof loadPendingData === "function") loadPendingData();
+    } catch (e) {
+        if (typeof showToast === "function") showToast("パージに失敗しました", "warning");
+    }
+};
+
+window.promoteHumanComment = async function(docId, userSlug) {
+    if (!confirm(`ユーザー「${userSlug}」の評価(添削)を正解データとして採用し、殿堂入りさせますか？`)) return;
+    try {
+        await window.authFetch(`${typeof API_BASE !== 'undefined' ? API_BASE : ''}/admin/item/${docId}/human/promote`, { 
+            method: 'POST',
+            body: JSON.stringify({ target_slug: userSlug })
+        });
+        if (typeof showToast === "function") showToast("ユーザーの添削をSFTデータに昇格しました！", "info");
+        if (typeof closeAdminDetail === "function") closeAdminDetail();
+        if (typeof loadPendingData === "function") loadPendingData();
+    } catch (e) {
+        if (typeof showToast === "function") showToast("昇格処理に失敗しました", "warning");
+    }
+};

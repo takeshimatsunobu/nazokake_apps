@@ -1,0 +1,413 @@
+"""管理者ルーター（DDD再編で api/admin.py から routers/ へ移設・最終陣）。
+
+設定取得/更新、承認待ち一覧、承認/通常承認、削除、リセット、メトリクス集計。
+共有要素（get_db / serialize_doc / verify_admin_token）は api.deps から import して統一する。
+"""
+from fastapi import APIRouter, Depends, HTTPException
+from firebase_admin import firestore
+
+from api.deps import get_db, serialize_doc, verify_admin_token
+from models.schemas import ConfigUpdateRequest, FeedbackInvalidateRequest
+
+router = APIRouter()
+
+# モデルキー → ステータスフィールド名 / アクション → ステータス値
+_MODEL_STATUS_FIELD = {"gemini": "gemini_status", "elyza": "elyza_status"}
+_ACTION_TO_STATUS = {"golden": "golden", "approve": "approved", "reject": "rejected", "delete": "deleted"}
+# 「未評価でない（＝処理済み）」とみなすステータス集合
+_RESOLVED_STATUSES = {"golden", "approved", "rejected", "deleted", "n/a"}
+
+def _resolve_statuses(data: dict) -> tuple:
+    """文書から (gemini_status, elyza_status) を決定する（レガシー互換の既定値込み）。
+
+    新フィールド未設定の旧文書は is_golden_data / is_approved から既定値を補う。
+    ELYZA 未生成（result_llmjp / nazokake_text_llmjp が無い）は 'n/a'（対象外）。
+    """
+    legacy_golden = bool(data.get("is_golden_data"))
+    legacy_approved = bool(data.get("is_approved"))
+    legacy = "golden" if legacy_golden else ("approved" if legacy_approved else "pending")
+    g = data.get("result_gemini") or data.get("result") or {}
+    has_gemini = bool(g.get("toku") or g.get("kokoro") or data.get("nazokake_text"))
+    has_elyza = bool((data.get("result_llmjp") or {}).get("toku") or
+                     (data.get("result_llmjp") or {}).get("kokoro") or
+                     data.get("nazokake_text_llmjp"))
+    # データの無いモデルは 'n/a'（対象外＝処理済み扱い）。これにより単一モデル文書も resolved 判定が成立する。
+    default_g = legacy if has_gemini else "n/a"
+    default_e = legacy if has_elyza else "n/a"
+    return data.get("gemini_status", default_g), data.get("elyza_status", default_e)
+
+def _shape_pending_item(data: dict) -> dict:
+    """承認待ちドキュメントを、管理画面が必要とする正規化DTOへ整形する。
+
+    生フィールド名への密結合を断ち、Gemini/ELYZA/Human を明示的に構造化する。
+    互換のため A_TITLE/nazokake_text/total_score 等の旧トップレベルキーは残す。
+    """
+    g = data.get("result_gemini") or data.get("result") or {}
+    e = data.get("result_llmjp") or {}
+    human_evals = data.get("human_evaluations", {}) or {}
+    human_comments = data.get("human_comments", {}) or {}
+    avg = (sum(human_evals.values()) / len(human_evals)) if human_evals else 0.0
+    gemini_status, elyza_status = _resolve_statuses(data)
+    return {
+        "doc_id": data.get("doc_id"),
+        "odai": data.get("odai") or data.get("A_TITLE", ""),
+        "timestamp": str(data.get("timestamp", "")),
+        "gemini_status": gemini_status,
+        "elyza_status": elyza_status,
+        "flags": {
+            "is_user_edited": bool(data.get("is_user_edited")),
+            "is_approved": bool(data.get("is_approved")),
+            "is_golden_data": bool(data.get("is_golden_data")),
+        },
+        "gemini": {
+            "toku": g.get("toku", ""), "kokoro": g.get("kokoro", ""),
+            "text": data.get("nazokake_text", ""),
+            "scores": data.get("scores", {}), "axis_comments": data.get("axis_comments", {}),
+            "overall": data.get("overall", ""), "s_total": data.get("s_total", 0.0),
+        },
+        "elyza": {
+            "toku": e.get("toku", ""), "kokoro": e.get("kokoro", ""),
+            "text": data.get("nazokake_text_llmjp", ""),
+            "scores": data.get("scores_llmjp", {}), "axis_comments": data.get("axis_comments_llmjp", {}),
+            "overall": data.get("overall_llmjp", ""), "s_total": data.get("s_total_llmjp", 0.0),
+        },
+        "human": {
+            "evaluations": human_evals, "count": len(human_evals), "s_total": round(avg, 2),
+            "comments": human_comments, "edited_text": data.get("nazokake_text", ""),
+        },
+        # --- 後方互換（旧admin.jsや他consumer向けに残す） ---
+        "A_TITLE": data.get("A_TITLE") or data.get("odai", ""),
+        "nazokake_text": data.get("nazokake_text", ""),
+        "total_score": data.get("total_score") or data.get("s_total", 0.0),
+        "s_total": data.get("s_total", 0.0),
+    }
+
+@router.get("/config")
+def get_config(user = Depends(verify_admin_token), db = Depends(get_db)):
+    doc = db.collection("system_configs").document("ai_settings").get()
+    if doc.exists: return doc.to_dict()
+    return {"temperature": 0.8, "model_name": "elyza:8b", "evaluator_model": "gemini-3.1-pro-preview",
+            "system_prompt": "あなたは前衛的な天才なぞかけ芸人です。"}
+
+@router.post("/config")
+def update_config(req: ConfigUpdateRequest, user = Depends(verify_admin_token), db = Depends(get_db)):
+    db.collection("system_configs").document("ai_settings").set(req.model_dump())
+    return {"status": "success"}
+
+@router.get("/pending")
+def get_pending(limit: int = 30, last_doc_id: str = None,
+                user = Depends(verify_admin_token), db = Depends(get_db)):
+    """未評価（gemini_status か elyza_status が pending）の作品をカーソルベースで返す。
+
+    返り値: {items, next_cursor, has_more}。last_doc_id を渡すとその次から limit 件。
+    """
+    docs = db.collection("nazokake_items").where("is_user_edited", "==", True).stream()
+    items = []
+    for doc in docs:
+        data = serialize_doc(doc)
+        dto = _shape_pending_item(data)
+        # どちらかのモデルが未評価なら承認待ちとして残す
+        if dto["gemini_status"] == "pending" or dto["elyza_status"] == "pending":
+            items.append(dto)
+    items.sort(key=lambda x: str(x.get("timestamp", "")), reverse=True)
+
+    start = 0
+    if last_doc_id:
+        for i, it in enumerate(items):
+            if it["doc_id"] == last_doc_id:
+                start = i + 1
+                break
+    page = items[start:start + limit]
+    return {
+        "items": page,
+        "next_cursor": page[-1]["doc_id"] if page else None,
+        "has_more": (start + limit) < len(items),
+    }
+
+# 旧 doc 単位の承認EP (/approve・/approve_normal) は /item/{doc_id}/{model}/{action} に
+# 置換済みのため削除（P2）。物理削除 /delete とリセット /reset は維持する。
+
+@router.delete("/delete/{doc_id}")
+def delete_item(doc_id: str, user = Depends(verify_admin_token), db = Depends(get_db)):
+    db.collection("nazokake_items").document(doc_id).delete()
+    return {"status": "success"}
+
+# 「道場に戻す」復元対象フィールド（新デュアル/11軸スキーマ）。original_data に在るキーのみ書き戻す。
+_RESTORABLE_FIELDS = (
+    "result", "result_gemini", "nazokake_text", "scores", "axis_comments", "overall", "s_total",
+    "result_llmjp", "nazokake_text_llmjp", "scores_llmjp", "axis_comments_llmjp", "overall_llmjp", "s_total_llmjp",
+)
+
+@router.post("/reset/{doc_id}")
+def reset_item(doc_id: str, user = Depends(verify_admin_token), db = Depends(get_db)):
+    """ユーザー編集・評価を取り消して「道場に戻す」（新スキーマ対応・P1修正）。
+
+    1. 人間データ(human_evaluations / human_comments)を削除
+    2. モデル別ステータス(gemini_status / elyza_status)と承認フラグをリセット
+    3. original_data から旧単一モデル＋新デュアル/11軸スキーマの両対応で復元
+       （original_data に存在するキーのみ書き戻し、無い新フィールドは現状維持）
+    """
+    doc_ref = db.collection("nazokake_items").document(doc_id)
+    doc = doc_ref.get()
+    if not doc.exists: raise HTTPException(status_code=404, detail="Item not found")
+    orig = (doc.to_dict() or {}).get("original_data") or {}
+
+    # 編集/評価/ステータスの初期化（公開フィードの除外条件 is_user_edited==True を解除して道場へ戻す）
+    update_data = {
+        "is_user_edited": False,
+        "is_approved": False,
+        "is_golden_data": False,
+        "human_evaluations": firestore.DELETE_FIELD,
+        "human_comments": firestore.DELETE_FIELD,
+        "gemini_status": firestore.DELETE_FIELD,
+        "elyza_status": firestore.DELETE_FIELD,
+    }
+
+    # original_data からの復元（旧単一モデル形式からの脱却＝新スキーマ群も復旧）
+    if orig:
+        odai = orig.get("odai", "")
+        if odai:
+            update_data["odai"] = odai
+            update_data["A_TITLE"] = odai
+        for f in _RESTORABLE_FIELDS:
+            if f in orig:
+                update_data[f] = orig[f]
+        if "s_total" in orig:
+            update_data["total_score"] = orig.get("s_total", 0.0)
+
+    doc_ref.update(update_data)
+    return {"status": "success"}
+
+class HumanActionRequest(BaseModel):
+    target_slug: str
+
+@router.post("/item/{doc_id}/human/delete")
+def delete_human_comment(
+    doc_id: str,
+    req: HumanActionRequest,
+    user: dict = Depends(verify_admin_token),
+    db: firestore.Client = Depends(get_db)
+):
+    # ドット記法で指定したユーザー（slug）のデータだけをピンポイントで物理削除
+    update_data = {
+        f"human_evaluations.{req.target_slug}": firestore.DELETE_FIELD,
+        f"human_comments.{req.target_slug}": firestore.DELETE_FIELD,
+    }
+    db.collection("nazokake_items").document(doc_id).update(update_data)
+    return {"status": "success", "action": "deleted", "target": req.target_slug}
+
+@router.post("/item/{doc_id}/human/promote")
+def promote_human_comment(
+    doc_id: str,
+    req: HumanActionRequest,
+    user: dict = Depends(verify_admin_token),
+    db: firestore.Client = Depends(get_db)
+):
+    update_data = {
+        "is_approved": True,
+        "is_golden_data": True,
+        "feed_ready": True,
+        "is_user_edited": False,
+        "promoted_human_slug": req.target_slug
+    }
+    db.collection("nazokake_items").document(doc_id).update(update_data)
+    return {"status": "success", "action": "promoted", "target": req.target_slug}
+
+@router.post("/item/{doc_id}/{model}/{action}")
+def model_action(doc_id: str, model: str, action: str,
+                 user = Depends(verify_admin_token), db = Depends(get_db)):
+    """モデル別（gemini / elyza）の評価アクション。
+    両方のAIの処遇が決定(resolved)したタイミングで初めて公開フラグを立てる。
+    """
+    _MODEL_STATUS_FIELD = {"gemini": "gemini_status", "elyza": "elyza_status"}
+    _ACTION_TO_STATUS = {"golden": "golden", "approve": "approved", "reject": "rejected", "delete": "deleted"}
+
+    if model not in _MODEL_STATUS_FIELD:
+        raise HTTPException(status_code=400, detail=f"invalid model: {model}")
+    if action not in _ACTION_TO_STATUS:
+        raise HTTPException(status_code=400, detail=f"invalid action: {action}")
+
+    doc_ref = db.collection("nazokake_items").document(doc_id)
+    snap = doc_ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Item not found")
+    data = snap.to_dict() or {}
+
+    field = _MODEL_STATUS_FIELD[model]
+    new_status = _ACTION_TO_STATUS[action]
+    update = {field: new_status}
+
+    def is_resolved(s):
+        return s in ("golden", "approved", "rejected", "deleted", "n/a")
+
+    # メモリ上でステータスをシミュレーション
+    current_g = new_status if model == "gemini" else data.get("gemini_status", "pending")
+    current_e = new_status if model == "elyza" else data.get("elyza_status", "pending")
+
+    resolved = is_resolved(current_g) and is_resolved(current_e)
+
+    # 両方のAIに対するアクションが完了したタイミングで、最終的な公開フラグを決定
+    if resolved:
+        update["is_user_edited"] = False  # コックピットの抽出対象から外し、一般フィードへ
+        if current_g in ("golden", "approved") or current_e in ("golden", "approved"):
+            update["is_approved"] = True
+        if current_g == "golden" or current_e == "golden":
+            update["is_golden_data"] = True
+
+    # 削除指定時は物理的にフィールドを消す
+    if model == "elyza" and action == "delete":
+        from firebase_admin import firestore
+        for f in ("result_llmjp", "scores_llmjp", "axis_comments_llmjp",
+                  "overall_llmjp", "nazokake_text_llmjp", "s_total_llmjp"):
+            update[f] = firestore.DELETE_FIELD
+
+    doc_ref.update(update)
+
+    return {
+        "status": "success",
+        "gemini_status": current_g,
+        "elyza_status": current_e,
+        "resolved": resolved
+    }
+
+@router.get("/metrics")
+def get_admin_metrics(user = Depends(verify_admin_token), db = Depends(get_db)):
+    docs = db.collection("telemetry_logs").stream()
+    total_pv = 0; unique_users = set(); event_counts = {}; total_duration = 0.0; duration_count = 0
+    for doc in docs:
+        data = doc.to_dict()
+        evt = data.get("event_name", ""); slug = data.get("user_slug", ""); dur = data.get("duration", 0.0)
+        if evt in ["page_view", "tab_click"]: total_pv += 1
+        if slug: unique_users.add(slug)
+        if evt: event_counts[evt] = event_counts.get(evt, 0) + 1
+        if evt == "page_leave" and dur > 0:
+            total_duration += dur; duration_count += 1
+    avg_dur = total_duration / duration_count if duration_count > 0 else 0.0
+    return {"total_pvs": total_pv, "total_uus": len(unique_users), "avg_duration_sec": round(avg_dur, 1), "events": event_counts}
+
+@router.get("/model_feedback")
+def get_model_feedback(user = Depends(verify_admin_token), db = Depends(get_db)):
+    """RLHFレビュー表用: telemetry_logs のモデル別評価(gen_eval:*)を nazokake_items と結合して返す。
+
+    各行: {model, odai, text, score, comment, user_slug, timestamp}。
+    extract_rlhf_dataset.py と同型ロジック（item はキャッシュして重複fetchを避ける）。
+    """
+    item_cache: dict = {}
+
+    def get_item(doc_id):
+        if doc_id not in item_cache:
+            snap = db.collection("nazokake_items").document(doc_id).get()
+            item_cache[doc_id] = snap.to_dict() if snap.exists else None
+        return item_cache[doc_id]
+
+    rows = []
+    for doc in db.collection("telemetry_logs").stream():
+        d = doc.to_dict() or {}
+        if d.get("invalidated"):
+            continue  # 「無効化(没)」済みはレビュー表からも除外（学習対象外と整合）
+        event = d.get("event_name", "") or ""
+        if not event.startswith("gen_eval:"):
+            continue
+        model_key = event.split(":", 1)[1].strip().lower()
+        doc_id = d.get("tab_name")
+        if not doc_id:
+            continue
+        item = get_item(doc_id) or {}
+        # モデル別の本文（Gemini=nazokake_text / ELYZA=nazokake_text_llmjp）
+        text = item.get("nazokake_text_llmjp", "") if model_key == "elyza" else item.get("nazokake_text", "")
+        rows.append({
+            "log_id": doc.id,   # 無効化(没)アクションのターゲット
+            "model": model_key,
+            "odai": item.get("odai", ""),
+            "text": text,
+            "score": d.get("duration", 0),
+            "comment": d.get("comment", "") or "",
+            "user_slug": d.get("user_slug", ""),
+            "timestamp": str(d.get("timestamp", "")),
+            "doc_id": doc_id,
+        })
+    rows.sort(key=lambda x: x["timestamp"], reverse=True)
+    return {"items": rows}
+
+@router.post("/feedback/invalidate")
+def invalidate_feedback(req: FeedbackInvalidateRequest,
+                        user = Depends(verify_admin_token), db = Depends(get_db)):
+    """RLHFレビュー表の評価を論理削除（無効化）し、学習対象から除外する。
+
+    telemetry_logs/{log_id} に invalidated=True を立てる。extract_rlhf_dataset.py も
+    /model_feedback も invalidated を除外するため、見た目と学習の双方から確実に外れる。
+    """
+    db.collection("telemetry_logs").document(req.log_id).update({
+        "invalidated": True,
+        "invalidated_at": firestore.SERVER_TIMESTAMP,
+    })
+    return {"status": "success"}
+
+# ============================================================
+# 🛡️ [Human Feedback Moderation]
+# ============================================================
+from pydantic import BaseModel
+from firebase_admin import firestore
+
+@router.post("/item/{doc_id}/human/delete", tags=["Admin"])
+def delete_human_comment(
+    doc_id: str,
+    user: dict = Depends(verify_admin_token),
+    db: firestore.Client = Depends(get_db)
+):
+    """
+    【荒らし対策】管理者が不適切な道場破りデータを削除（パージ）する
+    物理削除ではなく、human評価関連のフィールドを抹消し、未承認状態へリセットします。
+    """
+    doc_ref = db.collection("nazokake_items").document(doc_id)
+    doc = doc_ref.get()
+    
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="対象のドキュメントが見つかりません。")
+    
+    update_data = {
+        "human_evaluations": firestore.DELETE_FIELD,
+        "human_comments": firestore.DELETE_FIELD,
+        "is_user_edited": False,
+        "is_approved": False,
+        "is_golden_data": False,
+        "feed_ready": False
+    }
+    
+    doc_ref.update(update_data)
+    
+    return {
+        "status": "success", 
+        "message": "評価・コメントを削除（パージ）しました。", 
+        "doc_id": doc_id
+    }
+
+@router.post("/item/{doc_id}/human/promote", tags=["Admin"])
+def promote_human_comment(
+    doc_id: str,
+    user: dict = Depends(verify_admin_token),
+    db: firestore.Client = Depends(get_db)
+):
+    """
+    【AI学習用】優秀な添削データをSFT/DPO用のゴールデンデータへ昇格させる
+    """
+    doc_ref = db.collection("nazokake_items").document(doc_id)
+    doc = doc_ref.get()
+    
+    if not doc.exists:
+        raise HTTPException(status_code=404, detail="対象のドキュメントが見つかりません。")
+    
+    update_data = {
+        "is_approved": True,
+        "is_golden_data": True,
+        "feed_ready": True,
+        "is_user_edited": False
+    }
+    
+    doc_ref.update(update_data)
+    
+    return {
+        "status": "success", 
+        "message": "ゴールデンデータへ昇格（採用）しました。", 
+        "doc_id": doc_id
+    }

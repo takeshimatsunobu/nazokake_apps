@@ -1,0 +1,116 @@
+<details open class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> なぞかけと生理現象
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-4 sm:p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 space-y-8">
+        
+        <section>
+            <h4 class="text-md font-bold text-[#5B8124] border-b-2 border-[#5B8124]/30 pb-2 mb-4 flex items-center gap-2">
+                <span class="text-xl">🧠</span> 第1部：脳と認知のメカニズム（思考とひらめき）
+            </h4>
+            <div class="space-y-3">
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第1章：脳科学・中枢神経系へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch1" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第2章：遺伝学・分子生物学・生化学的アプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch2" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第3章：眼球運動・視覚系の生理メカニズム<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch3" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+            </div>
+        </section>
+
+        <section>
+            <h4 class="text-md font-bold text-[#5B8124] border-b-2 border-[#5B8124]/30 pb-2 mb-4 flex items-center gap-2">
+                <span class="text-xl">🫀</span> 第2部：自律神経と身体的反応（緊張と緩和）
+            </h4>
+            <div class="space-y-3">
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第4章：自律神経系・心血管系へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch4" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第5章：内分泌系・免疫系へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch5" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第6章：呼吸器系・発声器官の微細生理へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch6" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第7章：消化器系・腸内環境・代謝系へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch7" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+            </div>
+        </section>
+
+        <section>
+            <h4 class="text-md font-bold text-[#5B8124] border-b-2 border-[#5B8124]/30 pb-2 mb-4 flex items-center gap-2">
+                <span class="text-xl">🗣️</span> 第3部：環境・身体・コミュニケーション（外部との相互作用）
+            </h4>
+            <div class="space-y-3">
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第8章：運動器・感覚器・表情へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch8" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第9章：臨床・発達・応用生理学的アプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch9" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第10章：感覚器間相互作用（クロスモーダル）・生体リズムへのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch10" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第11章：人間工学・スポーツ・特殊環境へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch11" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第12章：睡眠・概日リズム（サーカディアンリズム）へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch12" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第13章：咀嚼・嚥下・口腔機能へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch13" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第14章：姿勢・重心・身体バランスへのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch14" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+                <details class="group/ch bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden"><summary class="p-3 cursor-pointer bg-gray-50 hover:bg-gray-100 transition flex justify-between items-center text-sm font-bold text-gray-700">第15章：高次感情・社会生理学・生体同期へのアプローチ<span class="transition-transform duration-300 group-open/ch:rotate-180 text-gray-400">▼</span></summary><div id="physio-ch15" class="p-4 text-sm text-gray-600 leading-relaxed">（※データ注入待ち）</div></details>
+            </div>
+        </section>
+
+    </div>
+</details>
+<details class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> なぞかけその他の研究の現状
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 text-gray-700 leading-relaxed">
+        <div class="text-center py-10 text-gray-500 font-bold">（※研究データ執筆中）</div>
+    </div>
+</details>
+<details class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> ２０世紀以前のなぞかけ調査
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 text-gray-700 leading-relaxed">
+        <div class="text-center py-10 text-gray-500 font-bold">（※研究データ執筆中）</div>
+    </div>
+</details>
+<details class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> なぞかけ名人とそのうんちく
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 text-gray-700 leading-relaxed">
+        <div class="text-center py-10 text-gray-500 font-bold">（※研究データ執筆中）</div>
+    </div>
+</details>
+<details class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> なぞかけに類似する文化
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 text-gray-700 leading-relaxed">
+        <div class="text-center py-10 text-gray-500 font-bold">（※研究データ執筆中）</div>
+    </div>
+</details>
+<details class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> なぞかけ技法
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 text-gray-700 leading-relaxed">
+        <div class="text-center py-10 text-gray-500 font-bold">（※研究データ執筆中）</div>
+    </div>
+</details>
+<details class="group bg-white/90 backdrop-blur-sm rounded-xl border border-[#C5B358]/50 shadow-sm overflow-hidden transition duration-300">
+    <summary class="flex justify-between items-center cursor-pointer p-5 bg-gradient-to-r from-[#FAF8F5] to-white hover:bg-[#FAF8F5]/80 transition">
+        <h3 class="text-lg font-bold text-[#902A19] flex items-center gap-2">
+            <span class="text-2xl">📝</span> なぞかけ関連技術
+        </h3>
+        <span class="text-[#C5B358] transition-transform duration-300 group-open:rotate-180">▼</span>
+    </summary>
+    <div class="p-5 bg-[#FAF8F5] border-t border-[#C5B358]/20 text-gray-700 leading-relaxed">
+        <div class="text-center py-10 text-gray-500 font-bold">（※研究データ執筆中）</div>
+    </div>
+</details>
