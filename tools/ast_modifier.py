@@ -21,7 +21,6 @@ libcstはコメント・空白・インデント等の具象構文情報を保�
 import ast
 import json
 import os
-import re
 import sys
 import tempfile
 from pathlib import Path
@@ -105,25 +104,6 @@ def _get_top_level_names(code_str: str) -> set[str]:
     return names
 
 
-_CODE_BLOCK_PATTERN = re.compile(r"```(?:python)?\s*\n?(.*?)```", re.DOTALL | re.MULTILINE)
-
-
-def _extract_python_code(text: str) -> str:
-    """テキストからPythonコードのみを安全に抽出する。
-
-    LLMがnew_codeの前後に自然言語の解説を混入させたり、マークダウンの
-    コードブロック(```python ... ```)で装飾したりすると、そのままAST
-    パーサーに渡してSyntaxErrorでクラッシュする。テキスト全体から最初に
-    見つかったコードブロックの中身のみを抽出することでこれを防ぐ。
-    コードブロックが見つからない場合(LLMが装飾なしでコードのみを出力した
-    場合)は、元のテキストをトリムしたものをそのまま返す(フォールバック)。
-    """
-    match = _CODE_BLOCK_PATTERN.search(text)
-    if match:
-        return match.group(1).strip()
-    return text.strip()
-
-
 def _atomic_write_text(path: Path, content: str) -> None:
     """対象ファイルを不可分(アトミック)に上書きする。
 
@@ -162,20 +142,14 @@ def apply_modification(instruction: dict) -> str:
     """1件の修正指示を適用し、結果メッセージを返す(ファイルは成功時のみ上書き)。"""
     try:
         validated = AstModificationInstruction(**instruction)
-    except ValidationError as first_error:
-        # 防衛的パース(最終フォールバック): new_codeへのノイズ混入等でバリデーションに
-        # 失敗した場合、既存の正規表現抽出ロジックでnew_codeを正規化した上で
-        # 再バリデーションを試みる。それでも失敗する場合は素直にエラーを返す。
-        salvaged = dict(instruction)
-        salvaged["new_code"] = _extract_python_code(str(instruction.get("new_code", "")))
-        try:
-            validated = AstModificationInstruction(**salvaged)
-        except ValidationError:
-            return f"Error: instructionのバリデーションに失敗しました: {first_error}"
+    except ValidationError as e:
+        # フェイルファスト: LLM側の自己修正ループ(呼び出し元)にエラー内容をそのまま
+        # 返し、再生成を促す。ここで正規表現等による救済・推測は一切行わない。
+        return f"Error: instructionのバリデーションに失敗しました: {e}"
 
     file_path = validated.file_path
     target_name = validated.target_name
-    new_code = _extract_python_code(validated.new_code)
+    new_code = validated.new_code
 
     if not file_path or not target_name or not new_code:
         return "Error: file_path, target_name, new_code はすべて必須です。"
