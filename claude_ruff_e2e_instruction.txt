@@ -1,0 +1,6 @@
+Phase 0 (Ruff自動修復) の組み込み実装が完了しました。最終稼働確認（E2Eテスト）を実施します。
+現在のクリーンな環境で `python tools/nazo_agent.py --prompt test_orchestration.txt` を実行してください。
+
+実行完了後、`tools/audit_reports/nazo_agent_daemon.log` を解析し、以下の2点をファクトとして抽出・報告してください。
+1. パイプライン全体がクラッシュせず正常に完走したか（Exit Code 0）。
+2. ログ内に `[Phase 0 / Ruff Autofix]` のデバッグ出力が記録され、バックグラウンドでRuffが実際に稼働した実測値が確認できるか。

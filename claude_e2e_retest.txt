@@ -1,0 +1,1 @@
+ローカルの .env ファイルの完全なサニタイズ（不可視文字や不要な空白、クォートの除去と再構築）が完了しました。Illegal header value の原因は物理的に消滅しています。クリーンな状態で再度 python tools/nazo_agent.py --prompt test_orchestration.txt を実行し、E2Eテストの最終結果（CERTIFICATE_VERIFY_FAILED と Illegal header value の完全消滅、レイテンシの実測値、および正常なコミット生成の有無）を報告してください。

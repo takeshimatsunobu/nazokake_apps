@@ -1,0 +1,27 @@
+# プロジェクト対象領域の要約マップ (AST抽出)
+- main.py: health_check, root
+- mcp_server.py: generate_nazokake, evaluate_nazokake, trigger_dpo_pipeline, dpo_stats, evaluation_correction_prompt
+- api\deps.py: get_db, serialize_doc, handle_exceptions, verify_admin_token, verify_user_token, async_wrapper, sync_wrapper
+- core\exceptions.py: global_exception_handler
+- models\schemas.py: HumanSubmitRequest, GenerateRequest, TelemetryLogRequest, FeedbackRequest, ConfigUpdateRequest, FeedbackInvalidateRequest, BoardPostRequest, HumanActionRequest, UserFeedbackRequest
+- scripts\backfill_board.py: main
+- scripts\dataset_extractor.py: DatasetExtractor, __init__, _load_config, _init_firestore, _fetch_base_items, export_sft_dataset, export_dpo_dataset, _write_jsonl
+- scripts\extract_dpo_data.py: load_records, to_score, build_pairs, main
+- scripts\extract_rlhf_dataset.py: init_db, compose_text, resolve_text, to_score, ts_key, main
+- scripts\extract_sft_data.py: init_db, compose_text, to_score, main
+- scripts\_temp_inspect_db.py: fs_value, parse_doc, run_query
+- services\evaluation.py: update_dynamic_correction_prompt, _log_evaluation_cost, run_evaluation, _call
+- services\feedback_analyzer.py: _fetch_recent_feedbacks_sync, _fetch_ai_scores_sync, analyze_axis_divergence, generate_correction_prompt
+- services\feedback_loop.py: _fetch_high_rated_doc_ids_sync, fetch_high_rated_nazokake_ids, _fetch_fewshot_entry_sync, build_high_rated_fewshot_entries
+- services\generation.py: _load_fewshot_pool, refresh_fewshot_pool_from_feedback, _sample_fewshot_block, chat_completion_local, _summarize_thinking, _build_gen_prompts, _log_generation_cost, _finalize, generate_via_gemini, generate_via_llmjp, generate_nazokake, gemini_call
+- services\output_parser.py: get_rag_context, _first_json_block, _salvage_str_field, _extract_json_dict, _valid_nazokake, fetch_vectors
+- api\routers\admin.py: _resolve_statuses, apply_human_action
+- api\routers\admin_costs.py: _fetch_costs_sync, _fetch_recent_costs, is_budget_exceeded, get_costs, get_costs_dashboard
+- api\routers\admin_feedbacks.py: _fetch_feedbacks_sync, get_admin_feedbacks, refresh_fewshot_pool
+- api\routers\board.py: get_board_items, create_board_post, enforce_quota_and_write, ts
+- api\routers\feed.py: _fetch_docs_sync, _fetch_cursor_sync, get_user_feed, get_golden_feed, evaluate_user_item
+- api\routers\feedback.py: submit_feedback
+- api\routers\generate.py: _compose_text, _validate_result_with_fallback, _validate_scores_with_fallback, progressive_generate, _guarded_progressive, get_status, generate_ai, process_gemini, process_elyza
+- api\routers\metrics.py: log_telemetry
+- api\routers\submission.py: submit_human
+- api\routers\user_feedback.py: submit_user_feedback

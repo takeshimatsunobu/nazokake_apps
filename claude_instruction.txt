@@ -1,0 +1,1 @@
+tools/nazo_agent.py 内のAider起動部分（subprocess.run または Popen の実行箇所）を修正してください。nv引数に os.environ.copy() を渡し、さらに REQUESTS_CA_BUNDLE と SSL_CERT_FILE の値として os.path.expanduser('~/.certs/custom_ca_bundle.pem') の絶対パスを設定・上書きするロジックを追加してください。修正後、python -m py_compile tools/nazo_agent.py を実行して構文をチェックし、問題がなければ再度E2Eテストを実行して結果（CERTIFICATE_VERIFY_FAILEDの消滅と処理時間）を報告してください。

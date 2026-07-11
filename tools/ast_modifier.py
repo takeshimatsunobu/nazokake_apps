@@ -20,8 +20,10 @@ libcstはコメント・空白・インデント等の具象構文情報を保�
 
 import ast
 import json
+import os
 import re
 import sys
+import tempfile
 from pathlib import Path
 
 if sys.platform == "win32":
@@ -122,6 +124,30 @@ def _extract_python_code(text: str) -> str:
     return text.strip()
 
 
+def _atomic_write_text(path: Path, content: str) -> None:
+    """対象ファイルを不可分(アトミック)に上書きする。
+
+    対象ファイルと同一ディレクトリ(同一ドライブ・パーティション)に一時ファイルを
+    作成して書き込み、fsyncで物理ディスクへ確実に同期した後、os.replaceで元ファイルを
+    すげ替える。os.replaceはOS側で不可分な操作として保証されるため、書き込み中に
+    プロセスが強制終了(OOM等)しても、対象ファイルが空(0バイト)や中途半端な内容の
+    まま残ることはない(残るのは書き込み前の旧内容か、書き込み後の新内容のみ)。
+    """
+    dir_name = os.path.dirname(str(path)) or "."
+    tmp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=dir_name, delete=False)
+    tmp_path = Path(tmp.name)
+    try:
+        tmp.write(content)
+        tmp.flush()
+        os.fsync(tmp.fileno())
+        tmp.close()
+        os.replace(tmp_path, path)
+    except Exception:
+        tmp.close()
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+
 def _parse_new_node(new_code: str) -> cst.CSTNode:
     """new_code(関数/クラス定義1個ぶんのソース断片)をパースし、
     先頭の関数/クラス定義ノードを取り出す。"""
@@ -217,7 +243,7 @@ def apply_modification(instruction: dict) -> str:
         )
         sys.exit(1)
 
-    path.write_text(modified_module.code, encoding="utf-8")
+    _atomic_write_text(path, modified_module.code)
     return f"✅ '{target_name}' を '{file_path}' 内で安全に置換しました。"
 
 

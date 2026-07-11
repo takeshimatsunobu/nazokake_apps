@@ -1,0 +1,1 @@
+APIキーのローテーションと .env の書式修正（サニタイズ）が完了しました。クリーンな環境で python tools/nazo_agent.py --prompt test_orchestration.txt を実行し、E2Eテストの最終確認を行ってください。特に「CERTIFICATE_VERIFY_FAILED」および「Illegal header value」の消滅、処理レイテンシの実測値、そして正常なコミット生成の成否を評価し、結果を報告してください。

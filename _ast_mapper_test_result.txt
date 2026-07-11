@@ -1,0 +1,29 @@
+=== TEST 1: phase2_claude_translation (nazokake_apps全体, .venv_ai含む再帰走査) ===
+[発見] nazo_agent.py L387-L465
+async def phase2_claude_translation(user_instruction: str, error_log_path: Path) -> dict:
+    print("\n🔍 [Phase 2] Claude API による「Aiderタスク」への翻訳・分割を開始します...")
+    api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
+    with open(error_log_path, "r", encoding="utf-8") as f:
+        raw_error_log = f.read()
+
+    deduped_log = acd_phase1_dedup(raw_error_log)
+    try:
+        compact_context = acd_ast_compress(deduped_log, TARGET_APP_DIR, max_chars=ACD_MAX_SAFE_CHARS
+...
+
+=== TEST 2: 存在しないシンボル ===
+Error: シンボル 'this_symbol_does_not_exist_xyz' は見つかりませんでした。
+
+=== TEST 3: BOM付きファイル (nazokakebatchfactory 配下, main関数は複数箇所に存在するはず) ===
+[発見] nazokakebatchfactory\.venv_train\Lib\site-packages\accelerate\commands\accelerate_cli.py L28-L50
+def main():
+    parser = CustomArgumentParser("Accelerate CLI tool", usage="accelerate <command> [<args>]", allow_abbrev=False)
+    subparsers = parser.add_subparsers(help="accelerate command helpers")
+
+    # Register commands
+    get_config_parser(subparsers=subparsers)
+    estimate_command_parser(subparsers=subparsers)
+    env_command_parser(subparsers=subparsers)
+    launch_command_parser(subparsers=subparsers)
+    merge_command_parser(subparsers=subparsers)
+    tpu_command_parser(subparser
