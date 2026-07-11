@@ -1,0 +1,17 @@
+【ミッション: エンコーディングバグの修復とフェイルファストの徹底 (Epic 1 防弾化 - 緊急パッチ)】
+
+Windows環境において `subprocess.run` の出力デコード時に発生する `UnicodeDecodeError` が握り潰され、一括コミットがスキップされるサイレント障害を修復します。エラーを握り潰すのではなく、厳格にエラーとして弾く「フェイルファスト」の原則に基づいて実装してください。
+
+### Step 1: エンコーディングの明示とフェイルファストの適用
+1. `tools/nazo_agent.py` を解析し、`capture_output=True, text=True` を伴うすべての `subprocess.run` 呼び出し（特に `phase3_aider_execution`, `_run_claude_pipeline_and_commit`, およびフライホイール抽出フック等）を特定してください。
+2. 対象の `subprocess.run` 呼び出しに対して、`encoding="utf-8", errors="strict"` を明示的に追加してください。
+   ※ `errors="replace"` は文字化けによるデータロストを引き起こすため、絶対に使用しないでください。
+
+### Step 2: 厳格なエラーハンドリングの確認
+1. `UnicodeDecodeError` やその他の `subprocess.CalledProcessError` が発生した際、既存の `try-except` ブロックが適切に例外をキャッチし、ログにエラー原因（`str(e)` 等）を明確に出力していることを確認・修正してください。
+2. 例外発生時に処理が不正に継続されず、安全な縮退運転（failure_countの増加やcontinue）または上位へのエスカレーションに正しくフォールバックされるロジックになっていることを確認してください。
+
+### Step 3: 静的解析と報告
+1. 修正後、`uv run ruff check --fix tools/nazo_agent.py` と `uv run ruff format tools/nazo_agent.py` を実行してください。
+2. `python -m py_compile tools/nazo_agent.py` で構文エラーがないことを確認してください。
+3. 修正箇所の差分概要（Git Diffの一部など）と静的解析の完了ログを報告してください。

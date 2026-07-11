@@ -1412,6 +1412,8 @@ async def phase3_aider_execution(
                     cwd=str(BASE_DIR),
                     capture_output=True,
                     text=True,
+                    encoding="utf-8",
+                    errors="strict",
                 )
                 elapsed = asyncio.get_running_loop().time() - start_time
                 print(f"⏱️ 処理時間: {elapsed:.1f}秒 ({file_path})")
@@ -1570,6 +1572,7 @@ def _has_staged_changes(cwd: Path, files: list[str]) -> bool:
         capture_output=True,
         text=True,
         encoding="utf-8",
+        errors="strict",
     )
     for line in result.stdout.splitlines():
         if not line:
@@ -1609,7 +1612,12 @@ def _ensure_auto_audit_branch() -> None:
         else ["git", "checkout", "-b", AUTO_AUDIT_BRANCH]
     )
     result = subprocess.run(
-        cmd, cwd=str(TARGET_APP_DIR), capture_output=True, text=True
+        cmd,
+        cwd=str(TARGET_APP_DIR),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
     )
     if result.returncode != 0:
         print(
@@ -1642,13 +1650,17 @@ async def verify_logic_with_pytest(target_file: Path) -> tuple[bool, str]:
         )
         return True, "対応するテストファイルが見つからないため検証をスキップしました。"
 
-    print(f"   🧪 [Pytest Gatekeeper] {test_file} を実行して論理の正しさを検証します...")
+    print(
+        f"   🧪 [Pytest Gatekeeper] {test_file} を実行して論理の正しさを検証します..."
+    )
     try:
         result = subprocess.run(
             ["uv", "run", "pytest", str(test_file), "-v"],
             cwd=str(TARGET_APP_DIR),
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="strict",
             timeout=120,
         )
     except Exception as e:
@@ -1678,7 +1690,9 @@ async def _run_claude_pipeline_and_commit(
         tasks, deduped_log, static_context_path
     )
     if success_count > 0 and successful_files:
-        print(f"\n📦 {success_count}件の成功ファイルを一括コミット(Bulk Commit)します...")
+        print(
+            f"\n📦 {success_count}件の成功ファイルを一括コミット(Bulk Commit)します..."
+        )
         try:
             subprocess.run(
                 ["git", "add", "--"] + successful_files,
@@ -1742,7 +1756,10 @@ async def main_flow(user_instruction: str, engine: str = "ollama"):
     if engine == "claude":
         # --- Claudeパイプライン(Tool Calling + Pydantic + 自己修正ループ + libcst AST置換) ---
         await _run_claude_pipeline_and_commit(
-            user_instruction, log_path, deduped_log, "fix: Claudeパイプラインによる一括自動修正"
+            user_instruction,
+            log_path,
+            deduped_log,
+            "fix: Claudeパイプラインによる一括自動修正",
         )
 
     else:
@@ -1780,7 +1797,9 @@ async def main_flow(user_instruction: str, engine: str = "ollama"):
                     # 検知できない「文法的には正しいが論理が破綻したコード」を、決定論的な
                     # pytest実行で最終的にゲートする。失敗した場合はコミットせず、
                     # Claudeパイプラインへエスカレーションする(Human-in-the-Loopの起点)。
-                    test_ok, test_detail = await verify_logic_with_pytest(resolved_target)
+                    test_ok, test_detail = await verify_logic_with_pytest(
+                        resolved_target
+                    )
 
                     if test_ok:
                         rel_path = str(resolved_target)
@@ -1794,7 +1813,9 @@ async def main_flow(user_instruction: str, engine: str = "ollama"):
                                 check=True,
                             )
                             if not _has_staged_changes(TARGET_APP_DIR, [rel_path]):
-                                print("✅ 変更がなかったため一括コミットをスキップしました")
+                                print(
+                                    "✅ 変更がなかったため一括コミットをスキップしました"
+                                )
                             else:
                                 subprocess.run(
                                     [
@@ -1824,6 +1845,8 @@ async def main_flow(user_instruction: str, engine: str = "ollama"):
                                     cwd=str(BASE_DIR),
                                     capture_output=True,
                                     text=True,
+                                    encoding="utf-8",
+                                    errors="strict",
                                 )
                                 if sft_result.stdout:
                                     print(sft_result.stdout, end="")
