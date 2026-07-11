@@ -1,0 +1,12 @@
+【ミッション: Nazo-AgentへのAST置換エンジン(LibCST)のハイブリッド・ルーティング統合】
+対象ファイル: `tools/nazo_agent.py`
+
+先ほど作成した `tools/ast_modifier.py` をNazo-Agentのパイプラインに統合し、LLMによる非決定的なファイル全文書き換え（Aiderへの過剰依存）を減らすハイブリッド・ルーティングを実装してください。
+
+以下の要件で `tools/nazo_agent.py` の Phase 3（`main_flow` 内のタスク実行ループ）を改修してください。
+1. Phase 2 が出力する JSON (`triage_result.json`) の各タスクに、実行モードを指定する `mode` フィールド（`"ast_replace"` または `"aider"`）が含まれることを想定し、パース処理を拡張する。
+2. ループ処理を分岐させる。
+   - `mode == "ast_replace"` の場合: Aiderを起動してはならない。タスク内容（file_path, target_name, new_code等）をJSONファイルとして一時書き出し、`subprocess.run(["uv", "run", "python", "tools/ast_modifier.py", <一時JSONパス>], capture_output=True, text=True)` を実行する。成功時（Exit Code 0）は `successful_files.append(str(target_file))` を記録する。
+   - `mode == "aider"` または `mode` フィールドが存在しない場合: 従来のAider起動フローへフォールバックする。
+3. 修正後、`python -m py_compile tools/nazo_agent.py` を実行して構文エラーがないこと（ファクト）を確認し、その結果ログを報告せよ。
+4. ※ `generation.py` の構文エラー修正はこのステップではまだ行わないこと。Nazo-Agentの改修に専念せよ。

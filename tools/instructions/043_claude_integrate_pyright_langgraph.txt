@@ -1,0 +1,13 @@
+【ミッション: LangGraphへのPyright Tool Use統合 (Epic 1 Feature 1.3)】
+
+旧アーキテクチャで作成済みの `tools/pyright_tool.py` を、最新のLangGraphベースのステートマシン（`tools/agent_graph.py`）に統合し、LLMが型情報を自律的にクエリできるようにしてください。
+
+### Step 1: LangGraphへのTool Node組み込み
+1. `tools/agent_graph.py` を確認し、`tools.pyright_tool` から `get_type_info` をインポートしてください。必要に応じて `@tool` デコレータ等でLangChainツールとしてラップしてください。
+2. コードの推論・修正を担当するノード（`Editor` または `Reviewer` 等）のLLM定義に対して、`bind_tools` で上記のツールをバインドしてください。
+3. `langgraph.prebuilt.ToolNode` 等を用いて、LLMがツール呼び出しを要求した際に `get_type_info` を実行し、その結果をState（`messages` 等）に追記してLLMノードに差し戻すルーティング（Conditional Edge）をグラフに組み込んでください。
+
+### Step 2: 静的解析と報告
+1. 修正後、`uv run ruff check --fix tools/agent_graph.py` を実行してください。
+2. `python -m py_compile tools/agent_graph.py` を実行し、構文エラーがないことを確認してください。
+3. 実装のサマリー（どのノードにバインドし、どうConditional Edgeを張ったか）を報告してください。スモークテストの実行は行わず、実装と静的解析のみに留めてください。

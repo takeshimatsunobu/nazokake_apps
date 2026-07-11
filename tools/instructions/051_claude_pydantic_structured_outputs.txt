@@ -1,0 +1,19 @@
+【ミッション: PydanticとStructured Outputsによる真の防弾化 (Epic 1 防弾化 - 追加課題 E)】
+
+LLMの自由な出力（おしゃべりやマークダウン装飾）を事後処理で削ぎ落とす従来のアプローチから脱却し、APIレベルで「構造化出力（Tool Calling）」を強制し、Pydanticで型を保証するモダンな防弾アーキテクチャへリファクタリングしてください。
+
+### Step 1: Pydanticによる厳格なスキーマ定義と防衛的パース (tools/ast_modifier.py)
+1. tools/ast_modifier.py に Pydantic の BaseModel を継承した AstModificationInstruction クラスを定義してください。
+   - 必須フィールド: file_path (str), target_name (str), new_code (str)
+2. apply_modification 関数内で、受け取った辞書をこの Pydantic モデルでパース・バリデーションしてください。
+3. もしバリデーションエラーが発生した場合のフェイルセーフ（最終フォールバック）として、既存の正規表現抽出ロジック _extract_python_code を利用して救済を試みる「防衛的パース」の機構を統合してください。
+
+### Step 2: Nazo-Agent側でのTool Callingの強制 (tools/nazo_agent.py)
+1. tools/nazo_agent.py 内で Claude API を呼び出して置換指示を生成する箇所を改修してください。
+2. LLMに対して自然言語によるJSON出力を要求するのではなく、Claude API の tools パラメータに上記のスキーマを関数（Tool）として定義し、tool_choice を用いてこの関数の呼び出し（Tool Calling）を強制してください。
+   - これにより、LLMが解説やマークダウンのコードブロックなどを混入させる余地をAPIレベルで完全に排除します。
+
+### Step 3: テスト・報告・クリーンアップ
+1. 修正後、 uv run ruff check --fix tools/ast_modifier.py tools/nazo_agent.py を実行し、静的解析エラーがないことを確認してください。
+2. ダミーのプロンプトと対象ファイルを用いたスモークテスト（Dry-Run等）を実行し、Tool Calling経由で純粋なJSONが生成され、Pydanticバリデーションを通過してAST置換が安全に完了することを確認してください。
+3. 実行結果のログ（成功またはエラー）を報告し、テスト用の一時ファイル群を削除してください。

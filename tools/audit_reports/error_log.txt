@@ -4,203 +4,6 @@
 
 ### ツール: RUFF (⚠️ Exited with code 1)
 ```text
-S311 Standard pseudo-random generators are not suitable for cryptographic purposes
-   --> backend\api\routers\board.py:111:21
-    |
-109 |             "author_uid": uid,
-110 |             "created_at": firestore.SERVER_TIMESTAMP,
-111 |             "rand": random.random(),
-    |                     ^^^^^^^^^^^^^^^
-112 |             "hot_score": 0,
-113 |             "reply_count": 0,
-    |
-
-F841 Local variable `result` is assigned to but never used
-   --> backend\api\routers\board.py:131:9
-    |
-130 |     try:
-131 |         result = enforce_quota_and_write(db.transaction())
-    |         ^^^^^^
-132 |         return {"status": "success", "post_id": post_ref.id}
-133 |     except HTTPException as he:
-    |
-help: Remove assignment to unused variable `result`
-
-S311 Standard pseudo-random generators are not suitable for cryptographic purposes
-  --> backend\api\routers\feed.py:42:23
-   |
-40 |         # 1バッチ目の要求（last_doc_idなし）のときは、毎回フロントエンドの代わりにバックエンド側で
-41 |         # 0.0〜1.0 のランダムなシード基準値を生成して、インデックスのシーク開始位置を散らす
-42 |         seed_weight = random.random()
-   |                       ^^^^^^^^^^^^^^^
-43 |
-44 |         # 基本クエリの構築（random_weightの昇順でソートするため、この複合インデックスが必要）
-   |
-
-E741 Ambiguous variable name: `l`
-   --> backend\api\routers\generate.py:128:13
-    |
-126 |         """おまけパス: 生成→本文先行→評価→スコア。失敗は graceful に llmjp_status:failed。"""
-127 |         try:
-128 |             l = await generate_via_llmjp(odai)
-    |             ^
-129 |             validated_result_l = _validate_result_with_fallback(
-130 |                 l, "生成結果の検証に失敗しました"
-    |
-
-S311 Standard pseudo-random generators are not suitable for cryptographic purposes
-   --> backend\api\routers\generate.py:229:30
-    |
-227 |             "message": "AIが生成中...",
-228 |             "timestamp": firestore.SERVER_TIMESTAMP,
-229 |             "random_weight": random.random(),
-    |                              ^^^^^^^^^^^^^^^
-230 |         },
-231 |     )
-    |
-
-S311 Standard pseudo-random generators are not suitable for cryptographic purposes
-  --> backend\api\routers\submission.py:34:30
-   |
-32 |             "eval_status": "processing",
-33 |             "s_total": 0.0,
-34 |             "random_weight": random.random(),
-   |                              ^^^^^^^^^^^^^^^
-35 |         }
-36 |     )
-   |
-
-E402 Module level import not at top of file
-  --> backend\main.py:34:1
-   |
-33 | # 🌟 グローバル例外ハンドラの登録（アプリの突然死を防ぐ最終防波堤）
-34 | from core.exceptions import global_exception_handler
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-35 |
-36 | app.add_exception_handler(Exception, global_exception_handler)
-   |
-
-E402 Module level import not at top of file
-  --> backend\mcp_server.py:36:1
-   |
-34 | load_dotenv()
-35 |
-36 | import firebase_admin
-   | ^^^^^^^^^^^^^^^^^^^^^
-37 |
-38 | if not firebase_admin._apps:
-   |
-
-S603 `subprocess` call: check for execution of untrusted input
-  --> backend\mcp_server.py:85:18
-   |
-84 |     try:
-85 |         result = subprocess.run(
-   |                  ^^^^^^^^^^^^^^
-86 |             args,
-87 |             cwd=str(REPO_ROOT),
-   |
-
-S110 `try`-`except`-`pass` detected, consider logging the exception
-  --> backend\scripts\_temp_inspect_db.py:17:1
-   |
-15 |       sys.stdout.reconfigure(encoding="utf-8")
-16 |       sys.stderr.reconfigure(encoding="utf-8")
-17 | / except Exception:
-18 | |     pass
-   | |________^
-19 |
-20 |   import ssl
-   |
-
-E402 Module level import not at top of file
-  --> backend\scripts\_temp_inspect_db.py:20:1
-   |
-18 |     pass
-19 |
-20 | import ssl
-   | ^^^^^^^^^^
-21 |
-22 | ssl._create_default_https_context = ssl._create_unverified_context
-   |
-
-E402 Module level import not at top of file
-  --> backend\scripts\_temp_inspect_db.py:24:1
-   |
-22 | ssl._create_default_https_context = ssl._create_unverified_context
-23 |
-24 | import urllib3
-   | ^^^^^^^^^^^^^^
-25 |
-26 | urllib3.disable_warnings()
-   |
-
-E402 Module level import not at top of file
-  --> backend\scripts\_temp_inspect_db.py:28:1
-   |
-26 | urllib3.disable_warnings()
-27 |
-28 | import requests
-   | ^^^^^^^^^^^^^^^
-29 |
-30 | # SSL検証を無効にしたセッション
-   |
-
-E402 Module level import not at top of file
-  --> backend\scripts\_temp_inspect_db.py:34:1
-   |
-32 | _session.verify = False
-33 |
-34 | from pathlib import Path
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
-35 | from google.oauth2 import service_account
-36 | import google.auth.transport.requests
-   |
-
-E402 Module level import not at top of file
-  --> backend\scripts\_temp_inspect_db.py:35:1
-   |
-34 | from pathlib import Path
-35 | from google.oauth2 import service_account
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-36 | import google.auth.transport.requests
-   |
-
-E402 Module level import not at top of file
-  --> backend\scripts\_temp_inspect_db.py:36:1
-   |
-34 | from pathlib import Path
-35 | from google.oauth2 import service_account
-36 | import google.auth.transport.requests
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-37 |
-38 | PROJECT_ID = "nazokakeapp-137e5"
-   |
-
-S110 `try`-`except`-`pass` detected, consider logging the exception
-  --> backend\scripts\extract_dpo_data.py:28:1
-   |
-26 |       sys.stdout.reconfigure(encoding="utf-8")
-27 |       sys.stderr.reconfigure(encoding="utf-8")
-28 | / except Exception:
-29 | |     pass
-   | |________^
-30 |
-31 |   SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-   |
-
-S110 `try`-`except`-`pass` detected, consider logging the exception
-  --> backend\scripts\extract_rlhf_dataset.py:30:1
-   |
-28 |       sys.stdout.reconfigure(encoding="utf-8")
-29 |       sys.stderr.reconfigure(encoding="utf-8")
-30 | / except Exception:
-31 | |     pass
-   | |________^
-32 |
-33 |   SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-   |
-
 C901 `main` is too complex (38 > 10)
    --> backend\scripts\extract_rlhf_dataset.py:98:5
     |
@@ -209,18 +12,6 @@ C901 `main` is too complex (38 > 10)
  99 |     dry_run: bool = False,
 100 |     limit: int = None,
     |
-
-S110 `try`-`except`-`pass` detected, consider logging the exception
-  --> backend\scripts\extract_sft_data.py:26:1
-   |
-24 |       sys.stdout.reconfigure(encoding="utf-8")
-25 |       sys.stderr.reconfigure(encoding="utf-8")
-26 | / except Exception:
-27 | |     pass
-   | |________^
-28 |
-29 |   SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-   |
 
 C901 `main` is too complex (17 > 10)
   --> backend\scripts\extract_sft_data.py:56:5
@@ -231,69 +22,6 @@ C901 `main` is too complex (17 > 10)
 58 |     print(
    |
 
-E402 Module level import not at top of file
- --> backend\services\evaluation.py:8:1
-  |
-6 | 他サービスに依存しない自己完結モジュール（自前で JSON をパースする）。
-7 | """
-8 | import asyncio
-  | ^^^^^^^^^^^^^^
-9 | import json
-  |
-
-E402 Module level import not at top of file
-  --> backend\services\evaluation.py:9:1
-   |
- 7 | """
- 8 | import asyncio
- 9 | import json
-   | ^^^^^^^^^^^
-10 |
-11 | from firebase_admin import firestore
-   |
-
-E402 Module level import not at top of file
-  --> backend\services\evaluation.py:11:1
-   |
- 9 | import json
-10 |
-11 | from firebase_admin import firestore
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-12 | from google import genai
-13 | from google.genai.types import GenerateContentConfig
-   |
-
-E402 Module level import not at top of file
-  --> backend\services\evaluation.py:12:1
-   |
-11 | from firebase_admin import firestore
-12 | from google import genai
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
-13 | from google.genai.types import GenerateContentConfig
-   |
-
-E402 Module level import not at top of file
-  --> backend\services\evaluation.py:13:1
-   |
-11 | from firebase_admin import firestore
-12 | from google import genai
-13 | from google.genai.types import GenerateContentConfig
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-14 |
-15 | from nazokake_core.schemas import EvaluationOutput
-   |
-
-E402 Module level import not at top of file
-  --> backend\services\evaluation.py:15:1
-   |
-13 | from google.genai.types import GenerateContentConfig
-14 |
-15 | from nazokake_core.schemas import EvaluationOutput
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-16 |
-17 | AXES = [
-   |
-
 C901 `analyze_axis_divergence` is too complex (11 > 10)
   --> backend\services\feedback_analyzer.py:51:11
    |
@@ -301,102 +29,6 @@ C901 `analyze_axis_divergence` is too complex (11 > 10)
    |           ^^^^^^^^^^^^^^^^^^^^^^^
 52 |     """AIの自己評価とユーザー評価の乖離(過信)を軸ごとに集計する。
    |
-
-E402 Module level import not at top of file
-  --> backend\services\generation.py:13:1
-   |
-11 | _OLLAMA_SEMAPHORE = asyncio.Semaphore(1)
-12 |
-13 | import json
-   | ^^^^^^^^^^^
-14 | import os
-15 | import random
-   |
-
-E402 Module level import not at top of file
-  --> backend\services\generation.py:14:1
-   |
-13 | import json
-14 | import os
-   | ^^^^^^^^^
-15 | import random
-   |
-
-E402 Module level import not at top of file
-  --> backend\services\generation.py:15:1
-   |
-13 | import json
-14 | import os
-15 | import random
-   | ^^^^^^^^^^^^^
-16 |
-17 | import httpx
-   |
-
-E402 Module level import not at top of file
-  --> backend\services\generation.py:17:1
-   |
-15 | import random
-16 |
-17 | import httpx
-   | ^^^^^^^^^^^^
-18 | from firebase_admin import firestore
-19 | from google import genai
-   |
-
-E402 Module level import not at top of file
-  --> backend\services\generation.py:18:1
-   |
-17 | import httpx
-18 | from firebase_admin import firestore
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-19 | from google import genai
-20 | from google.genai.types import GenerateContentConfig
-   |
-
-E402 Module level import not at top of file
-  --> backend\services\generation.py:19:1
-   |
-17 | import httpx
-18 | from firebase_admin import firestore
-19 | from google import genai
-   | ^^^^^^^^^^^^^^^^^^^^^^^^
-20 | from google.genai.types import GenerateContentConfig
-   |
-
-E402 Module level import not at top of file
-  --> backend\services\generation.py:20:1
-   |
-18 | from firebase_admin import firestore
-19 | from google import genai
-20 | from google.genai.types import GenerateContentConfig
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-21 |
-22 | from .output_parser import _extract_json_dict, _valid_nazokake
-   |
-
-E402 Module level import not at top of file
-  --> backend\services\generation.py:22:1
-   |
-20 | from google.genai.types import GenerateContentConfig
-21 |
-22 | from .output_parser import _extract_json_dict, _valid_nazokake
-   | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-23 |
-24 | # ============================================================
-   |
-
-S110 `try`-`except`-`pass` detected, consider logging the exception
-   --> backend\services\generation.py:262:5
-    |
-260 |               dyn_temp = float(d.get("temperature", 0.8))
-261 |               dyn_persona = d.get("system_prompt", dyn_persona)
-262 | /     except Exception:
-263 | |         pass
-    | |____________^
-264 |
-265 |       sys_prompt = (
-    |
 
 C901 `_first_json_block` is too complex (11 > 10)
   --> backend\services\output_parser.py:55:5
@@ -407,31 +39,14 @@ C901 `_first_json_block` is too complex (11 > 10)
 56 |     """最初の '{' から対応する '}' までの最小完結ブロックを返す（文字列内の括弧は無視）。
    |
 
-S110 `try`-`except`-`pass` detected, consider logging the exception
-   --> backend\services\output_parser.py:127:5
-    |
-125 |           if isinstance(obj, dict):
-126 |               return obj
-127 | /     except Exception:
-128 | |         pass
-    | |____________^
-129 |       # 2) サルベージ: 必須フィールドを直接抜き出す（全体が壊れていても解き/こころを救出）
-130 |       toku = _salvage_str_field(cleaned, "toku")
-    |
-
-Found 39 errors.
-No fixes available (1 hidden fix can be enabled with the `--unsafe-fixes` option).
+Found 4 errors.
 ```
 
 ### ツール: MYPY (⚠️ Exited with code 1)
 ```text
-Daemon started
-backend\scripts\count_posts.py:3: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-backend\scripts\backfill_board.py:1: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
+backend\dummy_benchmark.py:2: error: Incompatible return value type (got "float", expected "int")  [return-value]
 backend\scripts\extract_dpo_data.py:26: error: Item "TextIO" of "TextIO | Any" has no attribute "reconfigure"  [union-attr]
 backend\scripts\extract_dpo_data.py:27: error: Item "TextIO" of "TextIO | Any" has no attribute "reconfigure"  [union-attr]
-backend\scripts\temp_check.py:14: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-backend\scripts\extract_rlhf_dataset.py:24: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
 backend\scripts\extract_rlhf_dataset.py:28: error: Item "TextIO" of "TextIO | Any" has no attribute "reconfigure"  [union-attr]
 backend\scripts\extract_rlhf_dataset.py:29: error: Item "TextIO" of "TextIO | Any" has no attribute "reconfigure"  [union-attr]
 backend\scripts\extract_rlhf_dataset.py:100: error: Incompatible default for parameter "limit" (default has type "None", parameter has type "int")  [assignment]
@@ -457,43 +72,19 @@ backend\scripts\extract_rlhf_dataset.py:231: error: Trying to read deleted varia
 backend\scripts\extract_rlhf_dataset.py:232: error: Trying to read deleted variable "e"  [misc]
 backend\scripts\extract_rlhf_dataset.py:274: error: Argument 2 to "compose_text" has incompatible type "Any | None"; expected "dict[Any, Any]"  [arg-type]
 backend\scripts\extract_rlhf_dataset.py:330: error: Need type annotation for "by_model" (hint: "by_model: dict[<type>, <type>] = ...")  [var-annotated]
-backend\services\feedback_analyzer.py:19: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-backend\scripts\dataset_extractor.py:4: error: Library stubs not installed for "yaml"  [import-untyped]
-backend\scripts\dataset_extractor.py:4: note: Hint: "python3 -m pip install types-PyYAML"
-backend\scripts\dataset_extractor.py:9: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
 backend\scripts\dataset_extractor.py:140: error: Need type annotation for "groups" (hint: "groups: dict[<type>, <type>] = ...")  [var-annotated]
 backend\scripts\_temp_inspect_db.py:15: error: Item "TextIO" of "TextIO | Any" has no attribute "reconfigure"  [union-attr]
 backend\scripts\_temp_inspect_db.py:16: error: Item "TextIO" of "TextIO | Any" has no attribute "reconfigure"  [union-attr]
 backend\scripts\_temp_inspect_db.py:22: error: Incompatible types in assignment (expression has type "def _create_unverified_context(protocol: int | None = ..., *, cert_reqs: int = ..., check_hostname: bool = ..., purpose: Purpose = ..., certfile: str | bytes | PathLike[str] | PathLike[bytes] | None = ..., keyfile: str | bytes | PathLike[str] | PathLike[bytes] | None = ..., cafile: str | bytes | PathLike[str] | PathLike[bytes] | None = ..., capath: str | bytes | PathLike[str] | PathLike[bytes] | None = ..., cadata: str | Buffer | None = ...) -> SSLContext", variable has type "def create_default_context(purpose: Purpose = ..., *, cafile: str | bytes | PathLike[str] | PathLike[bytes] | None = ..., capath: str | bytes | PathLike[str] | PathLike[bytes] | None = ..., cadata: str | Buffer | None = ...) -> SSLContext")  [assignment]
-backend\scripts\extract_sft_data.py:19: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
 backend\scripts\extract_sft_data.py:24: error: Item "TextIO" of "TextIO | Any" has no attribute "reconfigure"  [union-attr]
 backend\scripts\extract_sft_data.py:25: error: Item "TextIO" of "TextIO | Any" has no attribute "reconfigure"  [union-attr]
 backend\scripts\extract_sft_data.py:140: error: Argument 2 to "compose_text" has incompatible type "Any | None"; expected "dict[Any, Any]"  [arg-type]
-backend\services\evaluation.py:11: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-backend\services\evaluation.py:15: error: Cannot find implementation or library stub for module named "nazokake_core.schemas"  [import-not-found]
-backend\services\evaluation.py:113: error: Cannot find implementation or library stub for module named "nazokake_core.cost_calculator"  [import-not-found]
-backend\api\deps.py:21: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-backend\services\generation.py:18: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-backend\services\generation.py:301: error: Cannot find implementation or library stub for module named "nazokake_core.cost_calculator"  [import-not-found]
-backend\services\generation.py:324: error: Item "None" of "Any | dict[Any, Any] | None" has no attribute "get"  [union-attr]
-backend\services\generation.py:325: error: Item "None" of "Any | dict[Any, Any] | None" has no attribute "get"  [union-attr]
-backend\services\generation.py:327: error: Item "None" of "Any | dict[Any, Any] | None" has no attribute "get"  [union-attr]
-backend\services\generation.py:329: error: Item "None" of "Any | dict[Any, Any] | None" has no attribute "get"  [union-attr]
-backend\api\routers\user_feedback.py:13: error: Cannot find implementation or library stub for module named "nazokake_core.schemas"  [import-not-found]
-backend\api\routers\submission.py:10: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-backend\api\routers\metrics.py:8: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-backend\api\routers\feedback.py:10: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-backend\api\routers\board.py:5: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
+backend\services\generation.py:334: error: Item "None" of "Any | dict[Any, Any] | None" has no attribute "get"  [union-attr]
+backend\services\generation.py:335: error: Item "None" of "Any | dict[Any, Any] | None" has no attribute "get"  [union-attr]
+backend\services\generation.py:337: error: Item "None" of "Any | dict[Any, Any] | None" has no attribute "get"  [union-attr]
+backend\services\generation.py:339: error: Item "None" of "Any | dict[Any, Any] | None" has no attribute "get"  [union-attr]
 backend\api\routers\board.py:42: error: Need type annotation for "replies_by_parent" (hint: "replies_by_parent: dict[<type>, <type>] = ...")  [var-annotated]
-backend\api\routers\admin_costs.py:15: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-backend\api\routers\admin_costs.py:18: error: Cannot find implementation or library stub for module named "nazokake_core.schemas"  [import-not-found]
-backend\api\routers\admin_costs.py:18: note: See https://mypy.readthedocs.io/en/stable/running_mypy.html#missing-imports
 backend\api\routers\admin_costs.py:65: error: Argument 1 to "TemplateResponse" of "Jinja2Templates" has incompatible type "str"; expected "Request[State]"  [arg-type]
 backend\api\routers\admin_costs.py:66: error: Argument 2 to "TemplateResponse" of "Jinja2Templates" has incompatible type "dict[str, Any]"; expected "str"  [arg-type]
-backend\api\routers\admin_feedbacks.py:11: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-backend\api\routers\generate.py:17: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-backend\api\routers\generate.py:24: error: Cannot find implementation or library stub for module named "nazokake_core.schemas"  [import-not-found]
-backend\main.py:9: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-backend\mcp_server.py:36: error: Skipping analyzing "firebase_admin": module is installed, but missing library stubs or py.typed marker  [import-untyped]
-Found 65 errors in 22 files (checked 35 source files)
+Found 40 errors in 9 files (checked 37 source files)
 ```

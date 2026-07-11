@@ -1,0 +1,18 @@
+【ミッション: LangGraph自律修復ループのE2Eスモークテスト (Epic 1)】
+
+統合されたGemma 4ベースのLangGraphステートマシン（Tool Use + LibCST）が、意図通りにバグを自律修復できるか、単体スモークテストを実施してください。
+
+### Step 1: テスト環境の構築
+1. `_tmp_benchmark/` ディレクトリを作成し、その中に以下の内容でダミーファイル `dummy_target.py` を作成してください。
+   - 意図的なエラーを含めること:
+     - 型エラー（例: `int` を返すアノテーションなのに `str` を返す）
+     - 未定義変数の使用または不要なインポート等。
+2. 同ディレクトリ内に、`tools/agent_graph.py` の `run_self_repair` またはコンパイル済みのグラフを直接呼び出し、`dummy_target.py` の修復を試みる検証用Pythonスクリプト `run_test.py` を作成してください。
+
+### Step 2: テストの実行と観測
+1. `uv run python _tmp_benchmark/run_test.py` を実行してください（Gemma 4の推論が走るため時間がかかります）。
+2. 以下のファクト（生ログ）を収集し、報告してください。
+   - LLM（Gemma 4）が実際に `get_type_info` ツールを呼び出したか。
+   - ループが完了（CLEAN）したか、または設定されている `MAX_REVISIONS` 等の上限に達して停止したか。
+   - `dummy_target.py` がどのように修正されたか（結果のコード）。
+3. テスト完了後、テスト結果を報告し、`_tmp_benchmark/` ディレクトリは削除（クリーンアップ）してください。

@@ -1,0 +1,13 @@
+【ミッション: Nazo-Agentへの推論軌跡SFTデータ自動抽出フックの組み込み (Epic 1拡張)】
+
+先日作成した `tools/extract_agent_sft.py` を、Nazo-Agentがバグ修正に成功した際に自動で発火（フライホイール化）するように組み込みます。
+
+### Step 1: 自動発火フックの実装
+1. `tools/nazo_agent.py` の `main_flow` 関数を確認してください。
+2. Aider等による一括コミットが成功し、システム修復が完了した直後（`if success_count > 0 and successful_files:` のブロックの終盤等）に、以下の処理を追加してください。
+   - `subprocess.run` を用いて、`["uv", "run", "python", "tools/extract_agent_sft.py"]` を実行する（`cwd`はプロジェクトルート `BASE_DIR` 等適切なものを指定）。
+   - 実行時の標準出力をコンソールに表示させ、「学習データの蓄積が完了したこと」をユーザーに通知する。
+
+### Step 2: 静的解析と報告
+1. 実装後、`uv run ruff check --fix tools/nazo_agent.py` を実行して構文エラーがないことを確認してください。
+2. 修正が完了した旨（コミットは不要）と実装内容のサマリーを報告してください。

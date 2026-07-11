@@ -1,0 +1,17 @@
+【ミッション: バッチ工場のマイクロサービス化（関心事の分離）】
+
+現在の `apps/batch_factory/batch/main.py` は、軽量なRSS取得と重量級のML推論が密結合しており、環境（.venv と .venv_train）の依存コンフリクトを引き起こしています。
+これを解決するため、「軽量なRSSパブリッシャー」と「重量級のMLポーリングワーカー」に分離するリファクタリングを実施してください。
+
+### Step 1: 軽量パブリッシャーの分離 (RSS Fetcher)
+1. `batch/trends.py` のロジックを活用し、新しく `apps/batch_factory/batch/rss_publisher.py` を作成してください。
+2. このスクリプトは、RSSからトレンドワード（お題候補）を取得し、Firestore の `nazokake_items` コレクションに対して「未処理（例: `status: "pending"` または `0`、既存のAPIスキーマに合わせてください）」のドキュメントとして書き込む（キューイングする）機能のみを実装してください。
+
+### Step 2: 重量MLワーカーへの特化 (Heavy Worker)
+1. `apps/batch_factory/batch/main.py` を改修し、RSSの取得（`iter_trends`）への依存を完全に削除してください。
+2. Firestore の `nazokake_items` コレクションを監視（ポーリング）し、「未処理」のドキュメントを取得して「処理中（ロック状態）」に変更するトランザクション処理を実装してください。
+3. ロックしたお題に対して、既存の `process_generation` (Gemini / LocalUnsloth) を実行し、完了後に結果をFirestoreへ書き戻してステータスを「完了」に更新してください。
+4. 既存のVRAM解放（`vram_release`）と10件ごとのクールダウンロジックは必ず維持してください。
+
+### Step 3: 構文チェックと報告
+修正後、`python -m py_compile apps/batch_factory/batch/main.py` および `python -m py_compile apps/batch_factory/batch/rss_publisher.py` を実行して構文エラーがないことを確認し、リファクタリングの実装サマリーを報告してください。

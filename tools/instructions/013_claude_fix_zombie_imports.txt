@@ -1,0 +1,9 @@
+Cloud Runのコンテナ起動時に `ModuleNotFoundError: No module named 'models'` が発生し、デプロイ後の起動に失敗しています。
+これは過去のリファクタリングによりスキーマ定義が `packages/shared_core/nazokake_core/schemas.py` へ移動したにもかかわらず、`apps/evaluator/backend` 配下に古いインポートパスが残存しているためです。以下の手順で修正とデプロイを実行してください。
+
+【要求事項】
+1. `apps/evaluator/backend` 配下（特に `main.py` や `api/routers/generate.py` を含むすべてのPythonファイル）を検索し、`from models.schemas import` や `import models` となっている古いインポート文をすべて特定してください。
+2. 特定したインポート文を、新しい共通パッケージのパスである `from nazokake_core.schemas import` など正しい参照へ修正してください。
+3. 修正完了後、Linter (`uv run ruff check apps/evaluator/backend/`) 等でインポートエラーや構文エラーがないことを確認してください。
+4. 修正をコミット後、プロジェクトルートにて `gcloud builds submit --config cloudbuild.yaml .` を実行し、本番環境へデプロイしてください。
+5. デプロイの完了を待機し、ターミナルに出力された「最終的なデプロイ結果（成功・失敗の生ログ）」を抽出して報告してください。推測や自己判断による要件外のコード修正は行わないでください。

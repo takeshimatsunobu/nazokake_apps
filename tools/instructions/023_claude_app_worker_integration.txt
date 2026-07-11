@@ -1,0 +1,17 @@
+【ミッション: アプリ本体ワーカーへの二重生成ロジック移植とVRAM防弾化 (Feature 0.3)】
+
+バッチ工場で確立した「クラウドAIとローカルAIの二重生成によるDPOデータ収集」の仕組みと安全性を、アプリ本体（フロントエンドからのリクエスト処理）に統合します。
+対象ファイル: `apps/evaluator/backend/api/routers/generate.py` および必要に応じて `apps/evaluator/backend/services/generation.py`
+
+### Step 1: DPOペアIDの発行と連携
+1. フロントエンドからリクエストを受け付けるエントリーポイント（`generate_ai` または `_guarded_progressive` 等）にて、バッチ工場と同様にリクエストごとの共通識別子となる `dpo_pair_id` を生成してください。
+2. Geminiパス（主軸）と、Local LLMパス（おまけ）の両方の処理において、Firestore (`nazokake_items`) へデータを保存・更新する際、この `dpo_pair_id` が確実に記録されるようにロジックを調整してください。これにより、将来の抽出スクリプトがバッチ由来とアプリ由来のペアを同一のロジックで回収できるようになります。
+
+### Step 2: VRAM排他制御（セマフォ）の厳格化
+1. アプリ本体は複数ユーザーからの同時リクエストを受け付けるため、ローカルLLMの推論が同時に走るとVRAMが即座に枯渇（OOM）し、アプリ全体がクラッシュします。
+2. ローカルLLMを呼び出す処理（`generate_via_llmjp` 等）が、確実にグローバルな `asyncio.Semaphore(1)` によって直列化（排他ロック）されていることをコード上で確認し、不足や不備があれば実装を補強してください。
+
+### Step 3: 静的解析と構文チェック
+1. 修正完了後、`uv run ruff check --fix apps/evaluator/backend/api/routers/generate.py` (および関連ファイル) と `uv run ruff format` を実行してトイルを排除してください。
+2. `python -m py_compile apps/evaluator/backend/api/routers/generate.py` を実行し、構文エラーがないことを確認してください。
+3. 実装のサマリー（DPOペアIDの実装箇所と、セマフォによる排他制御の担保状況）を報告してください。

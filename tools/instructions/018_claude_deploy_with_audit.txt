@@ -1,0 +1,18 @@
+【ミッション: 本番デプロイ前の厳密な事前監査（Pre-flight Check）と、nazokake-backendへのデプロイ完遂】
+
+度重なるデプロイ失敗・手戻りによる時間の浪費を防ぐため、`gcloud builds submit` を実行する前に、あなたの調査能力を最大限に活用して以下の事前監査を厳格に実施してください。
+
+### Step 1: IaCとコンテナ構成の監査
+1. `cloudbuild.yaml` の `_SERVICE_NAME` などの環境変数を読み込み、デプロイ対象が `nazokake-backend` に設定されているか（または修正が必要か）を確認・修正する。
+2. `.gcloudignore` と `.dockerignore` を確認し、コンテナの起動に必要なパッケージ（例: `backend/models` などの各種モジュール）が誤って除外されていないことを最終確認する。
+
+### Step 2: GCP本番環境の現状監査
+1. `gcloud run services describe nazokake-backend --region=asia-northeast1 --format=json` を実行し、現在 `nazokake-backend` が使用しているサービスアカウントと、環境変数/シークレット（`GEMINI_API_KEY`, `ANTHROPIC_API_KEY` 等）のマウント構成を取得して分析する。
+2. 構成に不整合（シークレットの参照エラーなど）があれば、デプロイ前に修正方針を立てる。
+※警告: `find` コマンド等を用いたローカルのクレデンシャルファイル（`.json` 等）の探索は、セーフティフィルターに検知されるため絶対に行わないこと。GCPコマンドの実行のみに留める。
+
+### Step 3: デプロイの実行
+事前監査の結果、インフラとIaCの整合性が100%担保されたと判断した場合のみ、以下のコマンドで本番デプロイを実行してください。
+`gcloud builds submit --config cloudbuild.yaml .`
+
+実行後、事前監査で発見した事項のサマリーと、デプロイの最終的な結果（成功または失敗）のターミナル出力を報告してください。

@@ -1,0 +1,24 @@
+【ミッション: Nazo-Agent推論軌跡のSFTデータセット抽出スクリプト開発 (Epic 1拡張)】
+
+Nazo-Agent (Claude) がバグを修復した成功の軌跡（PromptとCompletionのペア）を、ローカルLLMのファインチューニング用データ（ChatML形式のJSONL）として抽出・蓄積するスクリプトを開発してください。
+
+### Step 1: 抽出スクリプトの実装
+1. `tools/extract_agent_sft.py` を新規作成してください。
+2. 以下の仕様で実装してください。
+   - 読込元: `tools/audit_reports/error_log.txt` (入力)、`tools/audit_reports/static_context.md` (入力)、`tools/audit_reports/triage_result.json` (出力)。
+   - ロジック: これら3ファイルが存在する場合のみ処理を続行する。
+   - フォーマット変換: 以下の `ChatML` 形式の辞書を作成する。
+     ```json
+     {
+       "messages": [
+         {"role": "system", "content": "あなたはNazo-Agentの自律推論エンジンです。エラーログとASTマップから、修正対象と内容を決定してください。"},
+         {"role": "user", "content": "【エラーログ】\n(error_log.txtの内容)\n\n【AST要約マップ】\n(static_context.mdの内容)"},
+         {"role": "assistant", "content": "(triage_result.jsonの文字列内容)"}
+       ]
+     }
+     ```
+   - 保存先: 作成した辞書を1行のJSON文字列として `tools/dataset/agent_sft.jsonl` に追記（`a`モード）保存する（ディレクトリが無ければ作成する）。
+
+### Step 2: 静的解析と単体テスト
+1. 実装後、`uv run ruff check --fix tools/extract_agent_sft.py` を実行してください。
+2. 実際に `uv run python tools/extract_agent_sft.py` を実行し、`tools/dataset/agent_sft.jsonl` にデータが1行追記されたこと（ファクト）を報告してください。

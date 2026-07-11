@@ -1,0 +1,21 @@
+【ミッション: Nazo-Agentの自律性ベンチマークテストの実行 (Epic 2 / Feature 2.2)】
+
+Nazo-Agentへオーケストレーション権限を完全委譲（フェーズアウト）できるかを判断するため、意図的にバグを混入させたテスト環境を用意し、Gemの介入なしで自律修復できるかを計測（ベンチマーク）してください。
+
+### Step 1: 隔離環境とダミーバグの構築
+1. 現在の作業ツリーに未コミットの変更がないことを確認した後、テスト用ブランチ `test/agent-benchmark` を作成し、チェックアウトしてください。
+2. プロジェクトルートに `_tmp_benchmark_target.py` を作成し、以下の3つのエラーを意図的に混入させてください。
+   - 【Ruff検知用】: 未使用の `import os` などのインポート文。
+   - 【Pyright検知用】: `def calculate_score(a: int) -> int:` というシグネチャに対し、`return "100"` と文字列を返す型不整合バグ。
+   - 【LibCST置換用】: 上記の関数のロジック自体が要件を満たしていない状態（ダミー実装）。
+
+### Step 2: Nazo-Agentの自走テスト（計測）
+1. テスト用のプロンプトファイル `_tmp_benchmark_prompt.txt` を作成し、「`_tmp_benchmark_target.py` の未使用インポートを消し、型エラーを修正し、`calculate_score` が入力値の2倍の整数を返すように修正せよ」という指示を記述してください。
+2. `uv run python tools/nazo_agent.py --prompt _tmp_benchmark_prompt.txt` （※引数は現在のNazo-Agentの実装に合わせて適宜読み替えてください）を実行し、以下のメトリクスを計測してください。
+   - 介入なしで最後まで処理が完走し、`Exit Code 0` となるか（Success Rateの測定）。
+   - コマンド実行から完了まで何秒かかったか（Latencyの測定）。
+   - 内部で `Ruff --fix`, `Pyright Tool Use`, `LibCST (ast_replace)` が正しくルーティング・実行されたか。
+
+### Step 3: 報告とクリーンアップ
+1. ベンチマークテストの結果（成否、所要時間、各ツールの起動状況の実測ログ）を報告してください。
+2. テスト用の一時ファイル（`_tmp_benchmark_target.py`, `_tmp_benchmark_prompt.txt` 等）を削除し、元のブランチへ戻ってから `test/agent-benchmark` ブランチを削除して環境をクリーンアップしてください。

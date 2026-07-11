@@ -1,0 +1,11 @@
+【ミッション: 置換エンジンの論理破壊検知 - Semantic Diffの実装 (Epic 1 防弾化)】
+
+LLMが行数を維持したまま無関係な関数を消し去る「論理破壊」を防ぐため、tools/ast_modifier.py にASTノード単位のセマンティック差分検証を追加してください。
+
+### Step 1: セマンティック差分検証ロジックの実装
+1. tools/ast_modifier.py を開き、ファイル内のトップレベルの構造（関数・クラス名）を抽出するヘルパー関数を定義してください。
+   ```python
+   def _get_top_level_names(code_str: str) -> set[str]:
+       import ast
+       tree = ast.parse(code_str)
+       return {node.name for node in tree.body if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef))}

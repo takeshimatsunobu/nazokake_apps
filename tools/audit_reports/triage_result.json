@@ -1,4 +1,9 @@
 {
-  "tasks": [],
-  "summary": "要件定義書は「backend/main.py の先頭に `# V8.9 Final Test` というコメントを追加する」ことを求めていたが、実コード(C:\\\\Users\\\\takes\\\\nazokake_apps\\\\apps\\\\evaluator\\\\backend\\\\main.py)のL1を確認したところ、既に1行目に `# V8.9 Final Test` というコメントが存在していることを確認した。したがって追加の修正は不要であり、Aiderへの修正指令はなし（No-Op）とする。\n\nなお、提示されたエラーログ(board.py, feed.py, generate.py, submission.py, mcp_server.py, extract_sft_data.py, output_parser.py 等の型エラー・行番号指摘)は、今回の要件定義書「main.py先頭コメント追加」とは無関係の別件の静的解析ノイズであり、本要件のスコープ外と判断し対応対象から除外した。特に extract_sft_data.py:140 の mypy エラー(Argument 2 to \"compose_text\" has incompatible type)は実害のある型不整合の可能性があるため、別途独立したタスクとして扱うべきであり、本要件の目的（コメント追加）と混在させて修正すべきではない。"
+  "tasks": [
+    {
+      "file_path": "apps/evaluator/backend/dummy_benchmark.py",
+      "instruction": "calculate_score関数の戻り値の型不整合(pyright reportReturnType)を修正する。現状 `base: int` と `multiplier: float` の乗算結果は float になるにもかかわらず、関数シグネチャの戻り値型が `-> int` と宣言されているため矛盾している。実装(掛け算処理)は変更せず、関数シグネチャを `def calculate_score(base: int, multiplier: float) -> float:` に修正し、戻り値の型注釈を実際の計算結果の型(float)に合わせること。あわせて行2にある古いコメント `# floatを返すが、型ヒントはintになっている` は修正内容と矛盾するため削除する。他の関数(badly_formatted)には現時点でRuff/Pyrightエラーが検出されていないため変更しないこと。"
+    }
+  ],
+  "summary": "apps/evaluator/backend/dummy_benchmark.py の calculate_score関数において、pyrightが検出した戻り値型不整合(base:int * multiplier:float = float だが戻り値注釈が int)を、戻り値注釈をfloatに修正することで解消する。該当箇所の矛盾コメントも削除する。同ファイル内の badly_formatted 関数には検出されたRuff/Pyrightエラーが無いため修正対象外とする。\""
 }

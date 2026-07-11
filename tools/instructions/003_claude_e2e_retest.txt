@@ -1,0 +1,11 @@
+.envファイルのサニタイズ（プログラム的クリーニング）が完了し、不可視文字（CR/LF）や不要なクォートが完全に除去されました。
+このクリーンな状態で、Nazo-AgentのE2Eテストの最終確認を実行してください。
+
+【要求事項】
+1. 既存のログをクリアします: `rm -f tools/audit_reports/nazo_agent_daemon.log`
+2. E2Eテストを実行します: `.venv/Scripts/python tools/nazo_agent.py --prompt test_orchestration.txt`
+3. 実行完了後、`tools/audit_reports/nazo_agent_daemon.log` を確認し、以下のファクトを報告してください。
+   - `CERTIFICATE_VERIFY_FAILED` の発生件数
+   - `Illegal header value` または `temperature` 関連のエラーの発生件数
+   - パイプライン全体の処理レイテンシ（秒数）およびコミット生成の成否
+エラー原因の推測は不要です。ファクトの抽出のみに専念してください。

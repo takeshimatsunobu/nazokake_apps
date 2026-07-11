@@ -78,3 +78,6 @@ Nazokake_localLLM/
 *.bak
 *.bak_v*
 nazo_agent.py.bak*
+.venv/
+__pycache__/
+.git/

@@ -1,0 +1,18 @@
+【ミッション: Nazo-Agentへのハイブリッド・ルーティング実装 (Epic 1 Feature 1.2)】
+
+`tools/nazo_agent.py` の `phase3_aider_execution` 関数を改修し、タスクの性質に応じてAiderとLibCST（`tools/ast_modifier.py`）を使い分けるハイブリッド・ルーティングを組み込んでください。
+
+### Step 1: ルーティングロジックの実装
+1. `tools/nazo_agent.py` の `phase3_aider_execution` 関数内で、ループ中の各タスクから `mode = task.get("mode", "aider")` を取得してください。
+2. `mode == "ast_replace"` の場合の分岐をループの先頭付近に追加し、以下の処理を実装してください。
+   - `target_name` と `new_code` がタスクに含まれているか確認し、不足している場合は警告ログを出して `continue` する。
+   - `{"file_path": str(target_file), "target_name": ..., "new_code": ...}` の内容を持つ一時JSONファイルを `tools/audit_reports/_ast_task_{idx}.json` に書き出す。
+   - `subprocess.run` を用いて `["uv", "run", "python", "tools/ast_modifier.py", 一時JSONのパス]` を同期実行する。
+   - 実行が成功（Exit Code 0）した場合、`successful_files.append(str(target_file))` を実行し、既存のAiderフローには進まずに `continue` で次のタスクへ移る。
+   - `finally` ブロック等を用いて、実行後に必ず一時JSONファイルを削除する。
+3. `mode == "aider"` または未指定の場合は、既存のAider起動フローへそのままフォールバックさせてください。
+
+### Step 2: 静的解析とスモークテスト
+1. 修正後、`uv run ruff check --fix tools/nazo_agent.py` を実行してください。
+2. `python -m py_compile tools/nazo_agent.py` がエラーなく通ることを確認してください。
+3. 実装した分岐が正しく動くか、使い捨てのダミーファイルを用いてスモークテストを実行し、その結果（ファクト）を報告してください。

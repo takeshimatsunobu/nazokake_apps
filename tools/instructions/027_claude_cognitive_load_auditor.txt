@@ -1,0 +1,19 @@
+【ミッション: Cognitive Load Auditor と Stop & Split 機構のシステム実装 (Feature 2.1)】
+
+Nazo-Agent (Claude) が情報過多によるハルシネーションを起こし、無駄なAPI課金を浪費するのを防ぐため、コンテキスト（エラーログとASTマップ）の量を自律的に監視し、限界を超えたら推論を停止する安全装置を実装してください。
+対象ファイル: `tools/nazo_agent.py`
+
+### Step 1: Cognitive Load Auditor の実装
+1. `tools/nazo_agent.py` 内に、入力テキストのサイズ（文字数や行数）を計算し、認知負荷を判定する関数（例: `check_cognitive_load`）を作成してください。
+2. 以下の閾値（安全な目安）を定数として定義してください。
+   - `MAX_ERROR_LOG_LINES = 300` （エラーログの許容行数）
+   - `MAX_TOTAL_CONTEXT_CHARS = 40000` （プロンプト全体の許容文字数）
+
+### Step 2: Stop & Split 機構の組み込み
+1. `phase2_claude_tool_augmented` 関数の冒頭、またはAPI呼び出しの直前に、Step 1で作成した関数を実行してコンテキスト量を検査させてください。
+2. 閾値を超過した場合、API呼び出し（推論）をブロックし、ターミナルに警告メッセージ（例: `🚨 Cognitive Overload: エラー範囲が広すぎます。タスクを分割（Split）してください。`）を出力して、`sys.exit(1)` 等でプロセスを安全に終了（Stop）させてください。
+3. エラーログが肥大化しやすい `phase1_audit` の直後で、エラーログのみの行数チェックを行い、その時点で警告を出して終了するフェイルセーフも追加してください。
+
+### Step 3: 静的解析と報告
+1. 修正後、`uv run ruff check --fix tools/nazo_agent.py` および `python -m py_compile tools/nazo_agent.py` を実行してください。
+2. 実装のサマリーを報告してください（実際に閾値を超えさせて動作確認するテストは、必要に応じて後ほど行います）。

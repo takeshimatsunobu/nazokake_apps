@@ -1,0 +1,12 @@
+【ミッション: 既存コードベースの技術的負債（静的解析エラー）の返済】
+
+Nazo-Agentの `Cognitive Load Auditor` が正常に作動しましたが、既存コードの技術的負債だけで閾値（300行）を超過していることが判明しました。`tools/audit_reports/error_log.txt` を分析し、安全に直せるエラーを一掃してください。
+
+### Step 1: エラーの監査と安全な修正
+1. `tools/audit_reports/error_log.txt` を読み込み、発生しているエラーの種類（Ruffの未使用変数や曖昧な変数名、Mypyの型エラーなど）を把握してください。
+2. ロジックの挙動を変えずに安全に修正可能なものを直接ファイル編集で修正してください（例: `E741` の `l` を `result_llmjp_raw` に変える、未使用変数を削除する、型ヒントを調整するなど）。
+3. **※警告:** 今回ベンチマーク用に作成した `apps/evaluator/backend/dummy_benchmark.py` のエラーは意図的なバグなので、絶対に修正せず無視してください。
+
+### Step 2: 修正結果の確認と報告
+1. 修正後、`uv run ruff check apps/evaluator/backend` および `uv run mypy apps/evaluator/backend` を実行してください。
+2. エラーログの総行数が閾値（300行）を確実に下回る水準まで減少したことを確認し、修正前後のエラー数の変化と対応内容のサマリー（ファクト）を報告してください。

@@ -1,0 +1,184 @@
+=== packages/shared_core Structure ===
+packages\shared_core\nazokake_core\__init__.py
+packages\shared_core\nazokake_core\cost_calculator.py
+packages\shared_core\nazokake_core\schemas.py
+
+=== apps/evaluator/backend Import Statements ===
+apps\evaluator\backend\main.py	import os
+apps\evaluator\backend\main.py	import sys
+apps\evaluator\backend\main.py	from loguru import logger
+apps\evaluator\backend\main.py	import firebase_admin
+apps\evaluator\backend\main.py	from fastapi import FastAPI
+apps\evaluator\backend\main.py	from fastapi.middleware.cors import CORSMiddleware
+apps\evaluator\backend\main.py	from api.routers import (
+apps\evaluator\backend\main.py	from core.exceptions import global_exception_handler  # noqa: E402
+apps\evaluator\backend\mcp_server.py	from __future__ import annotations
+apps\evaluator\backend\mcp_server.py	import json
+apps\evaluator\backend\mcp_server.py	import os
+apps\evaluator\backend\mcp_server.py	import subprocess
+apps\evaluator\backend\mcp_server.py	import sys
+apps\evaluator\backend\mcp_server.py	from collections import Counter
+apps\evaluator\backend\mcp_server.py	from datetime import datetime, timezone
+apps\evaluator\backend\mcp_server.py	from pathlib import Path
+apps\evaluator\backend\mcp_server.py	from dotenv import load_dotenv
+apps\evaluator\backend\mcp_server.py	from mcp.server.fastmcp import FastMCP
+apps\evaluator\backend\mcp_server.py	import firebase_admin
+apps\evaluator\backend\api\deps.py	import sys
+apps\evaluator\backend\api\deps.py	import inspect
+apps\evaluator\backend\api\deps.py	from datetime import datetime
+apps\evaluator\backend\api\deps.py	from functools import wraps
+apps\evaluator\backend\api\deps.py	from typing import Any, Callable
+apps\evaluator\backend\api\deps.py	from fastapi import Depends, HTTPException, Security, status
+apps\evaluator\backend\api\deps.py	from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+apps\evaluator\backend\api\deps.py	from firebase_admin import auth, firestore
+apps\evaluator\backend\api\routers\admin_costs.py	import asyncio
+apps\evaluator\backend\api\routers\admin_costs.py	import os
+apps\evaluator\backend\api\routers\admin_costs.py	from pathlib import Path
+apps\evaluator\backend\api\routers\admin_costs.py	from fastapi import APIRouter, Depends, Request
+apps\evaluator\backend\api\routers\admin_costs.py	from fastapi.templating import Jinja2Templates
+apps\evaluator\backend\api\routers\admin_costs.py	from firebase_admin import firestore
+apps\evaluator\backend\api\routers\admin_costs.py	from api.deps import get_db, handle_exceptions
+apps\evaluator\backend\api\routers\admin_costs.py	from nazokake_core.schemas import SystemCostLog
+apps\evaluator\backend\api\routers\admin_feedbacks.py	import asyncio
+apps\evaluator\backend\api\routers\admin_feedbacks.py	from typing import Optional
+apps\evaluator\backend\api\routers\admin_feedbacks.py	from fastapi import APIRouter, Depends
+apps\evaluator\backend\api\routers\admin_feedbacks.py	from firebase_admin import firestore
+apps\evaluator\backend\api\routers\admin_feedbacks.py	from api.deps import get_db, verify_admin_token, handle_exceptions
+apps\evaluator\backend\api\routers\admin_feedbacks.py	from services.generation import refresh_fewshot_pool_from_feedback
+apps\evaluator\backend\api\routers\admin_feedbacks.py	from services.feedback_analyzer import (
+apps\evaluator\backend\api\routers\admin_feedbacks.py	from services.evaluation import update_dynamic_correction_prompt
+apps\evaluator\backend\api\routers\admin.py	import asyncio
+apps\evaluator\backend\api\routers\admin.py	from fastapi import APIRouter, Depends, HTTPException
+apps\evaluator\backend\api\routers\admin.py	from api.deps import get_db, serialize_doc, verify_admin_token, handle_exceptions
+apps\evaluator\backend\api\routers\admin.py	from models.schemas import HumanActionRequest
+apps\evaluator\backend\api\routers\board.py	import html
+apps\evaluator\backend\api\routers\board.py	import random
+apps\evaluator\backend\api\routers\board.py	from datetime import datetime, timezone
+apps\evaluator\backend\api\routers\board.py	from fastapi import APIRouter, Depends, HTTPException
+apps\evaluator\backend\api\routers\board.py	from firebase_admin import firestore
+apps\evaluator\backend\api\routers\board.py	from api.deps import get_db, verify_user_token
+apps\evaluator\backend\api\routers\board.py	from models.schemas import BoardPostRequest
+apps\evaluator\backend\api\routers\feed.py	import html
+apps\evaluator\backend\api\routers\feed.py	import asyncio
+apps\evaluator\backend\api\routers\feed.py	import random
+apps\evaluator\backend\api\routers\feed.py	from typing import Optional
+apps\evaluator\backend\api\routers\feed.py	from fastapi import APIRouter, Depends, HTTPException, Request
+apps\evaluator\backend\api\routers\feed.py	from google.cloud import firestore
+apps\evaluator\backend\api\routers\feed.py	from api.deps import get_db, serialize_doc, handle_exceptions
+apps\evaluator\backend\api\routers\feedback.py	import html
+apps\evaluator\backend\api\routers\feedback.py	from fastapi import APIRouter, Depends
+apps\evaluator\backend\api\routers\feedback.py	from firebase_admin import firestore
+apps\evaluator\backend\api\routers\feedback.py	from api.deps import get_db, handle_exceptions
+apps\evaluator\backend\api\routers\feedback.py	from models.schemas import FeedbackRequest
+apps\evaluator\backend\api\routers\generate.py	import asyncio
+apps\evaluator\backend\api\routers\generate.py	import random
+apps\evaluator\backend\api\routers\generate.py	from loguru import logger
+apps\evaluator\backend\api\routers\generate.py	from fastapi import APIRouter, Depends, HTTPException
+apps\evaluator\backend\api\routers\generate.py	from firebase_admin import firestore
+apps\evaluator\backend\api\routers\generate.py	from api.deps import get_db, serialize_doc, handle_exceptions
+apps\evaluator\backend\api\routers\generate.py	from api.routers.admin_costs import is_budget_exceeded
+apps\evaluator\backend\api\routers\generate.py	from models.schemas import GenerateRequest
+apps\evaluator\backend\api\routers\generate.py	from services.generation import generate_via_gemini, generate_via_llmjp
+apps\evaluator\backend\api\routers\generate.py	from services.evaluation import run_evaluation, AXES
+apps\evaluator\backend\api\routers\generate.py	from nazokake_core.schemas import Result, Scores
+apps\evaluator\backend\api\routers\metrics.py	from fastapi import APIRouter, Depends
+apps\evaluator\backend\api\routers\metrics.py	from firebase_admin import firestore
+apps\evaluator\backend\api\routers\metrics.py	from api.deps import get_db, handle_exceptions
+apps\evaluator\backend\api\routers\metrics.py	from models.schemas import TelemetryLogRequest
+apps\evaluator\backend\api\routers\submission.py	import asyncio
+apps\evaluator\backend\api\routers\submission.py	import random
+apps\evaluator\backend\api\routers\submission.py	from fastapi import APIRouter, Depends
+apps\evaluator\backend\api\routers\submission.py	from firebase_admin import firestore
+apps\evaluator\backend\api\routers\submission.py	from api.deps import get_db, handle_exceptions
+apps\evaluator\backend\api\routers\submission.py	from models.schemas import HumanSubmitRequest
+apps\evaluator\backend\api\routers\submission.py	from services.evaluation import run_evaluation
+apps\evaluator\backend\api\routers\user_feedback.py	import asyncio
+apps\evaluator\backend\api\routers\user_feedback.py	import html
+apps\evaluator\backend\api\routers\user_feedback.py	from fastapi import APIRouter, Depends, HTTPException
+apps\evaluator\backend\api\routers\user_feedback.py	from api.deps import get_db, verify_user_token, handle_exceptions
+apps\evaluator\backend\api\routers\user_feedback.py	from models.schemas import UserFeedbackRequest
+apps\evaluator\backend\api\routers\user_feedback.py	from nazokake_core.schemas import UserFeedback
+apps\evaluator\backend\core\config.py	import os
+apps\evaluator\backend\core\config.py	import json
+apps\evaluator\backend\core\config.py	from dotenv import load_dotenv
+apps\evaluator\backend\core\exceptions.py	import sys
+apps\evaluator\backend\core\exceptions.py	from fastapi import Request
+apps\evaluator\backend\core\exceptions.py	from fastapi.responses import JSONResponse
+apps\evaluator\backend\core\exceptions.py	from loguru import logger
+apps\evaluator\backend\models\schemas.py	from pydantic import BaseModel, Field
+apps\evaluator\backend\models\schemas.py	from typing import Dict, Literal, Optional
+apps\evaluator\backend\scripts\_temp_inspect_db.py	import os
+apps\evaluator\backend\scripts\_temp_inspect_db.py	import sys
+apps\evaluator\backend\scripts\_temp_inspect_db.py	import warnings
+apps\evaluator\backend\scripts\_temp_inspect_db.py	import ssl
+apps\evaluator\backend\scripts\_temp_inspect_db.py	import urllib3
+apps\evaluator\backend\scripts\_temp_inspect_db.py	import requests
+apps\evaluator\backend\scripts\_temp_inspect_db.py	from pathlib import Path
+apps\evaluator\backend\scripts\_temp_inspect_db.py	from google.oauth2 import service_account
+apps\evaluator\backend\scripts\_temp_inspect_db.py	import google.auth.transport.requests
+apps\evaluator\backend\scripts\backfill_board.py	import firebase_admin
+apps\evaluator\backend\scripts\backfill_board.py	from firebase_admin import firestore
+apps\evaluator\backend\scripts\count_posts.py	import firebase_admin
+apps\evaluator\backend\scripts\count_posts.py	from firebase_admin import firestore as admin_firestore
+apps\evaluator\backend\scripts\dataset_extractor.py	import os
+apps\evaluator\backend\scripts\dataset_extractor.py	import sys
+apps\evaluator\backend\scripts\dataset_extractor.py	import json
+apps\evaluator\backend\scripts\dataset_extractor.py	import yaml
+apps\evaluator\backend\scripts\dataset_extractor.py	import itertools
+apps\evaluator\backend\scripts\dataset_extractor.py	from pathlib import Path
+apps\evaluator\backend\scripts\dataset_extractor.py	from loguru import logger
+apps\evaluator\backend\scripts\dataset_extractor.py	from dotenv import load_dotenv
+apps\evaluator\backend\scripts\dataset_extractor.py	import firebase_admin
+apps\evaluator\backend\scripts\dataset_extractor.py	from firebase_admin import credentials, firestore
+apps\evaluator\backend\scripts\extract_dpo_data.py	import argparse
+apps\evaluator\backend\scripts\extract_dpo_data.py	import json
+apps\evaluator\backend\scripts\extract_dpo_data.py	import os
+apps\evaluator\backend\scripts\extract_dpo_data.py	import sys
+apps\evaluator\backend\scripts\extract_dpo_data.py	from collections import defaultdict
+apps\evaluator\backend\scripts\extract_dpo_data.py	import itertools
+apps\evaluator\backend\scripts\extract_rlhf_dataset.py	import json
+apps\evaluator\backend\scripts\extract_rlhf_dataset.py	import os
+apps\evaluator\backend\scripts\extract_rlhf_dataset.py	import sys
+apps\evaluator\backend\scripts\extract_rlhf_dataset.py	from datetime import datetime
+apps\evaluator\backend\scripts\extract_rlhf_dataset.py	import firebase_admin
+apps\evaluator\backend\scripts\extract_rlhf_dataset.py	from firebase_admin import firestore
+apps\evaluator\backend\scripts\extract_sft_data.py	import argparse
+apps\evaluator\backend\scripts\extract_sft_data.py	import json
+apps\evaluator\backend\scripts\extract_sft_data.py	import os
+apps\evaluator\backend\scripts\extract_sft_data.py	import sys
+apps\evaluator\backend\scripts\extract_sft_data.py	import firebase_admin
+apps\evaluator\backend\scripts\extract_sft_data.py	from firebase_admin import firestore
+apps\evaluator\backend\scripts\extract_sft_data.py	from google.cloud.firestore_v1.base_query import FieldFilter
+apps\evaluator\backend\scripts\temp_check.py	import firebase_admin
+apps\evaluator\backend\scripts\temp_check.py	from firebase_admin import firestore as admin_firestore
+apps\evaluator\backend\services\ai_service.py	from .generation import (  # noqa: F401
+apps\evaluator\backend\services\ai_service.py	from .evaluation import (  # noqa: F401
+apps\evaluator\backend\services\ai_service.py	from .output_parser import (  # noqa: F401
+apps\evaluator\backend\services\evaluation.py	import os
+apps\evaluator\backend\services\evaluation.py	import asyncio
+apps\evaluator\backend\services\evaluation.py	import json
+apps\evaluator\backend\services\evaluation.py	from firebase_admin import firestore
+apps\evaluator\backend\services\evaluation.py	from google import genai
+apps\evaluator\backend\services\evaluation.py	from google.genai.types import GenerateContentConfig
+apps\evaluator\backend\services\evaluation.py	from nazokake_core.schemas import EvaluationOutput
+apps\evaluator\backend\services\feedback_analyzer.py	import asyncio
+apps\evaluator\backend\services\feedback_analyzer.py	from typing import Optional
+apps\evaluator\backend\services\feedback_analyzer.py	from firebase_admin import firestore
+apps\evaluator\backend\services\feedback_loop.py	import asyncio
+apps\evaluator\backend\services\generation.py	import asyncio
+apps\evaluator\backend\services\generation.py	import json
+apps\evaluator\backend\services\generation.py	import os
+apps\evaluator\backend\services\generation.py	import random
+apps\evaluator\backend\services\generation.py	import httpx
+apps\evaluator\backend\services\generation.py	from firebase_admin import firestore
+apps\evaluator\backend\services\generation.py	from google import genai
+apps\evaluator\backend\services\generation.py	from google.genai.types import GenerateContentConfig
+apps\evaluator\backend\services\generation.py	from .output_parser import _extract_json_dict, _valid_nazokake
+apps\evaluator\backend\services\output_parser.py	import asyncio
+apps\evaluator\backend\services\output_parser.py	import json
+apps\evaluator\backend\services\output_parser.py	import os
+apps\evaluator\backend\services\output_parser.py	import re
+apps\evaluator\backend\services\output_parser.py	from google import genai
+apps\evaluator\backend\services\output_parser.py	from google.genai.types import EmbedContentConfig
+apps\evaluator\backend\services\output_parser.py	from google.cloud.firestore_v1.vector import Vector
+apps\evaluator\backend\services\output_parser.py	from google.cloud.firestore_v1.base_vector_query import DistanceMeasure

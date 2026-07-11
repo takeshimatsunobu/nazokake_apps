@@ -1,0 +1,22 @@
+【ミッション: Pyright結果のフィルタリング実装 (Epic 1 防弾化)】
+
+LLMのハルシネーションを誘発する「些細な型の指摘」を排除し、「致命的なエラー」のみを返すよう、`tools/pyright_tool.py` に前処理（Pre-processing）レイヤーを実装してください。
+
+### Step 1: フィルタリングロジックの実装
+1. `tools/pyright_tool.py` を開き、`pyright --outputjson` の標準出力を `json.loads()` でパースするよう改修してください。
+2. 以下の `IGNORED_RULES` を定義し、これに該当する `rule`、または `severity` が `information` レベルの指摘を除外（フィルタリング）してください。
+   - `reportMissingModuleSource`
+   - `reportMissingTypeStubs`
+   - `reportUnknownVariableType`
+   - `reportUnknownMemberType`
+   - `reportUnknownArgumentType`
+3. フィルタリング後に残ったエラー（`generalDiagnostics`）のみを抽出し、LLMが読みやすい簡潔なフォーマット（例: `Line {line}: [{severity}] {message} ({rule})` の箇条書き文字列）に整形して return してください。エラーが0件になった場合は「型エラーや構文エラーは検出されませんでした。」という文字列を返してください。
+
+### Step 2: フィルタリングの動作テスト
+1. 隔離環境に、ダミーファイル `_tmp_pyright_test.py` を作成してください。
+2. このファイルには、「未定義変数の使用 (致命的エラー)」と「存在しない外部モジュールのインポート (MissingModuleSource等で弾かれるべき些細なエラー)」の両方を含めてください。
+3. `uv run python tools/pyright_tool.py _tmp_pyright_test.py` を実行（またはスクリプト内から関数を呼び出し）し、出力結果から「未定義変数」のみが抽出され、「モジュール未発見」の警告が正しく除外されていることを確認してください。
+
+### Step 3: 報告とクリーンアップ
+1. 修正後の `tools/pyright_tool.py` に対して `uv run ruff check --fix tools/pyright_tool.py` を実行してください。
+2. テストの実行結果（フィルタリング後の出力ログ）を報告し、一時ファイルは削除してください。

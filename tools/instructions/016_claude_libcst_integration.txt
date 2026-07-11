@@ -1,0 +1,11 @@
+【ミッション: Nazo-AgentへのAST置換エンジン(LibCST)のハイブリッド・ルーティング統合】
+対象ファイル: `tools/nazo_agent.py`
+
+Epic 1 (ローカルファースト化) に基づき、LLMによる非決定的なファイル全文書き換え(Aider依存)を減らすため、Nazo-Agentのパイプラインに `tools/ast_modifier.py` を統合します。
+
+以下の要件で `tools/nazo_agent.py` を改修してください。
+1. Phase 2 (Claude推論) が出力する `triage_result.json` に、実行モードを指定する `mode` フィールド（`ast_replace` または `aider`）が含まれることを想定し、パース処理を拡張する。
+2. Phase 3 (ファイル修正実行) のロジックを分岐させる。
+   - `mode == "ast_replace"` の場合: Aiderを起動せず、`subprocess.run(["uv", "run", "python", "tools/ast_modifier.py", json_file_path])` を実行する。
+   - `mode == "aider"` またはフィールド指定がない場合: 従来のAider起動フローへフォールバックする。
+3. 修正後、`python -m py_compile tools/nazo_agent.py` を実行して構文エラーがないこと（ファクト）を確認し、その結果ログを報告せよ。推測によるコードの適用や余計なファイルの書き換えは厳禁とする。

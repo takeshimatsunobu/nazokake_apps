@@ -55,3 +55,8 @@
        INFO   127.0.0.1:54874 - "GET /api/health HTTP/1.1" 200
       INFO   127.0.0.1:50072 - "GET /api/health HTTP/1.1" 200
       INFO   127.0.0.1:50090 - "GET /api/health HTTP/1.1" 200
+      INFO   127.0.0.1:55691 - "GET /api/health HTTP/1.1" 200
+      INFO   127.0.0.1:59888 - "GET /api/health HTTP/1.1" 200
+      INFO   127.0.0.1:61075 - "GET /api/health HTTP/1.1" 200
+      INFO   127.0.0.1:58626 - "GET /api/health HTTP/1.1" 200
+      INFO   127.0.0.1:53356 - "GET /api/health HTTP/1.1" 200

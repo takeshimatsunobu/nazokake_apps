@@ -1,0 +1,16 @@
+【ミッション: Nazokake_Factory の技術的負債パージと環境修復】
+
+事前の静的監査によって判明したバッチ工場のブロッカーを排除し、パイプラインを安全に再稼働させます。以下のステップを順に実行してください。
+
+### Step 1: ゾンビファイルのパージ
+機能していない旧式のハードコードスクリプト `apps/batch_factory/factory_pipeline.py` を完全に削除（rm）してください。
+
+### Step 2: 依存関係の修復
+`apps/batch_factory/.venv` 環境に対して、不足している共通パッケージ `nazokake_core` を editable モードでインストールしてください。
+実行コマンドの例: `cd apps/batch_factory && .venv/Scripts/python -m pip install -e ../../packages/shared_core`
+
+### Step 3: ドライラン（Dry-Run）テストの実行
+依存関係が修復されたことを確認するため、本番のデータベース（Firestore）を汚さないドライランモードでバッチパイプラインを1件だけ実行してください。
+実行コマンド: `cd apps/batch_factory && .venv/Scripts/python -m batch.main --n 1 --dry-run`
+
+実行後、ファイルの削除結果、パッケージインストールの成否、およびドライランがクラッシュせずに完走（Exit Code 0）したかどうかの実測ログを抽出して報告してください。

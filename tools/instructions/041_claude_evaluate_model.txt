@@ -1,0 +1,18 @@
+【ミッション: 学習モデルの自動評価スクリプトの組み込み (Epic 3 Phase 3)】
+
+学習が完了したモデルの精度をホールドアウト検証し、その結果を記録する評価スクリプトを構築し、MLOpsパイプラインに統合してください。
+
+### Step 1: 評価スクリプトの実装
+1. `tools/evaluate_model.py` を新規作成してください。
+2. 以下の基礎的な仕様で実装してください（将来の拡張を前提としたスケルトンでも可です）。
+   - 最新の学習済みLoRAアダプタ（例: `apps/batch_factory/outputs/` 等の出力先）とテストデータセットをロードする。
+   - 推論を実行し、正解率やLossなどの評価メトリクスを算出する。
+   - 評価結果をJSON形式で `tools/audit_reports/evaluation_report.json` に出力・保存する。
+   - 実行時は VRAM を確実に解放するため、処理のメイン部分を `try-finally` で囲み、`del model`、`gc.collect()`、`torch.cuda.empty_cache()` によるクリーンアップを含めること。
+
+### Step 2: オーケストレーターへの統合
+1. `tools/mlops_pipeline.py` を開き、定義されている直列実行ステップ（`PIPELINE_STEPS`）の最後に、今回作成した `tools/evaluate_model.py` の実行ステップを追加してください。
+
+### Step 3: 静的解析と報告
+1. 修正後、`uv run ruff check --fix tools/evaluate_model.py tools/mlops_pipeline.py` を実行して構文エラーがないことを確認してください。
+2. 修正が完了した旨（コミットは不要）と、実装したスクリプトおよび統合内容のサマリーを報告してください（実際の推論実行は行わず、実装と静的解析のみに留めてください）。

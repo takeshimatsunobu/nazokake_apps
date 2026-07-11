@@ -1,0 +1,17 @@
+【ミッション: Pyright Tool Use の実装 (Feature 1.3)】
+
+Nazo-Agent (Claude) が推測で型エラーを直すハルシネーションを防ぐため、Pyrightから正確な型情報を取得できる「Tool Use（関数呼び出し）」機能を実装してください。
+
+### Step 1: Pyright ラッパーの作成
+1. `tools/pyright_tool.py` を新規作成してください。
+2. 指定されたファイルパスを受け取り、`subprocess.run(["uv", "run", "pyright", "--outputjson", target_file])` を実行する関数を実装してください。
+3. 出力されたJSONをパースし、エラーの概要（型不整合など）を簡潔な文字列として返すようにしてください。
+
+### Step 2: Nazo-Agent への Tool 組み込み
+1. `tools/nazo_agent.py` の `phase2_implementation`（Claude API呼び出し部）を改修してください。
+2. APIリクエストの `tools` パラメータに、Step 1で作成した「ファイルパスを渡すとPyrightの診断結果を返す関数」のJSONスキーマ（`get_type_info` など）を追加してください。
+3. Claudeからのレスポンスに `tool_calls` が含まれていた場合、`pyright_tool.py` を実行し、その結果を `tool_result` として履歴に追加し、Claudeの最終的な修正案（JSON）が出るまでAPI呼び出しをループさせる処理を実装してください。
+
+### Step 3: 静的解析と報告
+1. 修正後、`uv run ruff check --fix tools/nazo_agent.py tools/pyright_tool.py` および `python -m py_compile tools/nazo_agent.py tools/pyright_tool.py` を実行してください。
+2. 実装のサマリーを報告してください（実際にTool Useループが機能することのテストは後ほど行います）。

@@ -1,0 +1,18 @@
+【ミッション: 自己修正ループの実装と正規表現フォールバックの撤廃 (Epic 1 防弾化 - 追加課題 H)】
+
+LLMの型崩れに対して正規表現で無理やりパッチを当てるアンチパターンから脱却し、エラーをLLMにフィードバックして再生成させる「Self-Correction（自己修正）ループ」を実装してください。
+
+### Step 1: 負債のパージ (tools/ast_modifier.py)
+1. tools/ast_modifier.py に残存している正規表現ベースのフォールバック機構（`_extract_python_code` 関数、および `_CODE_BLOCK_PATTERN` 変数）を完全に削除してください。
+2. `apply_modification` 関数内で、`ValidationError` 発生時に行っていた「salvaged辞書を用いた再パースの試み」を削除し、バリデーションエラー発生時は即座にそのエラー内容を文字列として返却（フェイルファスト）するようにコードを純化してください。
+
+### Step 2: 自己修正ループの実装 (tools/nazo_agent.py)
+1. tools/nazo_agent.py の `phase2_claude_translation` (または `submit_ast_modifications` ツールを処理する該当ループ内) において、Pydanticの `ValidationError` が発生した場合の処理を改修してください。
+2. エラーを握りつぶしてスキップするのではなく、発生した `ValidationError` の内容（エラーメッセージ）を捕捉し、Claude APIの messages 履歴に `tool_result` (is_error=True) または `user` メッセージとして追加してください。
+3. メッセージには「指定されたJSONスキーマに違反しています。以下のエラーを修正し、再度出力してください：\n{エラーの詳細}」という内容を含め、Claudeに再推論を促すループ処理を実装してください。
+4. 無限ループを防ぐため、この自己修正の再試行（リトライ）は最大3回までとし、3回連続で失敗した場合はそのファイルの処理を安全にスキップ（縮退運転）するようにしてください。
+
+### Step 3: テスト・報告・クリーンアップ
+1. 実装前後で `uv run ruff check --fix tools/ast_modifier.py tools/nazo_agent.py` を実行し、静的解析エラーがないことを確認してください。
+2. 意図的にスキーマ違反を起こすダミーレスポンスをシミュレートする一時テストスクリプトを作成し、Self-Correctionループが発火して最大リトライ回数で適切に抜ける、あるいは修正される挙動をスモークテストしてください。
+3. 実行結果のログを報告し、テスト用の一時ファイル群を削除してください。

@@ -1,8 +1,10 @@
 # プロジェクト対象領域の要約マップ (AST抽出)
+- dummy_benchmark.py: calculate_score, badly_formatted
 - main.py: health_check, root
 - mcp_server.py: generate_nazokake, evaluate_nazokake, trigger_dpo_pipeline, dpo_stats, evaluation_correction_prompt
 - api\deps.py: get_db, serialize_doc, handle_exceptions, verify_admin_token, verify_user_token, async_wrapper, sync_wrapper
 - core\exceptions.py: global_exception_handler
+- core\logger.py: InterceptHandler, setup_cloud_logging, emit
 - models\schemas.py: HumanSubmitRequest, GenerateRequest, TelemetryLogRequest, FeedbackRequest, ConfigUpdateRequest, FeedbackInvalidateRequest, BoardPostRequest, HumanActionRequest, UserFeedbackRequest
 - scripts\backfill_board.py: main
 - scripts\dataset_extractor.py: DatasetExtractor, __init__, _load_config, _init_firestore, _fetch_base_items, export_sft_dataset, export_dpo_dataset, _write_jsonl

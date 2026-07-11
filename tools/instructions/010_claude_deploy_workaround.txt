@@ -1,0 +1,11 @@
+本番環境へのデプロイ（Priority 0）を完遂するための緊急回避措置（Workaround）を実行します。
+非標準フォーマットのCA証明書による通信遮断を回避するため、以下の手順でgcloudのSSL検証を一時的に無効化し、デプロイ完了後に必ず原状回復を行ってください。
+
+【要求事項】
+1. セキュリティリスクを受容し、一時的にSSL検証を無効化します:
+   `gcloud config set auth/disable_ssl_validation True`
+2. 本番環境へデプロイを実行します:
+   `gcloud builds submit --config cloudbuild.yaml .`
+3. デプロイの成否にかかわらず、直ちに元のセキュリティレベルへ原状回復します:
+   `gcloud config set auth/disable_ssl_validation False`
+4. デプロイの完了（または新たなエラーの発生）を示す「最終的なデプロイ結果（成功・失敗の生ログ）」を抽出して報告してください。推測や自己判断による追加のコード修正は行わないでください。

@@ -1,0 +1,21 @@
+【ミッション: 置換エンジンの堅牢化 - Diff Review 中間レイヤーの実装 (Epic 1 防弾化)】
+
+LLMが「省略記号」や「空の関数」で既存コードを大量削除してしまう事故（コンパイルは通るが論理が崩壊するバグ）を防ぐため、`tools/ast_modifier.py` に差分検閲（Diff Review）を追加してください。
+
+### Step 1: 差分検閲ロジックの実装
+1. `tools/ast_modifier.py` を開き、置換前コード（`original_code`）と置換後コード（`modified_module.code`）の行数を比較するロジックを、ファイル書き込み処理の直前に追加してください。
+2. 以下のヒューリスティック・ルールを適用してください。
+   - `original_lines = len(original_code.splitlines())`
+   - `modified_lines = len(modified_module.code.splitlines())`
+   - ルールA (大量削除の防止): `original_lines > 20` かつ `modified_lines < original_lines * 0.6` (40%以上の行が消滅) の場合、エラー。
+   - ルールB (大量挿入の防止): `modified_lines > original_lines + 200` の場合、エラー。
+3. エラー条件に合致した場合は、「[Warning] 差分が極端すぎるため(元: {x}行 -> 新: {y}行)、安全のため置換をブロックします」とログを出力し、`sys.exit(1)` で処理を中断させてください。
+
+### Step 2: ネガティブテスト（破壊防御）の実行
+1. 隔離環境に、ダミーの30行程度の関数を含むファイル `_tmp_diff_test.py` を作成してください。
+2. その関数を、たった1行の `pass` や `...` だけを含む `new_code` で上書きしようとするタスクJSONを作成してください。
+3. `uv run python tools/ast_modifier.py` にそのJSONを渡し、スクリプトが大量削除を検知して `Exit Code 1` で異常終了し、実ファイルが**一切変更されていないこと**を確認してください。
+
+### Step 3: 報告とクリーンアップ
+1. 修正後の `tools/ast_modifier.py` に対して `uv run ruff check --fix tools/ast_modifier.py` を実行してください。
+2. ネガティブテストの実行結果（エラーログの出力とファイルの保護状態）を報告し、一時ファイルは削除してください。

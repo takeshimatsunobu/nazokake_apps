@@ -1,0 +1,26 @@
+【ミッション: 自己修正枯渇時のデッドレター記録機構の実装 (Epic 4 防弾化 - 追加課題 J)】
+
+LLMの自己修正ループが上限（MAX_SELF_CORRECTION_RETRIES）に達して縮退運転に移行する際、その失敗原因を分析可能にするための可観測性（Observability）強化として、デッドレター記録機構を実装してください。
+
+### Step 1: デッドレター出力ロジックの実装 (tools/nazo_agent.py)
+1. tools/nazo_agent.py の `phase2_claude_tool_augmented` 関数（および `phase2_claude_translation` 関数が存在する場合はそちらも）を開いてください。
+2. 自己修正ループ内の `if attempt >= MAX_SELF_CORRECTION_RETRIES:` の分岐ブロック（縮退運転に移行する直前）に、以下の処理を追加してください。
+   - `tools/audit_reports/dead_letters/` ディレクトリが存在しない場合は作成する。
+   - 以下の内容を含む構造化JSONを生成する。
+     - `timestamp`: 現在のISO 8601形式の時刻
+     - `target_file`: 失敗した対象ファイルのパス（可能であれば）
+     - `system_prompt`: `system_blocks` (または `system_prompt`) の内容
+     - `messages`: 会話履歴（エラーメッセージのフィードバックを含む全ターン）
+     - `final_error`: 最後に発生した `ValidationError` の詳細（文字列）
+     - `raw_response`: Claudeが最後に返した生の応答文字列（パースに失敗した壊れたJSONを含むテキスト）
+   - `dead_letter_YYYYMMDD_HHMMSS_UUID.json` のような一意なファイル名で、指定ディレクトリに保存する。
+
+### Step 2: デッドレター出力のスモークテスト
+1. 意図的にスキーマ違反を起こすダミーレスポンスをシミュレートする一時テストスクリプト（前回使用した `_tmp_self_correction_test.py` と同様のもの）を作成してください。
+2. 最大リトライ回数で適切にループを抜け、縮退運転に移行することを確認してください。
+3. 同時に、`tools/audit_reports/dead_letters/` 配下にデッドレターJSONファイルが正しく出力され、期待される情報（特に `raw_response` と `final_error`）が記録されていることを確認してください。
+
+### Step 3: 報告とクリーンアップ
+1. 実装前後で `uv run ruff check --fix tools/nazo_agent.py` を実行し、静的解析エラーがないことを確認してください。
+2. 出力されたデッドレターJSONの内容（一部抜粋）と、テスト実行結果のログを報告してください。
+3. テスト用の一時スクリプトおよび生成されたテスト用デッドレターファイルを削除してください。

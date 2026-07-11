@@ -1,0 +1,21 @@
+【ミッション: LangGraphを用いた自律修復ループの統合 (Feature 1.x)】
+
+Aiderへの非決定的な依存を廃止し、LangGraphを用いた「全履歴保持型・最大3回ループ」の自律型自己修復エージェントを構築します。前提パッケージ（langgraph, langchain-community等）は既にインストール済みです。
+
+### Step 1: LangGraphコアモジュールの作成
+1. `tools/agent_graph.py` を新規作成してください。
+2. 以下の要件を満たすコードを実装してください。
+   - LLM初期化: `ChatOllama(model="gemma-4:12b-q4_0", temperature=0.1)`
+   - State定義: `original_code`, `current_code`, `audit_history` (Annotated[List[str], operator.add]), `revision_count`, `status` を持つ `TypedDict`。
+   - ノード: `scanner_node` (問題箇所の抽出のみ), `reviewer_node` (`CLEAN` または `NEEDS_FIX` の判定), `editor_node` (完全なソースコード出力と `current_code` の上書き), `reporter_node` (サマリーの出力とファイルへの一括書き戻し)。
+   - エッジ: `scanner` -> `reviewer` -> (条件分岐: `CLEAN` or ループ3回到達なら `reporter`、それ以外は `editor`) -> `scanner`。
+
+### Step 2: Nazo-Agent メインフローへの統合
+1. `tools/nazo_agent.py` を改修します。
+2. `main_flow` 関数の冒頭（`startup_local_services` や `phase0_ruff_autofix` の直後）に、以下の Pre-flight 処理（Gitブランチ作成）を追加してください。
+   - `subprocess.run` で `auto-audit-temp` ブランチを作成しチェックアウト（既にある場合はそのまま移動）。
+3. 既存の `phase2_claude_tool_augmented` や `phase3_aider_execution` の呼び出しをバイパス（またはコメントアウト）し、代わりに Step 1 で作成した `agent_graph.py` の Graph を呼び出して実行するフローに置き換えてください。
+
+### Step 3: 静的解析と報告
+1. 修正後、`uv run ruff check tools/nazo_agent.py tools/agent_graph.py` を実行して構文をチェックしてください。
+2. 実装のサマリーを報告してください（実際の動作確認テストは次のステップで行います）。

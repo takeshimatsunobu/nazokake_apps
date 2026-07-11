@@ -1,0 +1,10 @@
+`backend/main.py` のロギング初期化設定を修正してください。
+
+【要件】
+1. 必要なモジュール (`import os`, `import sys`, `from loguru import logger`) をファイルのインポート宣言部に追加する（既存のものは重複させない）。
+2. `app = FastAPI(...)` のインスタンス生成の直前に、以下のロギング初期化ロジックを追加する。
+   - `logger.remove()` を呼び出し、デフォルトの標準出力をクリアする。
+   - `if os.getenv("K_SERVICE"):` を用いてCloud Run環境か判定する。
+   - 本番環境（True）の場合: `logger.add(sys.stderr, serialize=True)` を追加し、GCP構造化ロギング互換のJSON形式で出力する。
+   - ローカル環境（False）の場合: `logger.add(sys.stderr, colorize=True, format="<green>{time}</green> <level>{message}</level>")` を追加し、視認性を確保する。
+3. 既存のルーティング (`app.include_router(...)`) や例外ハンドラ (`app.add_exception_handler(...)`) の設定は一切変更しないこと。

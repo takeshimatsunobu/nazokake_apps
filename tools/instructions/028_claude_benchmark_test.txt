@@ -1,0 +1,24 @@
+【ミッション: Nazo-Agent自律修復ベンチマークの構築と実行 (Feature 2.2)】
+
+Nazo-Agentが人間の介入なしで「Ruffの自動修復」と「Pyrightによる型解決」を連携させ、コードを自律的に修復できるかを測定するベンチマークテストを実施してください。
+
+### Step 1: テスト環境の隔離とバグ注入
+1. 現在のブランチからテスト用の新ブランチを作成してください（`git checkout -b test/agent-benchmark`）。
+2. `apps/evaluator/backend/dummy_benchmark.py` を作成し、以下の「意図的なバグ」を混入させてください。
+   - Ruffで直せるトイル: `import os, sys` (未使用インポート) や、インデント/空白の乱れ。
+   - Pyrightで検知させる型不整合:
+     ```python
+     def calculate_score(base: int, multiplier: float) -> int:
+         return base * multiplier  # floatを返すが、型ヒントはintになっている
+     ```
+
+### Step 2: Nazo-Agentの自律実行
+1. `test_benchmark_prompt.txt` というファイルを作成し、「`apps/evaluator/backend/dummy_benchmark.py` の静的解析エラー（RuffおよびPyright）を完全に修正してください」という指示を記述してください。
+2. コマンド `uv run python tools/nazo_agent.py --prompt test_benchmark_prompt.txt` をバックグラウンド実行してください。
+
+### Step 3: メトリクスの抽出と報告
+テスト完了後、`tools/audit_reports/nazo_agent_daemon.log` などを解析し、以下のメトリクス（ファクト）を報告してください。
+- **Success Rate:** Exit Codeが0（成功）であったか。
+- **Ruff Autofix:** Phase 0のRuffによって未使用インポート等のトイルが自動消滅したか。
+- **Tool Use (Pyright):** Phase 2でClaudeが推測で直さず、自律的に `get_type_info` ツールを呼び出して型情報を取得したか。
+- **Latency:** Nazo-Agentの起動から終了までにかかった合計時間（秒）。

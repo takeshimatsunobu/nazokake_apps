@@ -1,0 +1,26 @@
+【ミッション: セマンティック差分検証のスコープ拡張 (Epic 1 防弾化 - 課題D)】
+
+LLMが関数やクラスだけでなく、重要な「import文」や「グローバル定数・変数」を行数維持のままサイレントに削除する論理破壊を防ぐため、tools/ast_modifier.py の検証スコープを拡張してください。
+
+### Step 1: 抽出ロジックのスコープ拡張
+1. tools/ast_modifier.py 内の _get_top_level_names(code_str: str) -> set[str] ヘルパー関数を修正してください。
+2. 従来の FunctionDef, AsyncFunctionDef, ClassDef に加え、以下のASTノードからも識別子名を抽出して集合（set）に追加するロジックを実装してください。
+   - ast.Import: インポートされたモジュール名（例: import os の "os"）
+   - ast.ImportFrom: インポートされたシンボル名（例: from datetime import datetime の "datetime"）
+   - ast.Assign: トップレベルで定義された変数・定数名（例: node.targets の各要素が ast.Name である場合の id。CONFIG = {} の "CONFIG"）
+3. apply_modification 内のエラーメッセージを、関数/クラス以外も含むため以下のように微修正してください（消失した名前のリスト出力は維持）。
+   - "[Fatal] 無関係なコード要素（関数/クラス/インポート/定数）の消失を検知したため、書き込みを中止します: {消失した名前のリスト}"
+
+### Step 2: 拡張スコープのネガティブテスト
+1. ユニットテスト用のスクリプト _tmp_scope_extension_test.py を作成してください。
+2. 以下の要素を含む「変更前」のソースコードを用意してください。
+   - import os
+   - from math import log
+   - GLOBAL_VAL = 100
+   - def target_fn(): pass
+3. _get_top_level_names を用いて、import os や GLOBAL_VAL が意図的に削除された「変更後」のソースコードと比較した際、差分集合（lost_names）にそれらの名前が正しく検出されることを assert で検証してください。
+4. テストを実行し、正常に検出されることを確認したら、テストスクリプトを削除してください。
+
+### Step 3: 報告とクリーンアップ
+1. 実装前後で uv run ruff check --fix tools/ast_modifier.py を実行し、静的解析エラーがないことを確認してください。
+2. テスト結果および拡張された保護対象ノードの成否を報告してください。

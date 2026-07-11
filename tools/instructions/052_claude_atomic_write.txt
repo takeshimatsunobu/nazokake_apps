@@ -1,0 +1,19 @@
+【ミッション: アトミック書き込みによるファイル破壊防止機構の実装 (Epic 1 防弾化 - 追加課題 C)】
+
+ファイルの書き込み中にプロセスが強制終了（OOM等）した場合にファイルが空（0バイト）になるリスクを物理的にゼロにするため、tools/ast_modifier.py のファイル保存処理をアトミック書き込み（不可分操作）へリファクタリングしてください。
+
+### Step 1: tempfile と os.replace を用いたアトミック書き込みの実装
+1. tools/ast_modifier.py 内の `with open(file_path, "w", encoding="utf-8") as f:` による直接上書き処理を以下の手順に置き換えてください。
+   - `tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=os.path.dirname(file_path), delete=False)` を使用し、対象ファイルと同一ディレクトリに一時ファイルを作成する（同一ドライブ・パーティションでの os.replace を保証するため）。
+   - 一時ファイルにコードを書き込み、`f.flush()` と `os.fsync(f.fileno())` を実行してOSバッファから物理ディスクへ確実に同期する。
+   - 一時ファイルを閉じ、`os.replace(temp_path, file_path)` を用いて一時ファイルで元ファイルをアトミックに上書き（すげ替え）する。
+   - 万が一書き込み中にエラーが発生した場合は、`finally` ブロック等で一時ファイルが残らないようクリーンアップ（`os.remove` あるいは `Path.unlink`）を保証する。
+
+### Step 2: スモークテストの実行
+1. ダミーファイル `_tmp_atomic_test.py` を作成し、適当な関数 `def foo(): pass` を定義してください。
+2. 指示書JSON `_tmp_atomic_instr.json` を作成し、`uv run python tools/ast_modifier.py _tmp_atomic_instr.json` を経由してその関数を置換してください。
+3. 置換が正常に完了し、一時ファイルがディレクトリに残存していないこと、および対象ファイルが正しく更新されていることを確認してください。
+
+### Step 3: 報告とクリーンアップ
+1. 実装前後で `uv run ruff check --fix tools/ast_modifier.py` を実行し、静的解析エラーがないことを確認してください。
+2. テストの実行結果を報告し、テスト用の一時ファイル群を削除してください。

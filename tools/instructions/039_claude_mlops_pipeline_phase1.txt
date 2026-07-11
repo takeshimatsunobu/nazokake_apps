@@ -1,0 +1,18 @@
+【ミッション: MLOpsオーケストレーターの基礎構築 (Epic 3 Phase 1)】
+
+独立して存在するデータ抽出スクリプト群を統括し、順番に自動実行するオーケストレータースクリプトを作成してください。
+
+### Step 1: オーケストレーターの実装
+1. `tools/mlops_pipeline.py` を新規作成してください。
+2. 以下の仕様で実装してください。
+   - `subprocess.run` を用いて、以下のスクリプトを順番に（直列で）実行する。
+     1. `uv run python tools/extract_agent_sft.py`
+     2. `uv run python apps/evaluator/backend/scripts/extract_sft_data.py`
+     3. `uv run python apps/evaluator/backend/scripts/extract_dpo_data.py`
+   - 各スクリプトの実行前にどのステップを実行しているかコンソール（またはロガー）に出力する。
+   - いずれかのスクリプトの `returncode` が 0 以外だった場合、エラーログを出力し、直ちにパイプライン全体を異常終了（`sys.exit(1)`）させるフェイルファスト機構を持たせる。
+   - 全て成功した場合は「✅ Phase 1: データ抽出パイプラインが正常に完了しました」と出力する。
+
+### Step 2: 静的解析と報告
+1. 実装後、`uv run ruff check --fix tools/mlops_pipeline.py` を実行して構文エラーがないことを確認してください。
+2. 修正が完了した旨（コミットは不要）と実装内容のサマリーを報告してください（実際の実行は行わず、実装と解析のみに留めてください）。

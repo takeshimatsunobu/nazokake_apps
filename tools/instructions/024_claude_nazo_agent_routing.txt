@@ -1,0 +1,20 @@
+【ミッション: Nazo-Agentのハイブリッド・ルーティング実装 (Feature 1.2)】
+
+完成したAST置換エンジン (`tools/ast_modifier.py`) を Nazo-Agent のパイプラインに統合し、「非決定的なAider」と「決定論的なLibCST」をタスクに応じて使い分けるハイブリッド・ルーティングを実装してください。
+対象ファイル: `tools/nazo_agent.py`
+
+### Step 1: ルーティングロジックの組み込み
+1. `phase3_aider_execution` 関数内にあるタスク実行ループ（`for idx, task in enumerate(tasks, start=1):`）を改修します。
+2. `task` 辞書から `mode = task.get("mode", "aider")` を取得する分岐を追加してください。
+3. `mode == "ast_replace"` の場合:
+   - Aiderを起動せず、タスクから `target_name` と `new_code` を抽出してください（不足している場合は警告ログを出して `continue` 縮退運転）。
+   - `file_path`, `target_name`, `new_code` を含む一時JSONファイル（例: `tools/audit_reports/_ast_task_{idx}.json`）を書き出してください。
+   - `subprocess.run` を用いて `uv run python tools/ast_modifier.py <一時JSONパス>` を同期的に実行してください。
+   - 実行成功（Exit Code 0）の場合は `successful_files.append(str(target_file))` を記録し、`finally` ブロック等で一時JSONを確実に削除してください。
+4. `mode == "aider"` または未指定の場合:
+   - 既存のAider起動ロジックにそのままフォールバック（維持）させてください。
+
+### Step 2: 構文チェックとスモークテスト
+1. 修正後、`python -m py_compile tools/nazo_agent.py` を実行して構文エラーがないことを確認してください。
+2. 使い捨てのテスト用Pythonファイルと一時JSONファイルを作成し、実際に新分岐を通って `ast_modifier.py` が呼び出され、部分置換が成功するかのスモークテスト（エンドツーエンドのコマンド呼び出し）を実行してファクトを実証してください。
+3. 実装のサマリーとスモークテストの結果を報告してください。

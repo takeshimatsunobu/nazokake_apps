@@ -3,3 +3,8 @@ google-genai==2.8.0
 pydantic==2.13.4
 python-dotenv==1.2.2
 httpx
+libcst==1.8.6
+pyright==1.1.411
+langgraph==1.2.9
+langchain-community
+langchain-ollama==1.1.0

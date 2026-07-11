@@ -1,0 +1,18 @@
+【ミッション: 致命的ブロッカーの完全排除と本番デプロイの完遂 (Priority 0)】
+
+事前のインフラ監査により特定された2つのブロッカー（専用SAの権限不足、generation.pyの構文エラー）を直列で解決し、本番環境へのデプロイを強行します。以下の3ステップを順に実行してください。
+
+### Step 1: 専用サービスアカウントへのIAM権限付与
+以下のコマンドを実行し、本番Cloud Runがシークレットにアクセスできるようにしてください。
+`gcloud secrets add-iam-policy-binding GEMINI_API_KEY --member="serviceAccount:nazokake-backend-sa@nazokakeapp-137e5.iam.gserviceaccount.com" --role="roles/secretmanager.secretAccessor"`
+`gcloud secrets add-iam-policy-binding ANTHROPIC_API_KEY --member="serviceAccount:nazokake-backend-sa@nazokakeapp-137e5.iam.gserviceaccount.com" --role="roles/secretmanager.secretAccessor"`
+
+### Step 2: `generation.py` の SyntaxError 止血手術
+1. `apps/evaluator/backend/services/generation.py` を読み込み、266〜268行目付近に残存している SyntaxError（クォーテーションのエスケープ衝突など）を直接ファイル編集して修正してください。
+2. 修正後、`python -m py_compile apps/evaluator/backend/services/generation.py` を実行し、構文エラーが完全に消滅したこと（Exit Code 0）を確認してください。
+
+### Step 3: 本番デプロイの実行
+Step 1 と Step 2 が確実に完了し、構文エラーがないことを確認した後、以下のコマンドで本番デプロイを実行してください。
+`gcloud builds submit --config cloudbuild.yaml .`
+
+実行後、修正の成否とデプロイの最終的なターミナル出力を報告してください。
