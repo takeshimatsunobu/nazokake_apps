@@ -1627,35 +1627,31 @@ def _ensure_auto_audit_branch() -> None:
     print(f"   ✅ ブランチ '{AUTO_AUDIT_BRANCH}' で作業します ({TARGET_APP_DIR})。")
 
 
-# --- Test-Driven Escalation Gatekeeper (アーキテクチャ統合: 案C改) ---
+# --- Test-Driven Escalation Gatekeeper (アーキテクチャ統合 - 追加課題N: 選択的・並列実行) ---
 async def verify_logic_with_pytest(target_file: Path) -> tuple[bool, str]:
-    """対象ファイルに対応するテストをpytestで実行し、決定論的にロジックの正しさを検証する。
+    """pytest-testmon(変更影響テストの選択)+ pytest-xdist(並列実行)で、決定論的に
+    ロジックの正しさを検証する。
 
     Ollamaが「文法的には正しいが論理が破綻したコード」を出力するFalse Positiveは、
     Ruff/Pyrightのような静的解析では検知できない。実際にテストを走らせて確認する
     絶対的なゲートキーパーとして機能し、失敗時はコミットをブロックしてClaudeパイプラインへの
-    エスカレーション判断に使う。対応するテストファイルが見つからない場合は検証不能として
-    (True, ...) を返し、テスト未整備のファイルまで機構が過剰にコミットをブロックしないよう
-    防衛的に振る舞う。
-    """
-    candidates = [
-        target_file.parent / f"test_{target_file.name}",
-        target_file.parent / f"{target_file.stem}_test.py",
-        target_file.parent / "tests" / f"test_{target_file.name}",
-    ]
-    test_file = next((c for c in candidates if c.exists()), None)
-    if test_file is None:
-        print(
-            f"   ⚠️ [Pytest Gatekeeper] 対応するテストファイルが見つからないため検証をスキップします: {target_file.name}"
-        )
-        return True, "対応するテストファイルが見つからないため検証をスキップしました。"
+    エスカレーション判断に使う。
 
+    対象ファイルに対応する単一のテストファイルを推測して単体実行する(旧実装)のではなく、
+    テストスイート全体を対象に `--testmon` で前回実行からの変更差分に関係するテストのみへ
+    自動的に絞り込み、`-n auto` でCPUコア数に応じて並列実行する。これにより、プロジェクト
+    全体のテストを毎回フル実行するO(N)のレイテンシ劣化を避けつつ、決定論的な検証としての
+    厳密さは保つ(testmonは実行済みテストのコードカバレッジに基づき、変更されたコードパスに
+    依存するテストのみを再実行対象として選択する)。target_fileは呼び出し元でのログ・
+    エスカレーション文脈のためにのみ使用し、テスト選択自体はtestmonに委ねる。
+    """
     print(
-        f"   🧪 [Pytest Gatekeeper] {test_file} を実行して論理の正しさを検証します..."
+        f"   🧪 [Pytest Gatekeeper] testmon+xdistでテストスイート全体を選択的・並列検証します... "
+        f"(トリガー: {target_file.name})"
     )
     try:
         result = subprocess.run(
-            ["uv", "run", "pytest", str(test_file), "-v"],
+            ["uv", "run", "pytest", "--testmon", "-n", "auto", "-v"],
             cwd=str(TARGET_APP_DIR),
             capture_output=True,
             text=True,

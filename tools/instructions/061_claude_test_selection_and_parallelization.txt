@@ -1,0 +1,19 @@
+【ミッション: 選択的・並列テスト実行機構の導入 (アーキテクチャ統合 - 追加課題 N)】
+
+Nazo-Agentがコードを修正した際、プロジェクト全体のテストを毎回実行するO(N)のレイテンシ劣化を防ぐため、`pytest-testmon` と `pytest-xdist` を用いて「変更の影響を受けるテストのみを並列実行する」スケーラブルなアーキテクチャへ改修してください。
+
+### Step 1: 依存関係の解決と環境設定
+1. プロジェクトの依存関係管理ファイル（`requirements_orchestrator.txt` 等の適切なファイル）に `pytest-testmon` と `pytest-xdist` を追加し、`.venv` 環境にインストールしてください。
+2. プロジェクトルートの `.gitignore` を確認し、`.testmondata` がなければ追記して、カバレッジデータベースファイルがGitにコミットされないようにしてください。
+
+### Step 2: verify_logic_with_pytest の改修 (tools/nazo_agent.py)
+1. `tools/nazo_agent.py` を開き、`verify_logic_with_pytest` 関数を改修してください。
+2. 対象テストファイルを推論して単体実行していた既存のロジック（`candidates` の探索等）を破棄し、以下のコマンドでテストスイート全体に対して選択的・並列実行を行うように変更してください。
+   - 実行コマンド: `["uv", "run", "pytest", "--testmon", "-n", "auto", "-v"]`
+   - ※初回実行時など `.testmondata` がない場合でも動作するよう、必要に応じて引数やエラーハンドリングを調整してください。
+
+### Step 3: 静的解析とスモークテスト
+1. 修正後、`uv run ruff check --fix tools/nazo_agent.py` と `uv run ruff format tools/nazo_agent.py` を実行してください。
+2. `python -m py_compile tools/nazo_agent.py` で構文エラーがないことを確認してください。
+3. 実際に意図的なテスト失敗（False Positive）を誘発するダミーの修正をシミュレートし、テストが選択的に実行され、フェイルファストとして機能（Exit Code 1 でエスカレーションへ移行）することを確認してください。
+4. 修正箇所の差分概要と、スモークテストの完了ログを報告してください。

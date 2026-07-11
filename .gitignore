@@ -1,5 +1,6 @@
 .aider*
 .env
+.testmondata
 
 # Embedded repos with their own .git (not true submodules, no .gitmodules) -
 # tracked independently on disk, deliberately excluded from this superproject's index.
