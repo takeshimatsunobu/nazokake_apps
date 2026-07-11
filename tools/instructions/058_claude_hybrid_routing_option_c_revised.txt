@@ -1,0 +1,22 @@
+【ミッション: テスト駆動エスカレーションとHuman-in-the-Loopの実装 (アーキテクチャ統合: 案C改)】
+
+Ollamaが「文法的には正しいが論理が破綻したコード」を出力するFalse Positiveを決定論的テスト（Pytest）で検知し、Claudeへエスカレーションする機構を実装します。さらに、テストの陳腐化（仕様変更）とコードのバグを切り分ける「Criticトリアージ機能」をClaudeのプロンプトに組み込みます。
+
+### Step 1: テストランナー関数の実装 (tools/nazo_agent.py)
+1. `tools/nazo_agent.py` 内に、対象ファイルのテストを実行する `async def verify_logic_with_pytest(target_file: Path) -> tuple[bool, str]:` を実装してください。
+   - `subprocess.run` を用いて `uv run pytest <テストファイルパス>`（または対象ファイルのテストディスカバリ）を実行し、Exit Code 0 なら `(True, "OK")`、それ以外なら `(False, "標準出力/エラー出力の末尾")` を返すようにしてください。テストファイル解決ロジックはプロジェクト規約に合わせて推論させてください（見つからない場合は `True` としてスキップ警告を出すなどの防衛的実装を含む）。
+
+### Step 2: main_flow での絶対的ゲートキーパーとエスカレーションの実装
+1. `main_flow` の `engine == "ollama"` 分岐内、`revision_count > 0` (Ollamaの修復完了) の直後に、`verify_logic_with_pytest` を呼び出してください。
+2. 結果が `True` の場合: 安全が証明されたものとして、そのまま一括コミット処理へ進む。
+3. 結果が `False` の場合: コミットをスキップし、ターミナルに「🚨 [Escalation] Ollamaの修正が論理テストに失敗しました。Claudeパイプラインへエスカレーションします。」と出力。テストのエラースタックトレースをコンテキストに追加し、同一プロセス内で `engine = "claude"` の処理パス（`phase2_claude_translation` → `phase3_aider_execution` のAST置換ルート）を呼び出して処理を引き継がせてください。
+
+### Step 3: Claude(Critic)によるトリアージ機構の実装
+1. `phase2_claude_translation` のシステムプロンプトを改修し、以下の役割（Critic）を追加してください。
+   - 「提供されたエラーログ（Pytestの失敗結果など）を分析し、パターンA（コードのロジックバグ）かパターンB（テストコード自体の陳腐化・仕様の古さ）かを判定せよ。」
+   - 「パターンAの場合は、通常通りコードを修正するJSONタスクを出力せよ。」
+   - 「パターンBの場合は、絶対にコードを修正せず、JSONの `summary` フィールドに『⚠️ テストの陳腐化を検知しました。人間によるテストコードの修正が必要です』という旨を記載し、`tasks` を空配列にして提出せよ（Human-in-the-Loop エスカレーション）。」
+
+### Step 4: 静的解析とスモークテスト
+1. 実装後、`uv run ruff check --fix tools/nazo_agent.py` および `python -m py_compile tools/nazo_agent.py` を実行し、構文エラーがないことを確認してください。
+2. この機構が意図通りに動作することを確認できる簡易的なテスト（ダミーの失敗テストに対するエスカレーションの発火確認など）を実施し、その結果の生ログと実装の差分概要を報告してください。

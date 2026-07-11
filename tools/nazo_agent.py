@@ -24,8 +24,10 @@ from pydantic import BaseModel, ValidationError
 import anthropic
 import httpx
 
+
 class TokenCircuitBreaker:
     """セッション(デーモン起動中)全体のClaude APIトークン消費を追跡する安全装置。"""
+
     MAX_TOKENS = 200_000  # 1セッション(デーモン起動中)の安全上限
     used_tokens = 0
 
@@ -33,9 +35,12 @@ class TokenCircuitBreaker:
     def add(cls, tokens: int):
         cls.used_tokens += tokens
         if cls.used_tokens > cls.MAX_TOKENS:
-            print(f"\n🚨 [Circuit Breaker] セッションのトークン消費上限({cls.MAX_TOKENS})を超過しました！")
+            print(
+                f"\n🚨 [Circuit Breaker] セッションのトークン消費上限({cls.MAX_TOKENS})を超過しました！"
+            )
             print("🚨 APIコスト保護のため、エージェントを強制停止します。")
             sys.exit(1)  # ここはデーモンごと安全に殺すための意図的な exit
+
 
 # --- ターゲット環境の設定 ---
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -54,7 +59,9 @@ logger.propagate = False  # ルートロガー経由でコンソールへ漏れ�
 
 if not logger.handlers:
     _file_handler = logging.FileHandler(log_file, encoding="utf-8")
-    _file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    _file_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    )
     logger.addHandler(_file_handler)
 
 # `python tools/nazo_agent.py` のように直接実行すると sys.path[0] は tools/ 自身に
@@ -77,24 +84,33 @@ TARGET_PYTHON = TARGET_APP_DIR / ".venv_ai" / "Scripts" / "python.exe"
 EVALUATOR_APP_DIR = BASE_DIR / "apps" / "evaluator"
 EVALUATOR_PYTHON = EVALUATOR_APP_DIR / ".venv_ai" / "Scripts" / "python.exe"
 
+
 # --- Structured Output Schema ---
 class AiderTask(BaseModel):
     file_path: str
     instruction: str
 
+
 # --- ACD Engine Phase 1 ---
 _ACD_NOISE_PATTERNS = [
     (re.compile(r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:[.,]\d+)?"), "<TIME>"),
     (re.compile(r"0x[0-9a-fA-F]{4,}"), "<HEX>"),
-    (re.compile(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"), "<UUID>"),
+    (
+        re.compile(
+            r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+        ),
+        "<UUID>",
+    ),
     (re.compile(r"\b(?:pid|PID)[=:\s]?\d+\b"), "<PID>"),
 ]
+
 
 def acd_mask_noise(line: str) -> str:
     masked = line
     for pattern, replacement in _ACD_NOISE_PATTERNS:
         masked = pattern.sub(replacement, masked)
     return masked
+
 
 def acd_phase1_dedup(error_log: str) -> str:
     lines = error_log.split("\n")
@@ -111,10 +127,12 @@ def acd_phase1_dedup(error_log: str) -> str:
         i = j
     return "\n".join(result)
 
+
 # --- ACD Engine Phase 2 & 3 (AST精密抽出) ---
 ACD_MAX_SAFE_CHARS = 15000
 ACD_MAX_BLOCK_CHARS = 2000
 _ACD_LOCATION_RE = re.compile(r"([\w./\\-]+\.py):(\d+)(?::\d+)?:?\s*(.*)")
+
 
 def acd_extract_symbols(file_path: Path) -> list[str]:
     symbols = []
@@ -128,6 +146,7 @@ def acd_extract_symbols(file_path: Path) -> list[str]:
         pass
     return symbols
 
+
 def acd_extract_function_blocks(file_path: Path) -> list[tuple[int, int, str, str]]:
     """AST解析により、ファイル内の関数/クラス単位の(開始行, 終了行, 名前, ソース)を抽出する"""
     blocks = []
@@ -138,10 +157,18 @@ def acd_extract_function_blocks(file_path: Path) -> list[tuple[int, int, str, st
             if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 segment = ast.get_source_segment(source, node)
                 if segment is not None:
-                    blocks.append((node.lineno, getattr(node, "end_lineno", node.lineno), node.name, segment))
+                    blocks.append(
+                        (
+                            node.lineno,
+                            getattr(node, "end_lineno", node.lineno),
+                            node.name,
+                            segment,
+                        )
+                    )
     except Exception:
         pass
     return blocks
+
 
 def acd_find_enclosing_block(blocks: list[tuple[int, int, str, str]], line_no: int):
     """指定行を含む最小(最も内側)のブロックを返す"""
@@ -149,6 +176,7 @@ def acd_find_enclosing_block(blocks: list[tuple[int, int, str, str]], line_no: i
     if not candidates:
         return None
     return min(candidates, key=lambda b: b[1] - b[0])
+
 
 def acd_parse_error_locations(log_text: str) -> list[tuple[str, int, str]]:
     """エラーログから (ファイルパス, 行番号, 該当行全文) を抽出する"""
@@ -159,13 +187,19 @@ def acd_parse_error_locations(log_text: str) -> list[tuple[str, int, str]]:
             findings.append((m.group(1), int(m.group(2)), line.strip()))
     return findings
 
-def _acd_format_block_section(header: str, start: int, end: int, source: str, messages: list[str]) -> str:
+
+def _acd_format_block_section(
+    header: str, start: int, end: int, source: str, messages: list[str]
+) -> str:
     if len(source) > ACD_MAX_BLOCK_CHARS:
         source = source[:ACD_MAX_BLOCK_CHARS] + "\n... (省略) ..."
     unique_messages = "\n".join(f"- {m}" for m in dict.fromkeys(messages))
     return f"### {header} [L{start}-{end}]\n```python\n{source}\n```\n検出された問題:\n{unique_messages}\n"
 
-def acd_ast_compress(error_log: str, project_root: Path, max_chars: int = ACD_MAX_SAFE_CHARS) -> str:
+
+def acd_ast_compress(
+    error_log: str, project_root: Path, max_chars: int = ACD_MAX_SAFE_CHARS
+) -> str:
     """
     正規表現/固定行数窓によるラフな切り出しを廃し、AST解析で
     「エラーが発生している関数/クラスのブロックのみ」を正確に抽出して圧縮する。
@@ -185,7 +219,9 @@ def acd_ast_compress(error_log: str, project_root: Path, max_chars: int = ACD_MA
         full_path = candidate if candidate.is_absolute() else project_root / candidate
         key_path = str(full_path)
         if key_path not in block_cache:
-            block_cache[key_path] = acd_extract_function_blocks(full_path) if full_path.exists() else []
+            block_cache[key_path] = (
+                acd_extract_function_blocks(full_path) if full_path.exists() else []
+            )
         block = acd_find_enclosing_block(block_cache[key_path], line_no)
         if block is None:
             unresolved.append(full_line)
@@ -195,11 +231,16 @@ def acd_ast_compress(error_log: str, project_root: Path, max_chars: int = ACD_MA
         entry["messages"].append(f"L{line_no}: {full_line}")
 
     sections = [
-        _acd_format_block_section(f"{raw_path} :: {name}()", start, end, data["source"], data["messages"])
+        _acd_format_block_section(
+            f"{raw_path} :: {name}()", start, end, data["source"], data["messages"]
+        )
         for (raw_path, start, end, name), data in grouped.items()
     ]
     if unresolved:
-        sections.append("### その他(関数特定不可)\n" + "\n".join(f"- {m}" for m in dict.fromkeys(unresolved)))
+        sections.append(
+            "### その他(関数特定不可)\n"
+            + "\n".join(f"- {m}" for m in dict.fromkeys(unresolved))
+        )
 
     result_parts, total, omitted = [], 0, 0
     for section in sections:
@@ -213,6 +254,7 @@ def acd_ast_compress(error_log: str, project_root: Path, max_chars: int = ACD_MA
     if omitted:
         result += f"\n... ({omitted} 件のセクションを安全閾値超過のため省略) ..."
     return result
+
 
 def acd_ast_context_for_file(deduped_log: str, target_file: Path) -> str:
     """指定ファイルに関するエラーのみ、AST抽出したブロック単位のコンテキストを返す(Phase 3用)"""
@@ -238,15 +280,23 @@ def acd_ast_context_for_file(deduped_log: str, target_file: Path) -> str:
         entry["messages"].append(f"L{line_no}: {full_line}")
 
     sections = [
-        _acd_format_block_section(f"{name}()", start, end, data["source"], data["messages"])
+        _acd_format_block_section(
+            f"{name}()", start, end, data["source"], data["messages"]
+        )
         for (start, end, name), data in grouped.items()
     ]
     if unresolved:
-        sections.append("### その他(関数特定不可)\n" + "\n".join(f"- {m}" for m in dict.fromkeys(unresolved)))
+        sections.append(
+            "### その他(関数特定不可)\n"
+            + "\n".join(f"- {m}" for m in dict.fromkeys(unresolved))
+        )
     return "\n".join(sections)
 
+
 def build_static_context() -> Path:
-    print("\n🔍 [Pre-processing] 対象領域のASTスキャンによる独自要約マップを生成します...")
+    print(
+        "\n🔍 [Pre-processing] 対象領域のASTスキャンによる独自要約マップを生成します..."
+    )
     target_dir = TARGET_APP_DIR / TARGET_CODE_DIR
     lines = ["# プロジェクト対象領域の要約マップ (AST抽出)"]
     for py_file in target_dir.rglob("*.py"):
@@ -263,6 +313,7 @@ def build_static_context() -> Path:
     print(f"✅ 独自要約マップ生成完了 -> {out_file}")
     return out_file
 
+
 # --- V8.5 One-Command Boot (Pre-flight) ---
 async def check_http_alive(url: str, timeout: float = 2.0) -> bool:
     """汎用ヘルスチェック（200系レスポンスで生存判定）"""
@@ -273,9 +324,11 @@ async def check_http_alive(url: str, timeout: float = 2.0) -> bool:
     except Exception:
         return False
 
+
 async def check_ollama() -> bool:
     """Ollamaサーバーのヘルスチェック"""
     return await check_http_alive("http://127.0.0.1:11434/api/tags")
+
 
 def kill_process_by_port(port: int) -> list[str]:
     """指定ポートをLISTENしているプロセスを検出し、強制終了する(ゾンビプロセス対策)。
@@ -290,7 +343,11 @@ def kill_process_by_port(port: int) -> list[str]:
     killed: list[str] = []
     try:
         result = subprocess.run(
-            ["netstat", "-ano"], capture_output=True, text=True, encoding="utf-8", errors="replace",
+            ["netstat", "-ano"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
         )
         pids: set[str] = set()
         for line in result.stdout.splitlines():
@@ -304,14 +361,18 @@ def kill_process_by_port(port: int) -> list[str]:
                 pids.add(pid)
         for pid in pids:
             kill_result = subprocess.run(
-                ["taskkill", "/F", "/PID", pid], capture_output=True, text=True,
-                encoding="cp932", errors="replace",
+                ["taskkill", "/F", "/PID", pid],
+                capture_output=True,
+                text=True,
+                encoding="cp932",
+                errors="replace",
             )
             if kill_result.returncode == 0:
                 killed.append(pid)
     except Exception:
         pass
     return killed
+
 
 # _ensure_service_alive の各サービス(log_path単位)に対する非同期ロック。
 # フロントエンドはfire-and-forgetタスクとして起動されるため、Post-flightで
@@ -320,12 +381,14 @@ def kill_process_by_port(port: int) -> list[str]:
 # サービス単位で直列化し、ファイル破損・ポートの奪い合いを防ぐ。
 _service_locks: dict[str, asyncio.Lock] = {}
 
+
 def _get_service_lock(key: str) -> asyncio.Lock:
     lock = _service_locks.get(key)
     if lock is None:
         lock = asyncio.Lock()
         _service_locks[key] = lock
     return lock
+
 
 async def _ensure_service_alive(
     name: str,
@@ -359,7 +422,9 @@ async def _ensure_service_alive(
             if kill_port is not None:
                 kill_process_by_port(kill_port)
 
-            creationflags = getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0) | getattr(subprocess, 'DETACHED_PROCESS', 8)
+            creationflags = getattr(
+                subprocess, "CREATE_NEW_PROCESS_GROUP", 0
+            ) | getattr(subprocess, "DETACHED_PROCESS", 8)
             env = os.environ.copy()
             if extra_env:
                 env.update(extra_env)
@@ -389,6 +454,7 @@ async def _ensure_service_alive(
             except Exception:
                 pass
 
+
 def _route_target_domain(instruction: str) -> tuple[Path, str, Path]:
     """ユーザーの指示からターゲット領域(ドメイン)と、そのvenv Pythonを自動判定する"""
     instruction_lower = instruction.lower()
@@ -396,14 +462,21 @@ def _route_target_domain(instruction: str) -> tuple[Path, str, Path]:
     # 領域C (バッチ工場) のキーワード
     batch_keywords = ["バッチ", "工場", "batch", "factory", "パイプライン", "unsloth"]
     if any(kw in instruction_lower for kw in batch_keywords):
-        print("🧭 [Router] ターゲット領域を『バッチ工場 (apps/batch_factory)』に設定しました。")
+        print(
+            "🧭 [Router] ターゲット領域を『バッチ工場 (apps/batch_factory)』に設定しました。"
+        )
         target_dir = BASE_DIR / "apps" / "batch_factory"
-        return (target_dir, "batch", target_dir / ".venv_train" / "Scripts" / "python.exe")
+        return (
+            target_dir,
+            "batch",
+            target_dir / ".venv_train" / "Scripts" / "python.exe",
+        )
 
     # デフォルトは 領域B (アプリ本体)
     print("🧭 [Router] ターゲット領域を『アプリ本体 (apps/evaluator)』に設定しました。")
     target_dir = BASE_DIR / "apps" / "evaluator"
     return (target_dir, "backend", target_dir / ".venv_ai" / "Scripts" / "python.exe")
+
 
 async def startup_local_services():
     """V8.8: ローカルインフラの自動監査と起動（Ollama + Backend + Frontend）"""
@@ -415,21 +488,37 @@ async def startup_local_services():
     log_dir = TOOLS_DIR / "audit_reports"
 
     await _ensure_service_alive(
-        name="Ollama", emoji="🦙", health_url="http://127.0.0.1:11434/api/tags",
-        start_cmd=["ollama", "serve"], start_cwd=BASE_DIR,
+        name="Ollama",
+        emoji="🦙",
+        health_url="http://127.0.0.1:11434/api/tags",
+        start_cmd=["ollama", "serve"],
+        start_cwd=BASE_DIR,
         already_ok_msg="Ollama は既に稼働しています (Port 11434 OK)。",
-        log_path=log_dir / "service_ollama.log", extra_env=utf8_env,
+        log_path=log_dir / "service_ollama.log",
+        extra_env=utf8_env,
     )
 
     # 注: .venv_ai/Scripts/fastapi.exe はvenvリロケートの影響で機能不全のため使わず、
     # 常に python.exe -m fastapi 経由で起動する。
     # オートヒール対応: dev モードにより、Aiderのコード修正を即座にホットリロードさせる
-    backend_cmd = [str(EVALUATOR_PYTHON), "-m", "fastapi", "dev", "backend/main.py", "--port", "7800"]
+    backend_cmd = [
+        str(EVALUATOR_PYTHON),
+        "-m",
+        "fastapi",
+        "dev",
+        "backend/main.py",
+        "--port",
+        "7800",
+    ]
     await _ensure_service_alive(
-        name="Backend (FastAPI)", emoji="⚙️", health_url="http://127.0.0.1:7800/api/health",
-        start_cmd=backend_cmd, start_cwd=EVALUATOR_APP_DIR,
+        name="Backend (FastAPI)",
+        emoji="⚙️",
+        health_url="http://127.0.0.1:7800/api/health",
+        start_cmd=backend_cmd,
+        start_cwd=EVALUATOR_APP_DIR,
         already_ok_msg="Backend は既に稼働しています (Port 7800 OK)。",
-        log_path=log_dir / "service_backend.log", extra_env=utf8_env,
+        log_path=log_dir / "service_backend.log",
+        extra_env=utf8_env,
         kill_port=7800,
     )
 
@@ -448,20 +537,30 @@ async def startup_local_services():
             return
         exc = task.exception()
         if exc:
-            logger.error(f"[Frontend] バックグラウンド起動タスクで例外が発生しました(無視して続行): {exc}")
+            logger.error(
+                f"[Frontend] バックグラウンド起動タスクで例外が発生しました(無視して続行): {exc}"
+            )
 
-    frontend_task = asyncio.create_task(_ensure_service_alive(
-        name="Frontend (dev_server)", emoji="🖥️", health_url="http://127.0.0.1:7300/",
-        start_cmd=frontend_cmd, start_cwd=frontend_cwd,
-        already_ok_msg="Frontend は既に稼働しています (Port 7300 OK)。",
-        log_path=log_dir / "service_frontend.log", extra_env=utf8_env,
-        retries=5, interval=1.0,  # 必須サービスではないため待機を短縮
-        kill_port=7300,
-    ))
+    frontend_task = asyncio.create_task(
+        _ensure_service_alive(
+            name="Frontend (dev_server)",
+            emoji="🖥️",
+            health_url="http://127.0.0.1:7300/",
+            start_cmd=frontend_cmd,
+            start_cwd=frontend_cwd,
+            already_ok_msg="Frontend は既に稼働しています (Port 7300 OK)。",
+            log_path=log_dir / "service_frontend.log",
+            extra_env=utf8_env,
+            retries=5,
+            interval=1.0,  # 必須サービスではないため待機を短縮
+            kill_port=7300,
+        )
+    )
     _bg_tasks.add(frontend_task)
     frontend_task.add_done_callback(_on_frontend_task_done)
 
     print("✅ Pre-flight 監査完了。パイプライン本編へ移行します。\n")
+
 
 # --- Observability (可観測性) ヘルパー ---
 async def _progress_dots(message: str, stop_event: asyncio.Event):
@@ -475,6 +574,7 @@ async def _progress_dots(message: str, stop_event: asyncio.Event):
         pass
     finally:
         print(" 完了！")
+
 
 # --- Phase 0 (Ruffによるネイティブ事前自動修復) ---
 async def phase0_ruff_autofix() -> None:
@@ -491,14 +591,22 @@ async def phase0_ruff_autofix() -> None:
     for cmd in commands:
         try:
             process = await asyncio.create_subprocess_exec(
-                *cmd, cwd=str(TARGET_APP_DIR), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                *cmd,
+                cwd=str(TARGET_APP_DIR),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
             stdout, stderr = await process.communicate()
-            output = (stdout.decode("utf-8", errors="replace") + "\n" + stderr.decode("utf-8", errors="replace")).strip()
+            output = (
+                stdout.decode("utf-8", errors="replace")
+                + "\n"
+                + stderr.decode("utf-8", errors="replace")
+            ).strip()
             if output:
                 logger.debug(f"[Phase 0 / Ruff Autofix] {' '.join(cmd)}:\n{output}")
         except Exception as e:
             logger.error(f"[Phase 0 / Ruff Autofix] 実行エラー ({' '.join(cmd)}): {e}")
+
 
 # --- Cognitive Load Auditor (Feature 2.1) ---
 # LLMへ渡すコンテキスト(エラーログ・ASTマップ等)が肥大化すると、推論の質が落ちる
@@ -506,6 +614,7 @@ async def phase0_ruff_autofix() -> None:
 # ブロックし、タスク分割を促すフェイルセーフ("Stop & Split")として機能する。
 MAX_ERROR_LOG_LINES = 300  # エラーログの許容行数
 MAX_TOTAL_CONTEXT_CHARS = 40000  # プロンプト全体の許容文字数
+
 
 def check_cognitive_load(
     text: str, max_lines: int | None = None, max_chars: int | None = None
@@ -528,6 +637,7 @@ def check_cognitive_load(
         return False, " / ".join(violations)
     return True, f"行数 {line_count} 行・文字数 {char_count} 文字 (許容範囲内)"
 
+
 # --- Dead Letter Queue (Feature 4.x) ---
 def _write_dead_letter(
     *,
@@ -546,7 +656,10 @@ def _write_dead_letter(
     dead_letter_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.datetime.now()
-    dead_letter_path = dead_letter_dir / f"dead_letter_{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.json"
+    dead_letter_path = (
+        dead_letter_dir
+        / f"dead_letter_{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.json"
+    )
 
     def _to_jsonable(obj):
         if hasattr(obj, "model_dump"):
@@ -566,6 +679,7 @@ def _write_dead_letter(
 
     return dead_letter_path
 
+
 # --- Phase 1 & 4 ---
 async def run_linter(tool_name: str) -> str:
     if tool_name == "mypy":
@@ -582,29 +696,50 @@ async def run_linter(tool_name: str) -> str:
         cmd = [str(TARGET_PYTHON), "-m", tool_name] + args
     try:
         process = await asyncio.create_subprocess_exec(
-            *cmd, cwd=str(TARGET_APP_DIR), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+            *cmd,
+            cwd=str(TARGET_APP_DIR),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
         )
         try:
             stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=60.0)
         except asyncio.TimeoutError:
             process.kill()
             return f"### ツール: {tool_name.upper()} (🚨 タイムアウト)\n```text\nプロセスがハングアップしました。\n```\n"
-        output = (stdout.decode('utf-8', errors='replace') + "\n" + stderr.decode('utf-8', errors='replace')).strip()
+        output = (
+            stdout.decode("utf-8", errors="replace")
+            + "\n"
+            + stderr.decode("utf-8", errors="replace")
+        ).strip()
         if not output:
             output = "出力なし"
-        status = "✅ Success" if process.returncode == 0 else f"⚠️ Exited with code {process.returncode}"
+        status = (
+            "✅ Success"
+            if process.returncode == 0
+            else f"⚠️ Exited with code {process.returncode}"
+        )
         return f"### ツール: {tool_name.upper()} ({status})\n```text\n{output}\n```\n"
     except Exception as e:
-        return f"### ツール: {tool_name.upper()} (🚨 実行エラー)\n```text\n{str(e)}\n```\n"
+        return (
+            f"### ツール: {tool_name.upper()} (🚨 実行エラー)\n```text\n{str(e)}\n```\n"
+        )
+
 
 async def phase1_audit(is_final=False) -> Path:
     phase_name = "Phase 4 最終再監査" if is_final else "Phase 1 現状監査"
-    print(f"\n🔍 [{phase_name}] ターゲット環境 ({TARGET_APP_DIR.name}/{TARGET_CODE_DIR}) の静的解析を開始します...")
+    print(
+        f"\n🔍 [{phase_name}] ターゲット環境 ({TARGET_APP_DIR.name}/{TARGET_CODE_DIR}) の静的解析を開始します..."
+    )
     if not TARGET_PYTHON.exists():
         print(f"🚨 致命的エラー: Python環境が見つかりません: {TARGET_PYTHON}")
         sys.exit(1)
     tools = ["ruff", "mypy"]
-    report_lines = ["# 🔍 統合静的解析ファクトレポート", f"ターゲット: {TARGET_APP_DIR.name}/{TARGET_CODE_DIR}", "---", ""]
+    report_lines = [
+        "# 🔍 統合静的解析ファクトレポート",
+        f"ターゲット: {TARGET_APP_DIR.name}/{TARGET_CODE_DIR}",
+        "---",
+        "",
+    ]
     tasks = [run_linter(tool) for tool in tools]
     results = await asyncio.gather(*tasks)
     for tool, result in zip(tools, results):
@@ -618,8 +753,11 @@ async def phase1_audit(is_final=False) -> Path:
     print(f"🎉 {phase_name}完了 -> {out_file}")
     return out_file
 
+
 # --- Phase 2 ---
-async def phase2_claude_translation(user_instruction: str, error_log_path: Path) -> dict:
+async def phase2_claude_translation(
+    user_instruction: str, error_log_path: Path
+) -> dict:
     """Claude API による「AST置換指示」への翻訳・分割。
 
     従来は自然言語でJSON出力を要求し、応答テキストからMarkdownフェンスを
@@ -628,33 +766,54 @@ async def phase2_claude_translation(user_instruction: str, error_log_path: Path)
     を関数(Tool)として定義し、tool_choiceでその呼び出しを強制することで、
     解説文やMarkdown装飾が混入する余地をAPIレベルで排除する。
     """
-    print("\n🔍 [Phase 2] Claude API による「AST置換指示」への翻訳・分割を開始します...")
+    print(
+        "\n🔍 [Phase 2] Claude API による「AST置換指示」への翻訳・分割を開始します..."
+    )
     api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
     with open(error_log_path, "r", encoding="utf-8") as f:
         raw_error_log = f.read()
 
     deduped_log = acd_phase1_dedup(raw_error_log)
     try:
-        compact_context = acd_ast_compress(deduped_log, TARGET_APP_DIR, max_chars=ACD_MAX_SAFE_CHARS)
+        compact_context = acd_ast_compress(
+            deduped_log, TARGET_APP_DIR, max_chars=ACD_MAX_SAFE_CHARS
+        )
     except Exception as e:
-        print(f"   ⚠️ [ACD Engine] AST抽出に失敗、フェイルセーフで先頭{ACD_MAX_SAFE_CHARS}文字に切り捨てます: {e}")
+        print(
+            f"   ⚠️ [ACD Engine] AST抽出に失敗、フェイルセーフで先頭{ACD_MAX_SAFE_CHARS}文字に切り捨てます: {e}"
+        )
         compact_context = deduped_log[:ACD_MAX_SAFE_CHARS]
-    print(f"   [ACD Engine] AST圧縮完了: {len(raw_error_log)}文字 -> {len(compact_context)}文字")
+    print(
+        f"   [ACD Engine] AST圧縮完了: {len(raw_error_log)}文字 -> {len(compact_context)}文字"
+    )
 
     from tools.ast_modifier import AstModificationInstruction
 
     # TLS問題を防ぐ防弾設定
-    http_client = httpx.AsyncClient(verify=False, trust_env=True, timeout=httpx.Timeout(600.0, connect=30.0))
-    client = anthropic.AsyncAnthropic(api_key=api_key, http_client=http_client, max_retries=0)
+    http_client = httpx.AsyncClient(
+        verify=False, trust_env=True, timeout=httpx.Timeout(600.0, connect=30.0)
+    )
+    client = anthropic.AsyncAnthropic(
+        api_key=api_key, http_client=http_client, max_retries=0
+    )
 
     system_prompt = (
-        "あなたはシニアソフトウェアアーキテクトです。以下の「要件定義書」と後ほど提示する"
-        "「エラーログ」から、libcstによるAST置換で適用する修正指示を生成せよ。\n"
+        "あなたはシニアソフトウェアアーキテクトであり、同時にCriticとしての役割も担う。\n\n"
+        "【Criticとしてのトリアージ】まず、後ほど提示する「エラーログ」(Pytestの失敗結果を"
+        "含む場合がある)を分析し、次のどちらに該当するかを判定せよ:\n"
+        "  パターンA: コード側のロジックバグ(実装が仕様を満たしていない)。\n"
+        "  パターンB: テストコード自体の陳腐化(仕様変更により、テストが古い仕様を前提にしている)。\n\n"
+        "【パターンAの場合】通常通り、以下の「要件定義書」とエラーログから、libcstによるAST置換で"
+        "適用する修正指示を生成せよ。\n"
         f"【要件定義書】\n{user_instruction}\n\n"
         "各修正は、対象ファイル(file_path)・置換対象の関数/クラス名(target_name)・"
         "置換後の関数/クラス定義の完全なソースコード(new_code)の3点で構成すること。"
         "解説文やMarkdownのコードブロック装飾は一切付けず、"
-        "必ず submit_ast_modifications ツールの呼び出しのみで結果を提出すること。"
+        "必ず submit_ast_modifications ツールの呼び出しのみで結果を提出すること。\n\n"
+        "【パターンBの場合】絶対にコードを修正してはならない。submit_ast_modifications ツールを"
+        "tasks を空配列([])にして呼び出し、summary フィールドに"
+        "「⚠️ テストの陳腐化を検知しました。人間によるテストコードの修正が必要です」という旨を"
+        "明記して提出せよ(Human-in-the-Loopエスカレーション)。"
     )
     system_blocks = [
         {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
@@ -669,7 +828,10 @@ async def phase2_claude_translation(user_instruction: str, error_log_path: Path)
         "input_schema": {
             "type": "object",
             "properties": {
-                "tasks": {"type": "array", "items": AstModificationInstruction.model_json_schema()},
+                "tasks": {
+                    "type": "array",
+                    "items": AstModificationInstruction.model_json_schema(),
+                },
                 "summary": {"type": "string"},
             },
             "required": ["tasks", "summary"],
@@ -681,16 +843,15 @@ async def phase2_claude_translation(user_instruction: str, error_log_path: Path)
     # 正しい型で再出力させる。最大3回試行し、3回連続で失敗した場合のみ、パイプライン
     # 全体を落とさず縮退運転(タスク0件として継続)する。
     MAX_SELF_CORRECTION_RETRIES = 3
-    messages: list = [{
-        "role": "user",
-        "content": f"【エラーログ】\n{compact_context}"
-    }]
+    messages: list = [{"role": "user", "content": f"【エラーログ】\n{compact_context}"}]
 
     result_json: dict = {"tasks": [], "summary": ""}
     stop_event = asyncio.Event()
 
     # 進行状況の表示タスク開始 (ドット印字版)
-    progress_task = asyncio.create_task(_progress_dots("Claude API 思考・翻訳中", stop_event))
+    progress_task = asyncio.create_task(
+        _progress_dots("Claude API 思考・翻訳中", stop_event)
+    )
 
     try:
         for attempt in range(1, MAX_SELF_CORRECTION_RETRIES + 1):
@@ -705,15 +866,24 @@ async def phase2_claude_translation(user_instruction: str, error_log_path: Path)
 
             usage = getattr(response, "usage", None)
             if usage:
-                total_tokens = getattr(usage, "input_tokens", 0) + getattr(usage, "output_tokens", 0)
+                total_tokens = getattr(usage, "input_tokens", 0) + getattr(
+                    usage, "output_tokens", 0
+                )
                 TokenCircuitBreaker.add(total_tokens)
 
             submit_block = next(
-                (b for b in response.content if getattr(b, "type", "") == "tool_use" and b.name == "submit_ast_modifications"),
+                (
+                    b
+                    for b in response.content
+                    if getattr(b, "type", "") == "tool_use"
+                    and b.name == "submit_ast_modifications"
+                ),
                 None,
             )
             if submit_block is None:
-                raise ValueError("submit_ast_modifications ツールの呼び出しが得られませんでした。")
+                raise ValueError(
+                    "submit_ast_modifications ツールの呼び出しが得られませんでした。"
+                )
 
             messages.append({"role": "assistant", "content": response.content})
 
@@ -724,19 +894,29 @@ async def phase2_claude_translation(user_instruction: str, error_log_path: Path)
                     task_dict = validated.model_dump()
                     task_dict["mode"] = "ast_replace"
                     validated_tasks.append(task_dict)
-                result_json = {"tasks": validated_tasks, "summary": submit_block.input.get("summary", "")}
+                result_json = {
+                    "tasks": validated_tasks,
+                    "summary": submit_block.input.get("summary", ""),
+                }
                 break
             except ValidationError as e:
-                print(f"   ⚠️ [Self-Correction {attempt}/{MAX_SELF_CORRECTION_RETRIES}] スキーマ違反を検知しました: {e}")
+                print(
+                    f"   ⚠️ [Self-Correction {attempt}/{MAX_SELF_CORRECTION_RETRIES}] スキーマ違反を検知しました: {e}"
+                )
                 if attempt >= MAX_SELF_CORRECTION_RETRIES:
                     print(
                         f"⚠️ 部分的障害: {MAX_SELF_CORRECTION_RETRIES}回の自己修正リトライすべて失敗したため、"
                         "このフェーズの修正をスキップします (縮退運転)。"
                     )
                     raw_tasks_for_error = submit_block.input.get("tasks", [])
-                    target_file = ", ".join(
-                        t.get("file_path", "") for t in raw_tasks_for_error if isinstance(t, dict) and t.get("file_path")
-                    ) or None
+                    target_file = (
+                        ", ".join(
+                            t.get("file_path", "")
+                            for t in raw_tasks_for_error
+                            if isinstance(t, dict) and t.get("file_path")
+                        )
+                        or None
+                    )
                     dead_letter_path = _write_dead_letter(
                         target_file=target_file,
                         system_prompt=system_blocks,
@@ -744,18 +924,27 @@ async def phase2_claude_translation(user_instruction: str, error_log_path: Path)
                         final_error=str(e),
                         raw_response=json.dumps(submit_block.input, ensure_ascii=False),
                     )
-                    print(f"   📮 [Dead Letter] 失敗内容を記録しました -> {dead_letter_path}")
-                    result_json = {"tasks": [], "summary": "(自己修正リトライ失敗のため対象なし)"}
+                    print(
+                        f"   📮 [Dead Letter] 失敗内容を記録しました -> {dead_letter_path}"
+                    )
+                    result_json = {
+                        "tasks": [],
+                        "summary": "(自己修正リトライ失敗のため対象なし)",
+                    }
                     break
-                messages.append({
-                    "role": "user",
-                    "content": [{
-                        "type": "tool_result",
-                        "tool_use_id": submit_block.id,
-                        "content": f"指定されたJSONスキーマに違反しています。以下のエラーを修正し、再度出力してください：\n{e}",
-                        "is_error": True,
-                    }],
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "tool_result",
+                                "tool_use_id": submit_block.id,
+                                "content": f"指定されたJSONスキーマに違反しています。以下のエラーを修正し、再度出力してください：\n{e}",
+                                "is_error": True,
+                            }
+                        ],
+                    }
+                )
                 continue
 
         stop_event.set()
@@ -774,19 +963,22 @@ async def phase2_claude_translation(user_instruction: str, error_log_path: Path)
         json.dump(result_json, f, indent=2, ensure_ascii=False)
 
     tasks = result_json.get("tasks", [])
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("📋 【Claude 設計翻訳結果（AST置換指令）】")
     print(f" ［修正対象タスク数］: {len(tasks)} 件")
     for idx, task in enumerate(tasks, 1):
         print(f"   {idx}. {task.get('file_path', '不明なパス')}")
         print(f"      対象シンボル: {task.get('target_name', '不明')}")
-    print("\n ［実装サマリー］:\n  " + result_json.get('summary', '記述なし'))
-    print("="*50 + "\n")
+    print("\n ［実装サマリー］:\n  " + result_json.get("summary", "記述なし"))
+    print("=" * 50 + "\n")
     print(f"✅ フェーズ2完了: AST置換指令書を保存しました -> {triage_path}")
     return result_json
 
+
 # --- Phase 2 (Tool-Augmented) ---
-async def phase2_claude_tool_augmented(user_instruction: str, error_log_path: Path) -> dict:
+async def phase2_claude_tool_augmented(
+    user_instruction: str, error_log_path: Path
+) -> dict:
     """Tool-Augmented版Phase 2。
 
     tools.ast_mapper.get_symbol_definition / tools.file_reader.read_file_section /
@@ -799,21 +991,31 @@ async def phase2_claude_tool_augmented(user_instruction: str, error_log_path: Pa
     from tools.file_reader import read_file_section
     from tools.pyright_tool import get_type_info
 
-    print("\n🔍 [Phase 2 / Tool-Augmented] Claude API による自律調査・翻訳を開始します...")
+    print(
+        "\n🔍 [Phase 2 / Tool-Augmented] Claude API による自律調査・翻訳を開始します..."
+    )
     api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
     with open(error_log_path, "r", encoding="utf-8") as f:
         raw_error_log = f.read()
 
     deduped_log = acd_phase1_dedup(raw_error_log)
     try:
-        compact_context = acd_ast_compress(deduped_log, TARGET_APP_DIR, max_chars=ACD_MAX_SAFE_CHARS)
+        compact_context = acd_ast_compress(
+            deduped_log, TARGET_APP_DIR, max_chars=ACD_MAX_SAFE_CHARS
+        )
     except Exception as e:
-        print(f"   ⚠️ [ACD Engine] AST抽出に失敗、フェイルセーフで先頭{ACD_MAX_SAFE_CHARS}文字に切り捨てます: {e}")
+        print(
+            f"   ⚠️ [ACD Engine] AST抽出に失敗、フェイルセーフで先頭{ACD_MAX_SAFE_CHARS}文字に切り捨てます: {e}"
+        )
         compact_context = deduped_log[:ACD_MAX_SAFE_CHARS]
 
     # TLS問題を防ぐ防弾設定
-    http_client = httpx.AsyncClient(verify=False, trust_env=True, timeout=httpx.Timeout(600.0, connect=30.0))
-    client = anthropic.AsyncAnthropic(api_key=api_key, http_client=http_client, max_retries=0)
+    http_client = httpx.AsyncClient(
+        verify=False, trust_env=True, timeout=httpx.Timeout(600.0, connect=30.0)
+    )
+    client = anthropic.AsyncAnthropic(
+        api_key=api_key, http_client=http_client, max_retries=0
+    )
 
     system_prompt = (
         "あなたは冷徹な設計翻訳機であり、シニアソフトウェアアーキテクトです。"
@@ -834,7 +1036,10 @@ async def phase2_claude_tool_augmented(user_instruction: str, error_log_path: Pa
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "symbol_name": {"type": "string", "description": "検索する関数名またはクラス名(完全一致)"},
+                    "symbol_name": {
+                        "type": "string",
+                        "description": "検索する関数名またはクラス名(完全一致)",
+                    },
                 },
                 "required": ["symbol_name"],
             },
@@ -845,9 +1050,15 @@ async def phase2_claude_tool_augmented(user_instruction: str, error_log_path: Pa
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string", "description": "読み込むファイルのパス"},
+                    "file_path": {
+                        "type": "string",
+                        "description": "読み込むファイルのパス",
+                    },
                     "start_line": {"type": "integer", "description": "開始行(1始まり)"},
-                    "end_line": {"type": "integer", "description": "終了行(1始まり・両端含む)"},
+                    "end_line": {
+                        "type": "integer",
+                        "description": "終了行(1始まり・両端含む)",
+                    },
                 },
                 "required": ["file_path", "start_line", "end_line"],
             },
@@ -858,7 +1069,10 @@ async def phase2_claude_tool_augmented(user_instruction: str, error_log_path: Pa
             "input_schema": {
                 "type": "object",
                 "properties": {
-                    "file_path": {"type": "string", "description": "型検査するファイルのパス"},
+                    "file_path": {
+                        "type": "string",
+                        "description": "型検査するファイルのパス",
+                    },
                 },
                 "required": ["file_path"],
             },
@@ -905,49 +1119,67 @@ async def phase2_claude_tool_augmented(user_instruction: str, error_log_path: Pa
         system_prompt + messages[0]["content"], max_chars=MAX_TOTAL_CONTEXT_CHARS
     )
     if not prompt_ok:
-        print(f"\n🚨 Cognitive Overload: プロンプト全体が大きすぎます ({prompt_detail})。タスクを分割（Split）してください。")
+        print(
+            f"\n🚨 Cognitive Overload: プロンプト全体が大きすぎます ({prompt_detail})。タスクを分割（Split）してください。"
+        )
         sys.exit(1)
 
     result_json: dict = {}
     stop_event = asyncio.Event()
-    progress_task = asyncio.create_task(_progress_dots("Claude API 自律調査・翻訳中", stop_event))
+    progress_task = asyncio.create_task(
+        _progress_dots("Claude API 自律調査・翻訳中", stop_event)
+    )
 
     MAX_TURNS = 5
     try:
         for turn in range(1, MAX_TURNS + 1):
-            force_final = (turn == MAX_TURNS)
+            force_final = turn == MAX_TURNS
             response = await client.messages.create(
                 model="claude-sonnet-5",
                 max_tokens=8192,
                 system=system_prompt,
                 messages=messages,
                 tools=all_tools,
-                tool_choice={"type": "tool", "name": "submit_aider_plan"} if force_final else {"type": "auto"},
+                tool_choice={"type": "tool", "name": "submit_aider_plan"}
+                if force_final
+                else {"type": "auto"},
             )
 
             # レスポンスから入力・出力トークンを取得して記録
             usage = getattr(response, "usage", None)
             if usage:
-                total_tokens = getattr(usage, "input_tokens", 0) + getattr(usage, "output_tokens", 0)
+                total_tokens = getattr(usage, "input_tokens", 0) + getattr(
+                    usage, "output_tokens", 0
+                )
                 TokenCircuitBreaker.add(total_tokens)
 
             submit_block = next(
-                (b for b in response.content if getattr(b, "type", "") == "tool_use" and b.name == "submit_aider_plan"),
+                (
+                    b
+                    for b in response.content
+                    if getattr(b, "type", "") == "tool_use"
+                    and b.name == "submit_aider_plan"
+                ),
                 None,
             )
             if submit_block is not None:
                 raw_tasks = submit_block.input.get("tasks", [])
                 validated_tasks = [AiderTask(**t).model_dump() for t in raw_tasks]
-                result_json = {"tasks": validated_tasks, "summary": submit_block.input.get("summary", "")}
+                result_json = {
+                    "tasks": validated_tasks,
+                    "summary": submit_block.input.get("summary", ""),
+                }
                 break
 
             if response.stop_reason != "tool_use":
                 # ツール未使用のまま終了した場合は、次ターンで最終提出を促す
                 messages.append({"role": "assistant", "content": response.content})
-                messages.append({
-                    "role": "user",
-                    "content": "調査内容をもとに、必ず submit_aider_plan ツールで最終結果を提出してください。",
-                })
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": "調査内容をもとに、必ず submit_aider_plan ツールで最終結果を提出してください。",
+                    }
+                )
                 continue
 
             # 調査ツール呼び出しをPython側で実行し、tool_resultとして履歴に積んで再送する
@@ -958,7 +1190,8 @@ async def phase2_claude_tool_augmented(user_instruction: str, error_log_path: Pa
                     continue
                 if block.name == "get_symbol_definition":
                     tool_output = get_symbol_definition(
-                        [TARGET_APP_DIR / TARGET_CODE_DIR], block.input.get("symbol_name", "")
+                        [TARGET_APP_DIR / TARGET_CODE_DIR],
+                        block.input.get("symbol_name", ""),
                     )
                 elif block.name == "read_file_section":
                     tool_output = read_file_section(
@@ -970,14 +1203,22 @@ async def phase2_claude_tool_augmented(user_instruction: str, error_log_path: Pa
                     tool_output = get_type_info(block.input.get("file_path", ""))
                 else:
                     tool_output = f"Error: 未知のツール '{block.name}' です。"
-                tool_results.append({"type": "tool_result", "tool_use_id": block.id, "content": tool_output})
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": block.id,
+                        "content": tool_output,
+                    }
+                )
             messages.append({"role": "user", "content": tool_results})
 
         stop_event.set()
         await progress_task
 
         if not result_json:
-            print("\n🚨 Phase 2(Tool-Augmented) 抽出エラー: 最大ターン数内に最終結果が得られませんでした。")
+            print(
+                "\n🚨 Phase 2(Tool-Augmented) 抽出エラー: 最大ターン数内に最終結果が得られませんでした。"
+            )
             sys.exit(1)
 
     except Exception as e:
@@ -993,21 +1234,27 @@ async def phase2_claude_tool_augmented(user_instruction: str, error_log_path: Pa
         json.dump(result_json, f, indent=2, ensure_ascii=False)
 
     tasks = result_json.get("tasks", [])
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("📋 【Claude(Tool-Augmented) 設計翻訳結果（Aiderへの確定指令）】")
     print(f" ［修正対象タスク数］: {len(tasks)} 件")
     for idx, task in enumerate(tasks, 1):
         print(f"   {idx}. {task.get('file_path', '不明なパス')}")
         print(f"      指示: {task.get('instruction', '記述なし')}")
-    print("\n ［実装サマリー］:\n  " + result_json.get('summary', '記述なし'))
-    print("="*50 + "\n")
-    print(f"✅ フェーズ2(Tool-Augmented)完了: Aiderへの確定指令書を保存しました -> {triage_path}")
+    print("\n ［実装サマリー］:\n  " + result_json.get("summary", "記述なし"))
+    print("=" * 50 + "\n")
+    print(
+        f"✅ フェーズ2(Tool-Augmented)完了: Aiderへの確定指令書を保存しました -> {triage_path}"
+    )
     return result_json
+
 
 # --- Phase 3 ---
 IDLE_TIMEOUT_SECONDS = 300.0
 
-async def _drain_stream(stream: asyncio.StreamReader, buffer: list, activity: dict) -> None:
+
+async def _drain_stream(
+    stream: asyncio.StreamReader, buffer: list, activity: dict
+) -> None:
     loop = asyncio.get_running_loop()
     while True:
         line = await stream.readline()
@@ -1016,7 +1263,10 @@ async def _drain_stream(stream: asyncio.StreamReader, buffer: list, activity: di
         buffer.append(line)
         activity["last"] = loop.time()
 
-async def run_subprocess_with_idle_timeout(process: asyncio.subprocess.Process, idle_timeout: float):
+
+async def run_subprocess_with_idle_timeout(
+    process: asyncio.subprocess.Process, idle_timeout: float
+):
     stdout_buf = []
     stderr_buf = []
     activity = {"last": asyncio.get_running_loop().time()}
@@ -1035,6 +1285,7 @@ async def run_subprocess_with_idle_timeout(process: asyncio.subprocess.Process, 
 
     await asyncio.gather(out_task, err_task)
     return b"".join(stdout_buf), b"".join(stderr_buf)
+
 
 def _resolve_target_file(file_path: str) -> Path | None:
     """LLMが返したfile_pathをゼロトラストで解決する。
@@ -1067,8 +1318,13 @@ def _resolve_target_file(file_path: str) -> Path | None:
 
     return resolved
 
-async def phase3_aider_execution(tasks: list[dict], deduped_error_log: str, static_context_path: Path) -> tuple[int, list[str]]:
-    print(f"\n🔍 [Phase 3] Aider による個別ファイル修正を開始します (対象: {len(tasks)} 件)...")
+
+async def phase3_aider_execution(
+    tasks: list[dict], deduped_error_log: str, static_context_path: Path
+) -> tuple[int, list[str]]:
+    print(
+        f"\n🔍 [Phase 3] Aider による個別ファイル修正を開始します (対象: {len(tasks)} 件)..."
+    )
     if not tasks:
         print("✅ フェーズ3完了: 修正対象タスクが0件のためスキップしました。")
         return 0, []
@@ -1097,14 +1353,20 @@ async def phase3_aider_execution(tasks: list[dict], deduped_error_log: str, stat
 
         resolved_target_file = _resolve_target_file(file_path)
         mode = task.get("mode", "aider")
-        print("\n" + "="*50)
-        print(f"🛠️  [{idx}/{len(tasks)}] {'AST置換 (libcst)' if mode == 'ast_replace' else 'Aider起動'}: {file_path}")
+        print("\n" + "=" * 50)
+        print(
+            f"🛠️  [{idx}/{len(tasks)}] {'AST置換 (libcst)' if mode == 'ast_replace' else 'Aider起動'}: {file_path}"
+        )
         print(f"   指示: {instruction}")
 
         if resolved_target_file is None:
-            print(f"⚠️ 警告: 対象ファイルが存在しない、または安全な範囲外です。スキップします -> {file_path}")
+            print(
+                f"⚠️ 警告: 対象ファイルが存在しない、または安全な範囲外です。スキップします -> {file_path}"
+            )
             failure_count += 1
-            print("⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。")
+            print(
+                "⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。"
+            )
             continue
         target_file = resolved_target_file
 
@@ -1114,24 +1376,42 @@ async def phase3_aider_execution(tasks: list[dict], deduped_error_log: str, stat
             target_name = task.get("target_name", "")
             new_code = task.get("new_code", "")
             if not target_name or not new_code:
-                print(f"⚠️ 警告: ast_replaceモードには target_name/new_code が必須です。スキップします -> {file_path}")
+                print(
+                    f"⚠️ 警告: ast_replaceモードには target_name/new_code が必須です。スキップします -> {file_path}"
+                )
                 failure_count += 1
-                print("⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。")
+                print(
+                    "⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。"
+                )
                 continue
 
             ast_instruction_path = TOOLS_DIR / "audit_reports" / f"_ast_task_{idx}.json"
             ast_instruction_path.parent.mkdir(parents=True, exist_ok=True)
             with open(ast_instruction_path, "w", encoding="utf-8") as f:
                 json.dump(
-                    {"file_path": str(target_file), "target_name": target_name, "new_code": new_code},
-                    f, ensure_ascii=False, indent=2,
+                    {
+                        "file_path": str(target_file),
+                        "target_name": target_name,
+                        "new_code": new_code,
+                    },
+                    f,
+                    ensure_ascii=False,
+                    indent=2,
                 )
 
             start_time = asyncio.get_running_loop().time()
             try:
                 result = subprocess.run(
-                    ["uv", "run", "python", "tools/ast_modifier.py", str(ast_instruction_path)],
-                    cwd=str(BASE_DIR), capture_output=True, text=True,
+                    [
+                        "uv",
+                        "run",
+                        "python",
+                        "tools/ast_modifier.py",
+                        str(ast_instruction_path),
+                    ],
+                    cwd=str(BASE_DIR),
+                    capture_output=True,
+                    text=True,
                 )
                 elapsed = asyncio.get_running_loop().time() - start_time
                 print(f"⏱️ 処理時間: {elapsed:.1f}秒 ({file_path})")
@@ -1144,18 +1424,24 @@ async def phase3_aider_execution(tasks: list[dict], deduped_error_log: str, stat
                     success_count += 1
                     successful_files.append(str(target_file))
                 else:
-                    print(f"⚠️ AST置換が異常終了しました (code={result.returncode}): {file_path}")
+                    print(
+                        f"⚠️ AST置換が異常終了しました (code={result.returncode}): {file_path}"
+                    )
                     if output:
                         print(f"```text\n{output}\n```\n")
                         logger.error(f"AST Replace Error Output:\n{output}")
                     failure_count += 1
-                    print("⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。")
+                    print(
+                        "⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。"
+                    )
             except Exception as e:
                 elapsed = asyncio.get_running_loop().time() - start_time
                 print(f"⏱️ 処理時間: {elapsed:.1f}秒 ({file_path})")
                 print(f"🚨 実行エラー ({file_path}): {type(e).__name__} - {str(e)}")
                 failure_count += 1
-                print("⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。")
+                print(
+                    "⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。"
+                )
             finally:
                 ast_instruction_path.unlink(missing_ok=True)
             continue
@@ -1176,14 +1462,20 @@ async def phase3_aider_execution(tasks: list[dict], deduped_error_log: str, stat
             "--yes-always",
             "--no-verify-ssl",
             "--no-gitignore",
-            "--model", "anthropic/claude-sonnet-5",
-            "--thinking-tokens", "0",
-            "--message", full_message,
-            "--map-tokens", "0",
+            "--model",
+            "anthropic/claude-sonnet-5",
+            "--thinking-tokens",
+            "0",
+            "--message",
+            full_message,
+            "--map-tokens",
+            "0",
             "--no-auto-commits",
             "--cache-prompts",
-            "--cache-keepalive-pings", "2",
-            "--read", str(static_context_path),
+            "--cache-keepalive-pings",
+            "2",
+            "--read",
+            str(static_context_path),
             str(target_file),
         ]
 
@@ -1201,9 +1493,15 @@ async def phase3_aider_execution(tasks: list[dict], deduped_error_log: str, stat
             process.stdin.close()
             start_time = asyncio.get_running_loop().time()
 
-            stdout, stderr = await run_subprocess_with_idle_timeout(process, idle_timeout=IDLE_TIMEOUT_SECONDS)
-            output = (stdout.decode("utf-8", errors="replace") + "\n" + stderr.decode("utf-8", errors="replace")).strip()
-            
+            stdout, stderr = await run_subprocess_with_idle_timeout(
+                process, idle_timeout=IDLE_TIMEOUT_SECONDS
+            )
+            output = (
+                stdout.decode("utf-8", errors="replace")
+                + "\n"
+                + stderr.decode("utf-8", errors="replace")
+            ).strip()
+
             elapsed = asyncio.get_running_loop().time() - start_time
             print(f"⏱️ 処理時間: {elapsed:.1f}秒 ({file_path})")
 
@@ -1214,33 +1512,48 @@ async def phase3_aider_execution(tasks: list[dict], deduped_error_log: str, stat
                 success_count += 1
                 successful_files.append(str(target_file))
             else:
-                print(f"⚠️ Aiderが異常終了しました (code={process.returncode}): {file_path}")
+                print(
+                    f"⚠️ Aiderが異常終了しました (code={process.returncode}): {file_path}"
+                )
                 if output:
                     print(f"```text\n{output}\n```\n")
                     logger.error(f"Aider Error Output:\n{output}")
                 failure_count += 1
-                print("⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。")
+                print(
+                    "⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。"
+                )
                 continue
         except asyncio.TimeoutError:
             process.kill()
             elapsed = asyncio.get_running_loop().time() - start_time
             print(f"⏱️ 処理時間: {elapsed:.1f}秒 ({file_path})")
-            print(f"🚨 アイドル・タイムアウト: {file_path} の修正で{int(IDLE_TIMEOUT_SECONDS)}秒間出力が完全に途絶えたため強制終了しました。")
+            print(
+                f"🚨 アイドル・タイムアウト: {file_path} の修正で{int(IDLE_TIMEOUT_SECONDS)}秒間出力が完全に途絶えたため強制終了しました。"
+            )
             failure_count += 1
-            print("⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。")
+            print(
+                "⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。"
+            )
             continue
         except Exception as e:
             if process is not None and process.returncode is None:
                 process.kill()
-            elapsed = asyncio.get_running_loop().time() - start_time if start_time else 0
+            elapsed = (
+                asyncio.get_running_loop().time() - start_time if start_time else 0
+            )
             print(f"⏱️ 処理時間: {elapsed:.1f}秒 ({file_path})")
             print(f"🚨 実行エラー ({file_path}): {type(e).__name__} - {str(e)}")
             failure_count += 1
-            print("⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。")
+            print(
+                "⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。"
+            )
             continue
 
-    print(f"\n🎉 フェーズ3完了: 成功 {success_count} 件 / 失敗 {failure_count} 件 (全 {len(tasks)} 件)")
+    print(
+        f"\n🎉 フェーズ3完了: 成功 {success_count} 件 / 失敗 {failure_count} 件 (全 {len(tasks)} 件)"
+    )
     return success_count, successful_files
+
 
 def _has_staged_changes(cwd: Path, files: list[str]) -> bool:
     """指定ファイル群に、コミット可能なステージ済み変更(新規/変更/削除)があるかを判定する。
@@ -1253,7 +1566,10 @@ def _has_staged_changes(cwd: Path, files: list[str]) -> bool:
     """
     result = subprocess.run(
         ["git", "status", "--porcelain", "--"] + files,
-        cwd=str(cwd), capture_output=True, text=True, encoding="utf-8",
+        cwd=str(cwd),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
     )
     for line in result.stdout.splitlines():
         if not line:
@@ -1263,7 +1579,9 @@ def _has_staged_changes(cwd: Path, files: list[str]) -> bool:
             return True
     return False
 
+
 AUTO_AUDIT_BRANCH = "auto-audit-temp"
+
 
 def _ensure_auto_audit_branch() -> None:
     """LangGraph自律修復ループ(Feature 1.x)の実行前に、専用の隔離ブランチへ退避する。
@@ -1273,144 +1591,293 @@ def _ensure_auto_audit_branch() -> None:
     切り替え自体に失敗した場合(未コミット変更との衝突等)は、隔離が担保できない
     ためパイプラインを続行させず安全に停止する。
     """
-    print(f"\n🌿 [Pre-flight] 自律修復ループ用の隔離ブランチ '{AUTO_AUDIT_BRANCH}' へ退避します...")
-    exists = subprocess.run(
-        ["git", "rev-parse", "--verify", AUTO_AUDIT_BRANCH],
-        cwd=str(TARGET_APP_DIR), capture_output=True,
-    ).returncode == 0
+    print(
+        f"\n🌿 [Pre-flight] 自律修復ループ用の隔離ブランチ '{AUTO_AUDIT_BRANCH}' へ退避します..."
+    )
+    exists = (
+        subprocess.run(
+            ["git", "rev-parse", "--verify", AUTO_AUDIT_BRANCH],
+            cwd=str(TARGET_APP_DIR),
+            capture_output=True,
+        ).returncode
+        == 0
+    )
 
-    cmd = ["git", "checkout", AUTO_AUDIT_BRANCH] if exists else ["git", "checkout", "-b", AUTO_AUDIT_BRANCH]
-    result = subprocess.run(cmd, cwd=str(TARGET_APP_DIR), capture_output=True, text=True)
+    cmd = (
+        ["git", "checkout", AUTO_AUDIT_BRANCH]
+        if exists
+        else ["git", "checkout", "-b", AUTO_AUDIT_BRANCH]
+    )
+    result = subprocess.run(
+        cmd, cwd=str(TARGET_APP_DIR), capture_output=True, text=True
+    )
     if result.returncode != 0:
-        print(f"🚨 致命的エラー: ブランチ '{AUTO_AUDIT_BRANCH}' への切り替えに失敗しました:\n{result.stderr}")
+        print(
+            f"🚨 致命的エラー: ブランチ '{AUTO_AUDIT_BRANCH}' への切り替えに失敗しました:\n{result.stderr}"
+        )
         sys.exit(1)
     print(f"   ✅ ブランチ '{AUTO_AUDIT_BRANCH}' で作業します ({TARGET_APP_DIR})。")
 
-async def main_flow(user_instruction: str):
+
+# --- Test-Driven Escalation Gatekeeper (アーキテクチャ統合: 案C改) ---
+async def verify_logic_with_pytest(target_file: Path) -> tuple[bool, str]:
+    """対象ファイルに対応するテストをpytestで実行し、決定論的にロジックの正しさを検証する。
+
+    Ollamaが「文法的には正しいが論理が破綻したコード」を出力するFalse Positiveは、
+    Ruff/Pyrightのような静的解析では検知できない。実際にテストを走らせて確認する
+    絶対的なゲートキーパーとして機能し、失敗時はコミットをブロックしてClaudeパイプラインへの
+    エスカレーション判断に使う。対応するテストファイルが見つからない場合は検証不能として
+    (True, ...) を返し、テスト未整備のファイルまで機構が過剰にコミットをブロックしないよう
+    防衛的に振る舞う。
+    """
+    candidates = [
+        target_file.parent / f"test_{target_file.name}",
+        target_file.parent / f"{target_file.stem}_test.py",
+        target_file.parent / "tests" / f"test_{target_file.name}",
+    ]
+    test_file = next((c for c in candidates if c.exists()), None)
+    if test_file is None:
+        print(
+            f"   ⚠️ [Pytest Gatekeeper] 対応するテストファイルが見つからないため検証をスキップします: {target_file.name}"
+        )
+        return True, "対応するテストファイルが見つからないため検証をスキップしました。"
+
+    print(f"   🧪 [Pytest Gatekeeper] {test_file} を実行して論理の正しさを検証します...")
+    try:
+        result = subprocess.run(
+            ["uv", "run", "pytest", str(test_file), "-v"],
+            cwd=str(TARGET_APP_DIR),
+            capture_output=True,
+            text=True,
+            timeout=120,
+        )
+    except Exception as e:
+        return False, f"pytestの実行に失敗しました: {e}"
+
+    if result.returncode == 0:
+        return True, "OK"
+
+    tail = (result.stdout + "\n" + result.stderr).strip()
+    return False, tail[-4000:]
+
+
+async def _run_claude_pipeline_and_commit(
+    user_instruction: str, log_path: Path, deduped_log: str, commit_message: str
+) -> None:
+    """Claudeパイプライン(Tool Calling + Pydantic + 自己修正ループ + libcst AST置換)を実行し、
+    成功したファイルを一括コミットする。
+
+    main_flowの通常経路(engine=="claude")と、Ollama自律修復がpytest検証に失敗した際の
+    エスカレーション経路の両方から共有される。
+    """
+    static_context_path = build_static_context()
+
+    triage_data = await phase2_claude_translation(user_instruction, log_path)
+    tasks = triage_data.get("tasks", [])
+    success_count, successful_files = await phase3_aider_execution(
+        tasks, deduped_log, static_context_path
+    )
+    if success_count > 0 and successful_files:
+        print(f"\n📦 {success_count}件の成功ファイルを一括コミット(Bulk Commit)します...")
+        try:
+            subprocess.run(
+                ["git", "add", "--"] + successful_files,
+                cwd=str(TARGET_APP_DIR),
+                check=True,
+            )
+            if not _has_staged_changes(TARGET_APP_DIR, successful_files):
+                print("✅ 変更がなかったため一括コミットをスキップしました")
+            else:
+                subprocess.run(
+                    ["git", "commit", "-m", commit_message, "--"] + successful_files,
+                    cwd=str(TARGET_APP_DIR),
+                    check=True,
+                )
+                print("✅ 一括コミット完了。")
+        except Exception as e:
+            print(f"⚠️ コミット失敗: {e}")
+
+
+async def main_flow(user_instruction: str, engine: str = "ollama"):
+    print(f"\n🔀 [Engine] 選択されたエンジン: {engine}")
+
     # V8.7.1: .envの確実な読み込みとフェイルファスト（鍵の生存確認）
     load_dotenv(BASE_DIR / ".env")
-    if not os.getenv("ANTHROPIC_API_KEY"):
+    if engine == "claude" and not os.getenv("ANTHROPIC_API_KEY"):
         print("🚨 致命的エラー: ANTHROPIC_API_KEY が .env に設定されていません。")
         sys.exit(1)
 
     global TARGET_APP_DIR, TARGET_CODE_DIR, TARGET_PYTHON
-    TARGET_APP_DIR, TARGET_CODE_DIR, TARGET_PYTHON = _route_target_domain(user_instruction)
+    TARGET_APP_DIR, TARGET_CODE_DIR, TARGET_PYTHON = _route_target_domain(
+        user_instruction
+    )
 
     await startup_local_services()
 
     await phase0_ruff_autofix()
 
-    # --- Pre-flight: LangGraph自律修復ループ用の隔離ブランチへ退避 ---
+    # --- Pre-flight: 自律修復ループ用の隔離ブランチへ退避(エンジン非依存) ---
     _ensure_auto_audit_branch()
 
+    # --- 共通前処理: エラーログ抽出 + 認知負荷監視(どちらのエンジンでも必須) ---
     log_path = await phase1_audit(is_final=False)
     if not log_path or not log_path.exists():
         return
 
-    # Cognitive Load Auditor フェイルセーフ: エラーログ自体が肥大化しやすい箇所での早期検査。
-    with open(log_path, "r", encoding="utf-8") as f:
-        raw_error_log_for_check = f.read()
-    log_ok, log_detail = check_cognitive_load(raw_error_log_for_check, max_lines=MAX_ERROR_LOG_LINES)
-    if not log_ok:
-        print(f"\n🚨 Cognitive Overload: エラー範囲が広すぎます ({log_detail})。タスクを分割（Split）してください。")
-        sys.exit(1)
-
-    static_context_path = build_static_context()  # noqa: F841 (旧Aiderフロー用。LangGraph移行後は未使用だが将来のトグル復帰用に保持)
-
-    # --- 旧フロー(Aiderへの非決定的依存)。LangGraph自律修復ループへの移行のためバイパス。 ---
-    # 削除ではなくコメントアウトとして保持し、Feature Toggleでの復帰余地を残す。
-    #
-    # use_tool_augmented = os.getenv("USE_TOOL_AUGMENTED_PHASE2", "true").lower() == "true"
-    # if use_tool_augmented:
-    #     print("\n🚀 [Feature Toggle] Tool-Augmented 版の Phase 2 を実行します。")
-    #     triage_data = await phase2_claude_tool_augmented(user_instruction, log_path)
-    # else:
-    #     print("\n⏪ [Feature Toggle] 従来版の Phase 2 を実行します。")
-    #     triage_data = await phase2_claude_translation(user_instruction, log_path)
-    # tasks = triage_data.get("tasks", [])
-    # success_count, successful_files = await phase3_aider_execution(tasks, deduped_log, static_context_path)
-    # if success_count > 0 and successful_files:
-    #     print(f"\n📦 {success_count}件の成功ファイルを一括コミット(Bulk Commit)します...")
-    #     try:
-    #         subprocess.run(["git", "add", "--"] + successful_files, cwd=str(TARGET_APP_DIR), check=True)
-    #         if not _has_staged_changes(TARGET_APP_DIR, successful_files):
-    #             print("✅ 変更がなかったため一括コミットをスキップしました")
-    #         else:
-    #             subprocess.run(
-    #                 ["git", "commit", "-m", "fix: Aiderによる一括自動修正", "--"] + successful_files,
-    #                 cwd=str(TARGET_APP_DIR), check=True,
-    #             )
-    #             print("✅ 一括コミット完了。")
-    #     except Exception as e:
-    #         print(f"⚠️ コミット失敗: {e}")
-
     with open(log_path, "r", encoding="utf-8") as f:
         raw_error_log = f.read()
+
+    # Cognitive Load Auditor フェイルセーフ: エラーログ自体が肥大化しやすい箇所での早期検査。
+    log_ok, log_detail = check_cognitive_load(
+        raw_error_log, max_lines=MAX_ERROR_LOG_LINES
+    )
+    if not log_ok:
+        print(
+            f"\n🚨 Cognitive Overload: エラー範囲が広すぎます ({log_detail})。タスクを分割（Split）してください。"
+        )
+        sys.exit(1)
+
     deduped_log = acd_phase1_dedup(raw_error_log)
 
-    # --- LangGraph自律修復ループ (Feature 1.x) ---
-    # Phase 2(Claude)によるタスク一覧生成を経由しないため、対象ファイルはエラーログ内で
-    # 最初に言及されたファイルから暫定的に決定する(複数ファイル対応・選定戦略の見直しは
-    # 次の検証ステップで詰める前提の第一実装)。
-    findings = acd_parse_error_locations(deduped_log)
-    if not findings:
-        print("\n✅ エラーログにファイル参照が見つからず、自律修復ループの対象がありません。")
+    if engine == "claude":
+        # --- Claudeパイプライン(Tool Calling + Pydantic + 自己修正ループ + libcst AST置換) ---
+        await _run_claude_pipeline_and_commit(
+            user_instruction, log_path, deduped_log, "fix: Claudeパイプラインによる一括自動修正"
+        )
+
     else:
-        resolved_target = _resolve_target_file(findings[0][0])
-        if resolved_target is None:
-            print(f"⚠️ 警告: 自律修復対象ファイルが解決できません -> {findings[0][0]}")
-        else:
-            print(f"\n🤖 [LangGraph] 自律修復ループを開始します。対象: {resolved_target}")
-            from tools.agent_graph import run_self_repair
-
-            final_state = await asyncio.to_thread(run_self_repair, str(resolved_target))
-            revision_count = final_state.get("revision_count", 0)
+        # --- LangGraph自律修復ループ (Ollama, Feature 1.x) ---
+        # Phase 2(Claude)によるタスク一覧生成を経由しないため、対象ファイルはエラーログ内で
+        # 最初に言及されたファイルから暫定的に決定する(複数ファイル対応・選定戦略の見直しは
+        # 次の検証ステップで詰める前提の第一実装)。
+        findings = acd_parse_error_locations(deduped_log)
+        if not findings:
             print(
-                f"   最終ステータス: {final_state.get('status')} / 修正回数: {revision_count}"
+                "\n✅ エラーログにファイル参照が見つからず、自律修復ループの対象がありません。"
             )
+        else:
+            resolved_target = _resolve_target_file(findings[0][0])
+            if resolved_target is None:
+                print(
+                    f"⚠️ 警告: 自律修復対象ファイルが解決できません -> {findings[0][0]}"
+                )
+            else:
+                print(
+                    f"\n🤖 [LangGraph] 自律修復ループを開始します。対象: {resolved_target}"
+                )
+                from tools.agent_graph import run_self_repair
 
-            if revision_count > 0:
-                rel_path = str(resolved_target)
-                print("\n📦 自律修復ループによる変更を一括コミット(Bulk Commit)します...")
-                try:
-                    subprocess.run(["git", "add", "--", rel_path], cwd=str(TARGET_APP_DIR), check=True)
-                    if not _has_staged_changes(TARGET_APP_DIR, [rel_path]):
-                        print("✅ 変更がなかったため一括コミットをスキップしました")
+                final_state = await asyncio.to_thread(
+                    run_self_repair, str(resolved_target)
+                )
+                revision_count = final_state.get("revision_count", 0)
+                print(
+                    f"   最終ステータス: {final_state.get('status')} / 修正回数: {revision_count}"
+                )
+
+                if revision_count > 0:
+                    # --- Test-Driven Escalation Gatekeeper: 静的解析(Ruff/Pyright)では
+                    # 検知できない「文法的には正しいが論理が破綻したコード」を、決定論的な
+                    # pytest実行で最終的にゲートする。失敗した場合はコミットせず、
+                    # Claudeパイプラインへエスカレーションする(Human-in-the-Loopの起点)。
+                    test_ok, test_detail = await verify_logic_with_pytest(resolved_target)
+
+                    if test_ok:
+                        rel_path = str(resolved_target)
+                        print(
+                            "\n📦 自律修復ループによる変更を一括コミット(Bulk Commit)します..."
+                        )
+                        try:
+                            subprocess.run(
+                                ["git", "add", "--", rel_path],
+                                cwd=str(TARGET_APP_DIR),
+                                check=True,
+                            )
+                            if not _has_staged_changes(TARGET_APP_DIR, [rel_path]):
+                                print("✅ 変更がなかったため一括コミットをスキップしました")
+                            else:
+                                subprocess.run(
+                                    [
+                                        "git",
+                                        "commit",
+                                        "-m",
+                                        "fix: LangGraph自律修復ループによる自動修正",
+                                        "--",
+                                        rel_path,
+                                    ],
+                                    cwd=str(TARGET_APP_DIR),
+                                    check=True,
+                                )
+                                print("✅ 一括コミット完了。")
+
+                                # --- 推論軌跡SFTデータ自動抽出フック(フライホイール化) ---
+                                print(
+                                    "\n🌀 [Flywheel] 今回の修復軌跡を学習データとして抽出します..."
+                                )
+                                sft_result = subprocess.run(
+                                    [
+                                        "uv",
+                                        "run",
+                                        "python",
+                                        "tools/extract_agent_sft.py",
+                                    ],
+                                    cwd=str(BASE_DIR),
+                                    capture_output=True,
+                                    text=True,
+                                )
+                                if sft_result.stdout:
+                                    print(sft_result.stdout, end="")
+                                if sft_result.stderr:
+                                    print(sft_result.stderr, end="")
+                                if sft_result.returncode == 0:
+                                    print("✅ 学習データの蓄積が完了しました。")
+                                else:
+                                    print(
+                                        f"⚠️ 学習データの抽出に失敗しました (code={sft_result.returncode})。"
+                                    )
+                        except Exception as e:
+                            print(f"⚠️ コミット失敗: {e}")
                     else:
-                        subprocess.run(
-                            ["git", "commit", "-m", "fix: LangGraph自律修復ループによる自動修正", "--", rel_path],
-                            cwd=str(TARGET_APP_DIR), check=True,
+                        print(
+                            "\n🚨 [Escalation] Ollamaの修正が論理テストに失敗しました。"
+                            "Claudeパイプラインへエスカレーションします。"
                         )
-                        print("✅ 一括コミット完了。")
-
-                        # --- 推論軌跡SFTデータ自動抽出フック(フライホイール化) ---
-                        print("\n🌀 [Flywheel] 今回の修復軌跡を学習データとして抽出します...")
-                        sft_result = subprocess.run(
-                            ["uv", "run", "python", "tools/extract_agent_sft.py"],
-                            cwd=str(BASE_DIR), capture_output=True, text=True,
-                        )
-                        if sft_result.stdout:
-                            print(sft_result.stdout, end="")
-                        if sft_result.stderr:
-                            print(sft_result.stderr, end="")
-                        if sft_result.returncode == 0:
-                            print("✅ 学習データの蓄積が完了しました。")
+                        if not os.getenv("ANTHROPIC_API_KEY"):
+                            print(
+                                "🚨 [Escalation] ANTHROPIC_API_KEY が未設定のため、"
+                                "Claudeパイプラインへのエスカレーションを実行できません。"
+                            )
                         else:
-                            print(f"⚠️ 学習データの抽出に失敗しました (code={sft_result.returncode})。")
-                except Exception as e:
-                    print(f"⚠️ コミット失敗: {e}")
+                            escalation_instruction = (
+                                f"{user_instruction}\n\n"
+                                "【エスカレーション経緯】ローカルLLM(Ollama)による自律修復ループは完走しましたが、"
+                                f"決定論的テスト(pytest)による検証に失敗しました。対象ファイル: {resolved_target}\n"
+                                f"【Pytest失敗内容】\n{test_detail}"
+                            )
+                            await _run_claude_pipeline_and_commit(
+                                escalation_instruction,
+                                log_path,
+                                deduped_log,
+                                "fix: Claudeパイプラインへのエスカレーションによる自動修正",
+                            )
 
     await phase1_audit(is_final=True)
 
-    print("\n🔄 [Post-flight] 修正を適用した状態で、サービス群のオートヒール(自動復旧)を試みます...")
+    print(
+        "\n🔄 [Post-flight] 修正を適用した状態で、サービス群のオートヒール(自動復旧)を試みます..."
+    )
     await startup_local_services()
 
-    print("\n" + "🌟"*25)
+    print("\n" + "🌟" * 25)
     print("🎯 【V8.8 (Tool-Augmented) 対話型・自律パイプライン完走 (超・可観測仕様)】")
-    print("   すべてのフェーズが終了しました。Gitログと final_error_log.txt を確認してください。")
-    print("   ※ 万が一、修正に失敗しエラーが悪化していた場合は、以下のコマンドで一撃ロールバックが可能です:")
+    print(
+        "   すべてのフェーズが終了しました。Gitログと final_error_log.txt を確認してください。"
+    )
+    print(
+        "   ※ 万が一、修正に失敗しエラーが悪化していた場合は、以下のコマンドで一撃ロールバックが可能です:"
+    )
     print(f"   git -C {TARGET_APP_DIR} reset --hard HEAD~1")
-    print("🌟"*25 + "\n")
+    print("🌟" * 25 + "\n")
 
     # --- V8.9: Graceful Shutdown ---
     # フロントエンド等のfire-and-forgetバックグラウンドタスクが、main_flow終了時点で
@@ -1431,12 +1898,27 @@ async def main_flow(user_instruction: str):
     # デーモンが停止されないままゾンビ化する。そのため引数なしで呼び出す。
     subprocess.run(
         [str(TARGET_PYTHON), "-m", "mypy.dmypy", "stop"],
-        cwd=str(TARGET_APP_DIR), capture_output=True,
+        cwd=str(TARGET_APP_DIR),
+        capture_output=True,
     )
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Nazo-Agent オーケストレーター")
-    parser.add_argument("--prompt", type=str, help="プロンプトファイルのパス (オプション)")
+    parser.add_argument(
+        "--prompt", type=str, help="プロンプトファイルのパス (オプション)"
+    )
+    parser.add_argument(
+        "--engine",
+        type=str,
+        choices=["ollama", "claude"],
+        default=os.getenv("NAZO_AGENT_ENGINE", "ollama"),
+        help=(
+            "修正エンジン。ollama: LangGraph自律修復ループ(既定) / "
+            "claude: Tool Calling防弾パイプライン。"
+            "環境変数 NAZO_AGENT_ENGINE でも指定可能(この引数を明示した場合はそちらが優先)。"
+        ),
+    )
     args = parser.parse_args()
 
     if sys.platform == "win32":
@@ -1448,16 +1930,18 @@ if __name__ == "__main__":
         if prompt_path.exists():
             with open(prompt_path, "r", encoding="utf-8") as f:
                 instruction = f.read().strip()
-            print("\n" + "="*50)
-            print("🤖 【Nazo-Agent V8.8 (常駐デーモン版)】: ファイルから指示を読み込み実行します...")
-            asyncio.run(main_flow(instruction))
+            print("\n" + "=" * 50)
+            print(
+                "🤖 【Nazo-Agent V8.8 (常駐デーモン版)】: ファイルから指示を読み込み実行します..."
+            )
+            asyncio.run(main_flow(instruction, engine=args.engine))
             sys.exit(0)
         else:
             print(f"🚨 指定されたプロンプトファイルが見つかりません: {prompt_path}")
             sys.exit(1)
 
     # 引数がない場合は常駐（デーモン）モードへ
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("🤖 【Nazo-Agent V8.8 (常駐デーモン版)】起動完了")
     print("   終了するには 'exit' または 'quit' と入力してEnterを2回押してください。")
     print("=" * 50)
@@ -1476,29 +1960,36 @@ if __name__ == "__main__":
             except (EOFError, KeyboardInterrupt):
                 print("\n🛑 Nazo-Agentを終了します。お疲れ様でした！")
                 sys.exit(0)
-        
+
         instruction = "\n".join(lines).strip()
-        
+
         # 終了コマンド判定 (前後の空行を除去して小文字化)
         if instruction.lower() in ["exit", "quit", "exit()", "quit()"]:
             print("\n🛑 Nazo-Agentを安全に終了します。お疲れ様でした！")
             break
-            
+
         if not instruction:
             print("⚠️ 指示が空です。再度入力してください。")
             continue
-            
+
         # タスク実行（エラーが起きてもデーモンは死なない）
         try:
-            asyncio.run(main_flow(instruction))
+            asyncio.run(main_flow(instruction, engine=args.engine))
         except KeyboardInterrupt:
-            print("\n⚠️ 処理がユーザーによって強制中断(Ctrl+C)されましたが、エージェントは待機を継続します。")
+            print(
+                "\n⚠️ 処理がユーザーによって強制中断(Ctrl+C)されましたが、エージェントは待機を継続します。"
+            )
         except SystemExit as e:
             if e.code == 0:
                 raise  # 正常終了(exit/quitコマンド等)はそのまま終了させる
-            print(f"\n🚨 [Daemon Guard] 子プロセス・関数の異常終了要求 (code={e.code}) を迎撃しました。")
+            print(
+                f"\n🚨 [Daemon Guard] 子プロセス・関数の異常終了要求 (code={e.code}) を迎撃しました。"
+            )
             print("🚨 プロセスのクラッシュを防ぎ、常駐を継続します。")
         except Exception:
             import traceback
+
             traceback.print_exc()
-            print("\n🚨 実行中に予期せぬエラーが発生しましたが、プロセスは常駐を継続します。")
+            print(
+                "\n🚨 実行中に予期せぬエラーが発生しましたが、プロセスは常駐を継続します。"
+            )

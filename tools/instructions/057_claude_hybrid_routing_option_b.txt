@@ -1,0 +1,23 @@
+【ミッション: 幻のパイプライン本線復帰 - エンジン切り替え機能の実装 (アーキテクチャ統合: 案B)】
+
+現在の `tools/nazo_agent.py` においてコメントアウトされている「防弾化されたClaudeパイプライン」を復元し、既存の「LangGraph(Ollama)パイプライン」と動的に切り替えて並行稼働できるようにリファクタリングしてください。
+
+### Step 1: CLI引数と環境変数の追加
+1. `tools/nazo_agent.py` の `argparse` 設定部分を改修し、`--engine` 引数を追加してください。
+   - 選択肢（choices）は `ollama` と `claude` とし、デフォルト値は `ollama` に設定してください。
+   - 環境変数 `NAZO_AGENT_ENGINE` が設定されている場合はそれを優先的に読み取るフォールバック機構を持たせてください。
+
+### Step 2: main_flow のリファクタリング（ルーティング実装）
+1. `main_flow` 関数を改修し、指定された `engine` に応じて処理を分岐させてください。
+2. `engine == "claude"` の場合:
+   - 現在コメントアウトされている `phase2_claude_translation` (または `phase2_claude_tool_augmented`) と `phase3_aider_execution` の呼び出しを復元し、実行パスを繋げてください。
+3. `engine == "ollama"` の場合:
+   - 現在アクティブな `agent_graph.py` (LangGraph) のループ呼び出しパスを実行するようにしてください。
+4. 共通処理:
+   - `phase1_audit` (エラーログ抽出) と `check_cognitive_load` (認知負荷監視) は、どちらのエンジンを使う場合でも共通の前処理として機能するように配置してください。
+
+### Step 3: 静的解析と報告
+1. 修正後の `tools/nazo_agent.py` に対して `uv run ruff check --fix tools/nazo_agent.py` および `uv run ruff format tools/nazo_agent.py` を実行してください。
+2. `python -m py_compile tools/nazo_agent.py` で構文エラーがないことを確認してください。
+3. `python tools/nazo_agent.py -h` を実行し、`--engine` 引数が正しく表示されることを確認してください（実際の修正処理は走らせなくて構いません）。
+4. 上記の実行結果の生ログを報告してください。
