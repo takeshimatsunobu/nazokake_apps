@@ -11,3 +11,4 @@ langchain-ollama==1.1.0
 pytest
 pytest-testmon
 pytest-xdist
+psutil

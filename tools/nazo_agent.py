@@ -23,6 +23,7 @@ if sys.platform == "win32":
 from pydantic import BaseModel, ValidationError
 import anthropic
 import httpx
+import psutil
 
 
 class TokenCircuitBreaker:
@@ -331,46 +332,61 @@ async def check_ollama() -> bool:
 
 
 def kill_process_by_port(port: int) -> list[str]:
-    """指定ポートをLISTENしているプロセスを検出し、強制終了する(ゾンビプロセス対策)。
+    """指定ポートをLISTENしているプロセスを検出し、Gracefulに終了する(ゾンビプロセス対策)。
 
     health_urlが応答しないにもかかわらずポートを掴んだままの子プロセス(クラッシュ後の
     残骸等)が残ると、後続のPopenがアドレス使用中で失敗し続ける。起動直前にこれを
-    自動的に一掃する。Windows専用(netstat -ano + taskkill)。見つからない/失敗しても
-    例外は伝播させず、終了させたPIDのリストを返す(ベストエフォート)。
+    自動的に一掃する。psutilによるクロスプラットフォーム実装(Windows固有の
+    netstat/taskkillへの依存を排除)。まずterminate()で穏やかな終了を試み、
+    タイムアウトした場合のみkill()で強制終了する。OSの権限モデルにより対象プロセスの
+    情報取得・終了操作が拒否される場合(psutil.AccessDenied)や、対象プロセスが
+    スキャン後に既に終了していた場合(psutil.NoSuchProcess)は、それぞれ個別に捕捉して
+    警告ログを出力し、システムをクラッシュさせず後続処理へ安全に引き継ぐ
+    (ベストエフォートで、終了させたPIDのリストを返す)。
     """
-    if sys.platform != "win32":
-        return []
     killed: list[str] = []
+    pids: set[int] = set()
     try:
-        result = subprocess.run(
-            ["netstat", "-ano"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
+        for conn in psutil.net_connections(kind="inet"):
+            if (
+                conn.status == psutil.CONN_LISTEN
+                and conn.laddr
+                and conn.laddr.port == port
+                and conn.pid
+            ):
+                pids.add(conn.pid)
+    except psutil.AccessDenied:
+        print(
+            f"⚠️ [kill_process_by_port] 権限不足のため、ポート{port}の接続一覧を取得できませんでした。"
         )
-        pids: set[str] = set()
-        for line in result.stdout.splitlines():
-            parts = line.split()
-            if len(parts) < 4 or parts[0] not in ("TCP", "TCPv6"):
-                continue
-            local_addr, state, pid = parts[1], parts[3], parts[-1]
-            if state != "LISTENING" or not pid.isdigit() or pid == "0":
-                continue
-            if local_addr.rsplit(":", 1)[-1] == str(port):
-                pids.add(pid)
-        for pid in pids:
-            kill_result = subprocess.run(
-                ["taskkill", "/F", "/PID", pid],
-                capture_output=True,
-                text=True,
-                encoding="cp932",
-                errors="replace",
+        return killed
+    except Exception as e:
+        print(f"⚠️ [kill_process_by_port] 接続一覧の取得中にエラーが発生しました: {e}")
+        return killed
+
+    for pid in pids:
+        try:
+            proc = psutil.Process(pid)
+            proc.terminate()
+            try:
+                proc.wait(timeout=3.0)
+            except psutil.TimeoutExpired:
+                proc.kill()
+                proc.wait(timeout=3.0)
+            killed.append(str(pid))
+        except psutil.NoSuchProcess:
+            print(
+                f"   ⚠️ [kill_process_by_port] プロセス{pid}は既に存在しないためスキップしました。"
             )
-            if kill_result.returncode == 0:
-                killed.append(pid)
-    except Exception:
-        pass
+        except psutil.AccessDenied:
+            print(
+                f"   ⚠️ [kill_process_by_port] 権限不足のためプロセス{pid}の終了をスキップしました。"
+            )
+        except Exception as e:
+            print(
+                f"   ⚠️ [kill_process_by_port] プロセス{pid}の終了中にエラーが発生しました: {e}"
+            )
+
     return killed
 
 
