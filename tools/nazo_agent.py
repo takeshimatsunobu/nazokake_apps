@@ -17,7 +17,7 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 import anthropic
 import httpx
 
@@ -440,7 +440,15 @@ async def phase1_audit(is_final=False) -> Path:
 
 # --- Phase 2 ---
 async def phase2_claude_translation(user_instruction: str, error_log_path: Path) -> dict:
-    print("\n🔍 [Phase 2] Claude API による「Aiderタスク」への翻訳・分割を開始します...")
+    """Claude API による「AST置換指示」への翻訳・分割。
+
+    従来は自然言語でJSON出力を要求し、応答テキストからMarkdownフェンスを
+    手動で除去してjson.loadsする防御的パースに依存していた。tools パラメータに
+    tools.ast_modifier.AstModificationInstruction と同一のスキーマ(model_json_schema())
+    を関数(Tool)として定義し、tool_choiceでその呼び出しを強制することで、
+    解説文やMarkdown装飾が混入する余地をAPIレベルで排除する。
+    """
+    print("\n🔍 [Phase 2] Claude API による「AST置換指示」への翻訳・分割を開始します...")
     api_key = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
     with open(error_log_path, "r", encoding="utf-8") as f:
         raw_error_log = f.read()
@@ -453,20 +461,42 @@ async def phase2_claude_translation(user_instruction: str, error_log_path: Path)
         compact_context = deduped_log[:ACD_MAX_SAFE_CHARS]
     print(f"   [ACD Engine] AST圧縮完了: {len(raw_error_log)}文字 -> {len(compact_context)}文字")
 
+    from tools.ast_modifier import AstModificationInstruction, _extract_python_code
+
     # TLS問題を防ぐ防弾設定
     http_client = httpx.AsyncClient(verify=False, trust_env=True, timeout=httpx.Timeout(600.0, connect=30.0))
     client = anthropic.AsyncAnthropic(api_key=api_key, http_client=http_client, max_retries=0)
-    
-    system_prompt = "あなたは冷徹な設計翻訳機です。JSONデータのみを純粋に出力せよ。"
+
+    system_prompt = (
+        "あなたはシニアソフトウェアアーキテクトです。以下の「要件定義書」と後ほど提示する"
+        "「エラーログ」から、libcstによるAST置換で適用する修正指示を生成せよ。\n"
+        f"【要件定義書】\n{user_instruction}\n\n"
+        "各修正は、対象ファイル(file_path)・置換対象の関数/クラス名(target_name)・"
+        "置換後の関数/クラス定義の完全なソースコード(new_code)の3点で構成すること。"
+        "解説文やMarkdownのコードブロック装飾は一切付けず、"
+        "必ず submit_ast_modifications ツールの呼び出しのみで結果を提出すること。"
+    )
     system_blocks = [
-        {
-            "type": "text",
-            "text": f"{system_prompt}\n\nあなたはシニアソフトウェアアーキテクトです。以下の「要件定義書」と後ほど提示する「エラーログ」からAiderの修正手順を生成せよ。\n【要件定義書】\n{user_instruction}\n\n【条件】\n厳格な出力スキーマに従い、JSONのみ出力すること(Markdown不要)。",
-            "cache_control": {"type": "ephemeral"}
-        }
+        {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
     ]
 
-    result_json = {}
+    # Claude API に渡すツール定義。Pydanticモデル(tools.ast_modifier.AstModificationInstruction)の
+    # JSON Schemaをそのまま input_schema へ流用し、Tool Calling強制の出力形式と
+    # サーバー側バリデーションの型定義を単一のスキーマ源(Single Source of Truth)に保つ。
+    submit_tool = {
+        "name": "submit_ast_modifications",
+        "description": "監査結果に基づき確定した、libcstによる安全なAST置換指示の一覧を提出する。",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "tasks": {"type": "array", "items": AstModificationInstruction.model_json_schema()},
+                "summary": {"type": "string"},
+            },
+            "required": ["tasks", "summary"],
+        },
+    }
+
+    result_json: dict = {}
     stop_event = asyncio.Event()
 
     # 進行状況の表示タスク開始 (ドット印字版)
@@ -480,21 +510,45 @@ async def phase2_claude_translation(user_instruction: str, error_log_path: Path)
             messages=[{
                 "role": "user",
                 "content": f"【エラーログ】\n{compact_context}"
-            }]
+            }],
+            tools=[submit_tool],
+            tool_choice={"type": "tool", "name": "submit_ast_modifications"},
         )
         stop_event.set()
         await progress_task
-        
-        text_blocks = [block.text for block in response.content if getattr(block, "type", "") == "text"]
-        report = "\n".join(text_blocks).strip()
 
-        if report.startswith("```json"):
-            report = report[7:]
-        if report.endswith("```"):
-            report = report[:-3]
-        report = report.strip()
-        result_json = json.loads(report)
-        
+        usage = getattr(response, "usage", None)
+        if usage:
+            total_tokens = getattr(usage, "input_tokens", 0) + getattr(usage, "output_tokens", 0)
+            TokenCircuitBreaker.add(total_tokens)
+
+        submit_block = next(
+            (b for b in response.content if getattr(b, "type", "") == "tool_use" and b.name == "submit_ast_modifications"),
+            None,
+        )
+        if submit_block is None:
+            raise ValueError("submit_ast_modifications ツールの呼び出しが得られませんでした。")
+
+        validated_tasks = []
+        for raw_task in submit_block.input.get("tasks", []):
+            try:
+                validated = AstModificationInstruction(**raw_task)
+            except ValidationError as e:
+                # 防衛的パース(最終フォールバック): new_codeにノイズが混入していた場合、
+                # 既存の正規表現抽出ロジックで正規化した上で再バリデーションを試みる。
+                salvaged = dict(raw_task)
+                salvaged["new_code"] = _extract_python_code(str(raw_task.get("new_code", "")))
+                try:
+                    validated = AstModificationInstruction(**salvaged)
+                except ValidationError:
+                    print(f"   ⚠️ タスクのバリデーションに失敗したためスキップします: {e}")
+                    continue
+            task_dict = validated.model_dump()
+            task_dict["mode"] = "ast_replace"
+            validated_tasks.append(task_dict)
+
+        result_json = {"tasks": validated_tasks, "summary": submit_block.input.get("summary", "")}
+
     except Exception as e:
         stop_event.set()
         await progress_task
@@ -509,14 +563,14 @@ async def phase2_claude_translation(user_instruction: str, error_log_path: Path)
 
     tasks = result_json.get("tasks", [])
     print("\n" + "="*50)
-    print("📋 【Claude 設計翻訳結果（Aiderへの確定指令）】")
+    print("📋 【Claude 設計翻訳結果（AST置換指令）】")
     print(f" ［修正対象タスク数］: {len(tasks)} 件")
     for idx, task in enumerate(tasks, 1):
         print(f"   {idx}. {task.get('file_path', '不明なパス')}")
-        print(f"      指示: {task.get('instruction', '記述なし')}")
+        print(f"      対象シンボル: {task.get('target_name', '不明')}")
     print("\n ［実装サマリー］:\n  " + result_json.get('summary', '記述なし'))
     print("="*50 + "\n")
-    print(f"✅ フェーズ2完了: Aiderへの確定指令書を保存しました -> {triage_path}")
+    print(f"✅ フェーズ2完了: AST置換指令書を保存しました -> {triage_path}")
     return result_json
 
 # --- Phase 2 (Tool-Augmented) ---
