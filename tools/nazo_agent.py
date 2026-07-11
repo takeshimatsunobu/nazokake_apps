@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import logging
 import os
 import sys
@@ -7,6 +8,7 @@ import argparse
 import ast
 import re
 import subprocess
+import uuid
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -526,6 +528,44 @@ def check_cognitive_load(
         return False, " / ".join(violations)
     return True, f"行数 {line_count} 行・文字数 {char_count} 文字 (許容範囲内)"
 
+# --- Dead Letter Queue (Feature 4.x) ---
+def _write_dead_letter(
+    *,
+    target_file: str | None,
+    system_prompt,
+    messages: list,
+    final_error: str,
+    raw_response: str,
+) -> Path:
+    """自己修正ループが最大リトライ回数に達し縮退運転へ移行する際、失敗時点の
+    全文脈(システムプロンプト・会話履歴・最終エラー・Claudeの生の応答)を
+    tools/audit_reports/dead_letters/ 配下へ構造化JSONとして保存する。
+    なぜ自己修正しきれなかったかを事後分析できるようにする可観測性強化。
+    """
+    dead_letter_dir = TOOLS_DIR / "audit_reports" / "dead_letters"
+    dead_letter_dir.mkdir(parents=True, exist_ok=True)
+
+    now = datetime.datetime.now()
+    dead_letter_path = dead_letter_dir / f"dead_letter_{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.json"
+
+    def _to_jsonable(obj):
+        if hasattr(obj, "model_dump"):
+            return obj.model_dump()
+        return str(obj)
+
+    payload = {
+        "timestamp": now.isoformat(),
+        "target_file": target_file,
+        "system_prompt": system_prompt,
+        "messages": messages,
+        "final_error": final_error,
+        "raw_response": raw_response,
+    }
+    with open(dead_letter_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2, default=_to_jsonable)
+
+    return dead_letter_path
+
 # --- Phase 1 & 4 ---
 async def run_linter(tool_name: str) -> str:
     if tool_name == "mypy":
@@ -693,6 +733,18 @@ async def phase2_claude_translation(user_instruction: str, error_log_path: Path)
                         f"⚠️ 部分的障害: {MAX_SELF_CORRECTION_RETRIES}回の自己修正リトライすべて失敗したため、"
                         "このフェーズの修正をスキップします (縮退運転)。"
                     )
+                    raw_tasks_for_error = submit_block.input.get("tasks", [])
+                    target_file = ", ".join(
+                        t.get("file_path", "") for t in raw_tasks_for_error if isinstance(t, dict) and t.get("file_path")
+                    ) or None
+                    dead_letter_path = _write_dead_letter(
+                        target_file=target_file,
+                        system_prompt=system_blocks,
+                        messages=messages,
+                        final_error=str(e),
+                        raw_response=json.dumps(submit_block.input, ensure_ascii=False),
+                    )
+                    print(f"   📮 [Dead Letter] 失敗内容を記録しました -> {dead_letter_path}")
                     result_json = {"tasks": [], "summary": "(自己修正リトライ失敗のため対象なし)"}
                     break
                 messages.append({
