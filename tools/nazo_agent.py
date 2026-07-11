@@ -47,6 +47,10 @@ class TokenCircuitBreaker:
 BASE_DIR = Path(__file__).resolve().parent.parent
 TOOLS_DIR = Path(__file__).resolve().parent
 
+# モジュールレベルの定数(MAX_ERROR_LOG_LINES等)がos.getenvで.envの値を読み取れるよう、
+# インポート時点で早期に読み込む(main_flow内のload_dotenv呼び出しより前に必要)。
+load_dotenv(BASE_DIR / ".env")
+
 # --- V8.9: 標準loggingによるデーモン用ロガー ---
 # バックグラウンドタスク(フロントエンド起動等)の監視状態を、コンソールへの
 # print()ではなくファイルへ確実に記録する。コンソール用のStreamHandlerは
@@ -628,8 +632,22 @@ async def phase0_ruff_autofix() -> None:
 # LLMへ渡すコンテキスト(エラーログ・ASTマップ等)が肥大化すると、推論の質が落ちる
 # (ハルシネーション)だけでなく無駄なAPI課金も発生する。閾値超過時は推論そのものを
 # ブロックし、タスク分割を促すフェイルセーフ("Stop & Split")として機能する。
-MAX_ERROR_LOG_LINES = 300  # エラーログの許容行数
-MAX_TOTAL_CONTEXT_CHARS = 40000  # プロンプト全体の許容文字数
+# 環境ごとに閾値を調整できるよう、.env/環境変数から上書き可能にする
+# (未設定時はそれぞれ300行・40000文字をデフォルト値とする)。
+MAX_ERROR_LOG_LINES = int(
+    os.getenv("MAX_ERROR_LOG_LINES", "300")
+)  # エラーログの許容行数
+MAX_TOTAL_CONTEXT_CHARS = int(
+    os.getenv("MAX_TOTAL_CONTEXT_CHARS", "40000")
+)  # プロンプト全体の許容文字数
+
+
+class CognitiveLoadExceededError(Exception):
+    """認知負荷(エラーログ行数・プロンプト文字数)が閾値を超過したことを示す例外。
+
+    sys.exit(1)によるプロセス即死ではなく、呼び出し元(main_flow)が捕捉して
+    警告を出力した上でGraceful Shutdown(タスクのスキップ)へ落とし込むために使う。
+    """
 
 
 def check_cognitive_load(
@@ -860,6 +878,15 @@ async def phase2_claude_translation(
     # 全体を落とさず縮退運転(タスク0件として継続)する。
     MAX_SELF_CORRECTION_RETRIES = 3
     messages: list = [{"role": "user", "content": f"【エラーログ】\n{compact_context}"}]
+
+    # Cognitive Load Auditor: API呼び出し直前に、実際に送信するプロンプト全体量を検査する。
+    prompt_ok, prompt_detail = check_cognitive_load(
+        system_prompt + messages[0]["content"], max_chars=MAX_TOTAL_CONTEXT_CHARS
+    )
+    if not prompt_ok:
+        raise CognitiveLoadExceededError(
+            f"プロンプト全体が大きすぎます ({prompt_detail})"
+        )
 
     result_json: dict = {"tasks": [], "summary": ""}
     stop_event = asyncio.Event()
@@ -1135,10 +1162,9 @@ async def phase2_claude_tool_augmented(
         system_prompt + messages[0]["content"], max_chars=MAX_TOTAL_CONTEXT_CHARS
     )
     if not prompt_ok:
-        print(
-            f"\n🚨 Cognitive Overload: プロンプト全体が大きすぎます ({prompt_detail})。タスクを分割（Split）してください。"
+        raise CognitiveLoadExceededError(
+            f"プロンプト全体が大きすぎます ({prompt_detail})"
         )
-        sys.exit(1)
 
     result_json: dict = {}
     stop_event = asyncio.Event()
@@ -1724,32 +1750,14 @@ async def _run_claude_pipeline_and_commit(
             print(f"⚠️ コミット失敗: {e}")
 
 
-async def main_flow(user_instruction: str, engine: str = "ollama"):
-    print(f"\n🔀 [Engine] 選択されたエンジン: {engine}")
+async def _process_target(user_instruction: str, engine: str, log_path: Path) -> None:
+    """エラーログの認知負荷検査からエンジン別のディスパッチ(Claude/Ollama)までを行う。
 
-    # V8.7.1: .envの確実な読み込みとフェイルファスト（鍵の生存確認）
-    load_dotenv(BASE_DIR / ".env")
-    if engine == "claude" and not os.getenv("ANTHROPIC_API_KEY"):
-        print("🚨 致命的エラー: ANTHROPIC_API_KEY が .env に設定されていません。")
-        sys.exit(1)
-
-    global TARGET_APP_DIR, TARGET_CODE_DIR, TARGET_PYTHON
-    TARGET_APP_DIR, TARGET_CODE_DIR, TARGET_PYTHON = _route_target_domain(
-        user_instruction
-    )
-
-    await startup_local_services()
-
-    await phase0_ruff_autofix()
-
-    # --- Pre-flight: 自律修復ループ用の隔離ブランチへ退避(エンジン非依存) ---
-    _ensure_auto_audit_branch()
-
-    # --- 共通前処理: エラーログ抽出 + 認知負荷監視(どちらのエンジンでも必須) ---
-    log_path = await phase1_audit(is_final=False)
-    if not log_path or not log_path.exists():
-        return
-
+    main_flowから抽出しているのは、CognitiveLoadExceededErrorを上位(main_flow)の
+    try/exceptで一括して捕捉し、Graceful Shutdown(タスクのスキップ)へ落とし込める
+    ようにするため(main_flow側で長大なブロックをtry/exceptで再インデントする必要を
+    避け、可読性を保つ)。
+    """
     with open(log_path, "r", encoding="utf-8") as f:
         raw_error_log = f.read()
 
@@ -1758,10 +1766,7 @@ async def main_flow(user_instruction: str, engine: str = "ollama"):
         raw_error_log, max_lines=MAX_ERROR_LOG_LINES
     )
     if not log_ok:
-        print(
-            f"\n🚨 Cognitive Overload: エラー範囲が広すぎます ({log_detail})。タスクを分割（Split）してください。"
-        )
-        sys.exit(1)
+        raise CognitiveLoadExceededError(f"エラー範囲が広すぎます ({log_detail})")
 
     deduped_log = acd_phase1_dedup(raw_error_log)
 
@@ -1895,6 +1900,39 @@ async def main_flow(user_instruction: str, engine: str = "ollama"):
                                 deduped_log,
                                 "fix: Claudeパイプラインへのエスカレーションによる自動修正",
                             )
+
+
+async def main_flow(user_instruction: str, engine: str = "ollama"):
+    print(f"\n🔀 [Engine] 選択されたエンジン: {engine}")
+
+    # V8.7.1: .envの確実な読み込みとフェイルファスト（鍵の生存確認）
+    load_dotenv(BASE_DIR / ".env")
+    if engine == "claude" and not os.getenv("ANTHROPIC_API_KEY"):
+        print("🚨 致命的エラー: ANTHROPIC_API_KEY が .env に設定されていません。")
+        sys.exit(1)
+
+    global TARGET_APP_DIR, TARGET_CODE_DIR, TARGET_PYTHON
+    TARGET_APP_DIR, TARGET_CODE_DIR, TARGET_PYTHON = _route_target_domain(
+        user_instruction
+    )
+
+    await startup_local_services()
+
+    await phase0_ruff_autofix()
+
+    # --- Pre-flight: 自律修復ループ用の隔離ブランチへ退避(エンジン非依存) ---
+    _ensure_auto_audit_branch()
+
+    # --- 共通前処理: エラーログ抽出 + 認知負荷監視(どちらのエンジンでも必須) ---
+    log_path = await phase1_audit(is_final=False)
+    if not log_path or not log_path.exists():
+        return
+
+    try:
+        await _process_target(user_instruction, engine, log_path)
+    except CognitiveLoadExceededError as e:
+        print(f"\n🚨 Cognitive Overload: {e}。タスクを分割（Split）してください。")
+        return
 
     await phase1_audit(is_final=True)
 
