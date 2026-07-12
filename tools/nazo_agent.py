@@ -673,6 +673,33 @@ def check_cognitive_load(
 
 
 # --- Dead Letter Queue (Feature 4.x) ---
+_PII_PATTERNS = [
+    # メールアドレス
+    (re.compile(r"[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+"), "[EMAIL MASKED]"),
+    # クレデンシャル/APIキーの典型パターン(sk-... 形式)
+    (re.compile(r"sk-[a-zA-Z0-9]{20,}"), "[CREDENTIAL MASKED]"),
+    # Bearerトークン
+    (re.compile(r"Bearer\s+[a-zA-Z0-9\-._~+/]+=*"), "[CREDENTIAL MASKED]"),
+    # 電話番号らしき連続した数字パターン(2〜4桁-2〜4桁-4桁)
+    (re.compile(r"\d{2,4}-\d{2,4}-\d{4}"), "[NUMBER MASKED]"),
+]
+
+
+def sanitize_pii(text: str) -> str:
+    """文字列中の機密情報(メールアドレス・APIキー/クレデンシャル・電話番号らしき
+    数字パターン)を正規表現で検知し、[XXX MASKED]形式でマスキングする。
+
+    デッドレター(DLQ)にエラーメッセージや会話履歴をプレーンテキストで保存する際、
+    機密情報がそのまま平文で記録・漏洩することを防ぐための軽量なサニタイズ処理。
+    文字列でない入力は安全に文字列へキャストしてから処理する。
+    """
+    if not isinstance(text, str):
+        text = str(text)
+    for pattern, replacement in _PII_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def _write_dead_letter(
     *,
     target_file: str | None,
@@ -685,6 +712,9 @@ def _write_dead_letter(
     全文脈(システムプロンプト・会話履歴・最終エラー・Claudeの生の応答)を
     tools/audit_reports/dead_letters/ 配下へ構造化JSONとして保存する。
     なぜ自己修正しきれなかったかを事後分析できるようにする可観測性強化。
+
+    書き込み前に sanitize_pii で全文字列値をマスキングし、メールアドレスや
+    APIキー等の機密情報がDLQへ平文で漏洩することを防ぐ(Epic 4 - 追加課題K)。
     """
     dead_letter_dir = TOOLS_DIR / "audit_reports" / "dead_letters"
     dead_letter_dir.mkdir(parents=True, exist_ok=True)
@@ -695,21 +725,33 @@ def _write_dead_letter(
         / f"dead_letter_{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.json"
     )
 
-    def _to_jsonable(obj):
+    def _sanitize_jsonable(obj):
+        """SDKオブジェクト(pydanticモデル等)をJSON化可能な形へ再帰的に変換しつつ、
+        文字列値には sanitize_pii を適用してPIIをマスキングした安全なペイロードを
+        再構築する。
+        """
         if hasattr(obj, "model_dump"):
-            return obj.model_dump()
-        return str(obj)
+            return _sanitize_jsonable(obj.model_dump())
+        if isinstance(obj, dict):
+            return {k: _sanitize_jsonable(v) for k, v in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_sanitize_jsonable(v) for v in obj]
+        if isinstance(obj, str):
+            return sanitize_pii(obj)
+        if obj is None or isinstance(obj, (int, float, bool)):
+            return obj
+        return sanitize_pii(str(obj))
 
     payload = {
         "timestamp": now.isoformat(),
         "target_file": target_file,
-        "system_prompt": system_prompt,
-        "messages": messages,
-        "final_error": final_error,
-        "raw_response": raw_response,
+        "system_prompt": _sanitize_jsonable(system_prompt),
+        "messages": _sanitize_jsonable(messages),
+        "final_error": sanitize_pii(final_error),
+        "raw_response": sanitize_pii(raw_response),
     }
     with open(dead_letter_path, "w", encoding="utf-8") as f:
-        json.dump(payload, f, ensure_ascii=False, indent=2, default=_to_jsonable)
+        json.dump(payload, f, ensure_ascii=False, indent=2)
 
     return dead_letter_path
 
