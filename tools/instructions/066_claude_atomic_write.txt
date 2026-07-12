@@ -1,0 +1,20 @@
+【ミッション: アトミック書き込みによるファイル破壊防止機構の実装 (Epic 1 防弾化 - 追加課題 C)】
+
+Nazo-Agentが自律的にファイルを書き換える際、プロセスの中断やクラッシュ時にソースコードが0バイトになるデータロストを防ぐため、`tools/ast_modifier.py` にアトミック書き込み（Atomic Write）を実装してください。
+
+### Step 1: アトミック書き込みヘルパー関数の実装
+1. `tools/ast_modifier.py` に、以下の仕様を満たす `_atomic_write_text(path: Path, content: str) -> None:` を定義してください。
+   - `tempfile.NamedTemporaryFile` を用い、`path.parent`（対象ファイルと同じディレクトリ）に一時ファイルを作成する（EXDEVエラー回避のため）。
+   - `encoding="utf-8"` で `content` を書き込む。
+   - `f.flush()` と `os.fsync(f.fileno())` を呼び出し、物理ディスクへの書き込みを保証する。
+   - ファイルを閉じた後、`os.replace(tmp_path, path)` でアトミックに元のファイルを上書きする。
+   - 例外発生時には、作成した一時ファイルが確実に削除されるよう `try...finally` ブロック等でクリーンアップ処理を行う。
+
+### Step 2: 既存の書き込み処理の置換
+1. `apply_modification` 関数内で、結果を保存している箇所（現在の `path.write_text(..., encoding="utf-8")` や `with open(...)` など）を、Step 1で作成した `_atomic_write_text` の呼び出しに置き換えてください。
+
+### Step 3: 静的解析とスモークテスト
+1. 修正後、`uv run ruff check --fix tools/ast_modifier.py` と `uv run ruff format tools/ast_modifier.py` を実行してください。
+2. `python -m py_compile tools/ast_modifier.py` で構文エラーがないことを確認してください。
+3. 一時的なダミーファイルとJSON指示書を作成し、置換テストを実施してください。アトミック書き込みが正常に機能すること（対象ファイルが正しく更新され、一時ファイルが残存していないこと）を確認してください。
+4. 修正箇所の差分概要と、スモークテストの完了ログを報告し、テスト用の一時ファイルはすべて削除してください。

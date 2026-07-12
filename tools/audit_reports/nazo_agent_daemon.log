@@ -537,3 +537,207 @@ Applied edit to backend\dummy_benchmark.py
 C:\Users\takes\AppData\Roaming\uv\tools\aider-chat\Lib\site-packages\urllib3\connectionpool.py:1097: InsecureRequestWarning: Unverified HTTPS request is being made to host 'raw.githubusercontent.com'. Adding certificate verification is strongly advised. See: https://urllib3.readthedocs.io/en/latest/advanced-usage.html#tls-warnings
   warnings.warn(
 2026-07-11 08:50:10,024 - INFO - [Frontend] バックグラウンド起動タスクはキャンセルされました。
+2026-07-12 10:07:58,946 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_0' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_0.py' 内で安全に置換しました。
+2026-07-12 10:08:00,628 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_1' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_1.py' 内で安全に置換しました。
+2026-07-12 10:08:02,284 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_2' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_2.py' 内で安全に置換しました。
+2026-07-12 10:08:03,911 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_3' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_3.py' 内で安全に置換しました。
+2026-07-12 10:08:05,592 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_4' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_4.py' 内で安全に置換しました。
+2026-07-12 10:08:07,299 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_5' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_5.py' 内で安全に置換しました。
+2026-07-12 10:08:08,977 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_6' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_6.py' 内で安全に置換しました。
+2026-07-12 10:08:10,630 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_7' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_7.py' 内で安全に置換しました。
+2026-07-12 10:08:12,243 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_8' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_8.py' 内で安全に置換しました。
+2026-07-12 10:08:13,810 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_9' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_9.py' 内で安全に置換しました。
+2026-07-12 10:08:15,506 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_10' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_10.py' 内で安全に置換しました。
+2026-07-12 10:08:17,130 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_11' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_11.py' 内で安全に置換しました。
+2026-07-12 10:08:18,795 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_12' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_12.py' 内で安全に置換しました。
+2026-07-12 10:08:20,441 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_13' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_13.py' 内で安全に置換しました。
+2026-07-12 10:08:22,092 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_14' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_14.py' 内で安全に置換しました。
+2026-07-12 10:08:23,743 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_15' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_15.py' 内で安全に置換しました。
+2026-07-12 10:08:25,384 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_16' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_16.py' 内で安全に置換しました。
+2026-07-12 10:08:27,020 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_17' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_17.py' 内で安全に置換しました。
+2026-07-12 10:08:28,645 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_18' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_18.py' 内で安全に置換しました。
+2026-07-12 10:08:30,273 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_19' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_19.py' 内で安全に置換しました。
+2026-07-12 10:08:31,942 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_20' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_20.py' 内で安全に置換しました。
+2026-07-12 10:08:33,617 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_21' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_21.py' 内で安全に置換しました。
+2026-07-12 10:08:35,286 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_22' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_22.py' 内で安全に置換しました。
+2026-07-12 10:08:36,947 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_23' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_23.py' 内で安全に置換しました。
+2026-07-12 10:08:38,601 - DEBUG - AST Replace Success Output:
+✅ 'target_func_50_24' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_50_24.py' 内で安全に置換しました。
+2026-07-12 10:08:40,285 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_0' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_0.py' 内で安全に置換しました。
+2026-07-12 10:08:41,949 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_1' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_1.py' 内で安全に置換しました。
+2026-07-12 10:08:43,645 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_2' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_2.py' 内で安全に置換しました。
+2026-07-12 10:08:45,295 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_3' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_3.py' 内で安全に置換しました。
+2026-07-12 10:08:46,964 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_4' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_4.py' 内で安全に置換しました。
+2026-07-12 10:08:48,656 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_5' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_5.py' 内で安全に置換しました。
+2026-07-12 10:08:50,364 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_6' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_6.py' 内で安全に置換しました。
+2026-07-12 10:08:52,055 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_7' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_7.py' 内で安全に置換しました。
+2026-07-12 10:08:53,726 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_8' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_8.py' 内で安全に置換しました。
+2026-07-12 10:08:55,392 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_9' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_9.py' 内で安全に置換しました。
+2026-07-12 10:08:57,081 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_10' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_10.py' 内で安全に置換しました。
+2026-07-12 10:08:58,765 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_11' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_11.py' 内で安全に置換しました。
+2026-07-12 10:09:00,409 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_12' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_12.py' 内で安全に置換しました。
+2026-07-12 10:09:02,101 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_13' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_13.py' 内で安全に置換しました。
+2026-07-12 10:09:03,777 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_14' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_14.py' 内で安全に置換しました。
+2026-07-12 10:09:05,473 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_15' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_15.py' 内で安全に置換しました。
+2026-07-12 10:09:07,182 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_16' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_16.py' 内で安全に置換しました。
+2026-07-12 10:09:08,885 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_17' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_17.py' 内で安全に置換しました。
+2026-07-12 10:09:10,578 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_18' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_18.py' 内で安全に置換しました。
+2026-07-12 10:09:12,255 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_19' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_19.py' 内で安全に置換しました。
+2026-07-12 10:09:13,988 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_20' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_20.py' 内で安全に置換しました。
+2026-07-12 10:09:15,672 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_21' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_21.py' 内で安全に置換しました。
+2026-07-12 10:09:17,336 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_22' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_22.py' 内で安全に置換しました。
+2026-07-12 10:09:19,030 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_23' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_23.py' 内で安全に置換しました。
+2026-07-12 10:09:20,715 - DEBUG - AST Replace Success Output:
+✅ 'target_func_500_24' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_500_24.py' 内で安全に置換しました。
+2026-07-12 10:09:22,504 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_0' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_0.py' 内で安全に置換しました。
+2026-07-12 10:09:24,322 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_1' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_1.py' 内で安全に置換しました。
+2026-07-12 10:09:26,082 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_2' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_2.py' 内で安全に置換しました。
+2026-07-12 10:09:27,848 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_3' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_3.py' 内で安全に置換しました。
+2026-07-12 10:09:29,664 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_4' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_4.py' 内で安全に置換しました。
+2026-07-12 10:09:31,446 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_5' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_5.py' 内で安全に置換しました。
+2026-07-12 10:09:33,256 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_6' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_6.py' 内で安全に置換しました。
+2026-07-12 10:09:35,021 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_7' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_7.py' 内で安全に置換しました。
+2026-07-12 10:09:36,784 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_8' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_8.py' 内で安全に置換しました。
+2026-07-12 10:09:38,564 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_9' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_9.py' 内で安全に置換しました。
+2026-07-12 10:09:40,365 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_10' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_10.py' 内で安全に置換しました。
+2026-07-12 10:09:42,180 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_11' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_11.py' 内で安全に置換しました。
+2026-07-12 10:09:43,999 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_12' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_12.py' 内で安全に置換しました。
+2026-07-12 10:09:45,784 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_13' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_13.py' 内で安全に置換しました。
+2026-07-12 10:09:47,535 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_14' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_14.py' 内で安全に置換しました。
+2026-07-12 10:09:49,310 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_15' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_15.py' 内で安全に置換しました。
+2026-07-12 10:09:51,073 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_16' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_16.py' 内で安全に置換しました。
+2026-07-12 10:09:52,790 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_17' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_17.py' 内で安全に置換しました。
+2026-07-12 10:09:54,585 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_18' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_18.py' 内で安全に置換しました。
+2026-07-12 10:09:56,358 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_19' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_19.py' 内で安全に置換しました。
+2026-07-12 10:09:58,122 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_20' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_20.py' 内で安全に置換しました。
+2026-07-12 10:09:59,931 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_21' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_21.py' 内で安全に置換しました。
+2026-07-12 10:10:01,704 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_22' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_22.py' 内で安全に置換しました。
+2026-07-12 10:10:03,489 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_23' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_23.py' 内で安全に置換しました。
+2026-07-12 10:10:05,296 - DEBUG - AST Replace Success Output:
+✅ 'target_func_2000_24' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_2000_24.py' 内で安全に置換しました。
+2026-07-12 10:10:07,248 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_0' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_0.py' 内で安全に置換しました。
+2026-07-12 10:10:09,173 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_1' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_1.py' 内で安全に置換しました。
+2026-07-12 10:10:11,146 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_2' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_2.py' 内で安全に置換しました。
+2026-07-12 10:10:13,149 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_3' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_3.py' 内で安全に置換しました。
+2026-07-12 10:10:15,100 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_4' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_4.py' 内で安全に置換しました。
+2026-07-12 10:10:17,089 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_5' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_5.py' 内で安全に置換しました。
+2026-07-12 10:10:19,016 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_6' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_6.py' 内で安全に置換しました。
+2026-07-12 10:10:21,028 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_7' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_7.py' 内で安全に置換しました。
+2026-07-12 10:10:22,996 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_8' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_8.py' 内で安全に置換しました。
+2026-07-12 10:10:25,014 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_9' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_9.py' 内で安全に置換しました。
+2026-07-12 10:10:27,021 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_10' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_10.py' 内で安全に置換しました。
+2026-07-12 10:10:29,004 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_11' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_11.py' 内で安全に置換しました。
+2026-07-12 10:10:30,955 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_12' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_12.py' 内で安全に置換しました。
+2026-07-12 10:10:32,920 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_13' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_13.py' 内で安全に置換しました。
+2026-07-12 10:10:34,854 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_14' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_14.py' 内で安全に置換しました。
+2026-07-12 10:10:36,835 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_15' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_15.py' 内で安全に置換しました。
+2026-07-12 10:10:38,815 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_16' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_16.py' 内で安全に置換しました。
+2026-07-12 10:10:40,783 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_17' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_17.py' 内で安全に置換しました。
+2026-07-12 10:10:42,765 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_18' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_18.py' 内で安全に置換しました。
+2026-07-12 10:10:44,706 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_19' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_19.py' 内で安全に置換しました。
+2026-07-12 10:10:46,689 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_20' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_20.py' 内で安全に置換しました。
+2026-07-12 10:10:48,644 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_21' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_21.py' 内で安全に置換しました。
+2026-07-12 10:10:50,614 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_22' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_22.py' 内で安全に置換しました。
+2026-07-12 10:10:52,623 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_23' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_23.py' 内で安全に置換しました。
+2026-07-12 10:10:54,591 - DEBUG - AST Replace Success Output:
+✅ 'target_func_5000_24' を 'C:\Users\takes\nazokake_apps\_tmp_stress_targets\stress_5000_24.py' 内で安全に置換しました。
+2026-07-12 10:27:54,530 - DEBUG - AST Replace Success Output:
+✅ 'dummy_target' を 'C:\Users\takes\nazokake_apps\_tmp_guard_control.py' 内で安全に置換しました。
+2026-07-12 18:13:57,325 - DEBUG - AST Replace Success Output:
+✅ 'test_old_behavior' を 'C:\Users\takes\nazokake_apps\apps\evaluator\backend\_smoke_test_dummy.py' 内で安全に置換しました。

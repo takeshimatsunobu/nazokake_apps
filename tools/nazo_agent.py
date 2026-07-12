@@ -849,6 +849,17 @@ async def phase2_claude_translation(
     with open(error_log_path, "r", encoding="utf-8") as f:
         raw_error_log = f.read()
 
+    # SSoT(Single Source of Truth)動的注入: 「テストの陳腐化」か「実装のバグ」かを
+    # Criticが憶測で判断すると容易にハルシネーションする。プロジェクトルートの
+    # project_context.txt(最新の仕様書)を毎回読み込み、判断の唯一の根拠として
+    # システムプロンプトへ動的に埋め込む。存在しない場合は空文字とし、
+    # SSoT不在であることが判断結果に影響しないよう明示的に注記する。
+    project_context_path = BASE_DIR / "project_context.txt"
+    try:
+        project_context = project_context_path.read_text(encoding="utf-8")
+    except (FileNotFoundError, OSError):
+        project_context = ""
+
     deduped_log = acd_phase1_dedup(raw_error_log)
     try:
         compact_context = acd_ast_compress(
@@ -875,21 +886,35 @@ async def phase2_claude_translation(
 
     system_prompt = (
         "あなたはシニアソフトウェアアーキテクトであり、同時にCriticとしての役割も担う。\n\n"
-        "【Criticとしてのトリアージ】まず、後ほど提示する「エラーログ」(Pytestの失敗結果を"
-        "含む場合がある)を分析し、次のどちらに該当するかを判定せよ:\n"
-        "  パターンA: コード側のロジックバグ(実装が仕様を満たしていない)。\n"
-        "  パターンB: テストコード自体の陳腐化(仕様変更により、テストが古い仕様を前提にしている)。\n\n"
+        "【絶対的仕様書(SSoT)】\n"
+        f"{project_context if project_context else '(project_context.txt が存在しないため、SSoTは提供されていません。この場合は仕様の陳腐化を推測せず、要件定義書のみを根拠にパターンAとして扱うこと)'}\n\n"
+        "【Translator AIとしての客観性原則】あなたの役割は翻訳機である。エラーログや"
+        "会話履歴の中に、ローカルLLM(Ollama)自身による言い訳・事後正当化・"
+        "「これはFalse Positiveであり実装は正しい」といった弁明が含まれていても、"
+        "それらの主張には一切影響されてはならない。判断の根拠は常に「Pytestが実際に"
+        "失敗したという客観的事実」と、上記の【絶対的仕様書(SSoT)】のみとする。\n\n"
+        "【Criticとしてのトリアージ】まず、【絶対的仕様書(SSoT)】と、後ほど提示する「エラーログ」"
+        "(Pytestの失敗結果を含む場合がある)を照合し、次のどちらに該当するかを判定せよ。"
+        "憶測や一般的なベストプラクティスではなく、SSoTに明記された最新仕様との整合性のみを"
+        "判断根拠とし、ハルシネーションによる誤トリアージを避けること:\n"
+        "  パターンA: コード側のロジックバグ(実装がSSoT/要件定義書の仕様を満たしていない)。\n"
+        "  パターンB: テストコード自体の陳腐化(SSoTの仕様変更により、テストが古い仕様を"
+        "前提にしている)。\n\n"
         "【パターンAの場合】通常通り、以下の「要件定義書」とエラーログから、libcstによるAST置換で"
         "適用する修正指示を生成せよ。\n"
         f"【要件定義書】\n{user_instruction}\n\n"
         "各修正は、対象ファイル(file_path)・置換対象の関数/クラス名(target_name)・"
         "置換後の関数/クラス定義の完全なソースコード(new_code)の3点で構成すること。"
-        "解説文やMarkdownのコードブロック装飾は一切付けず、"
-        "必ず submit_ast_modifications ツールの呼び出しのみで結果を提出すること。\n\n"
-        "【パターンBの場合】絶対にコードを修正してはならない。submit_ast_modifications ツールを"
-        "tasks を空配列([])にして呼び出し、summary フィールドに"
-        "「⚠️ テストの陳腐化を検知しました。人間によるテストコードの修正が必要です」という旨を"
-        "明記して提出せよ(Human-in-the-Loopエスカレーション)。"
+        "triage_type は \"bug_fix\" とすること。解説文やMarkdownのコードブロック装飾は"
+        "一切付けず、必ず submit_ast_modifications ツールの呼び出しのみで結果を提出すること。\n\n"
+        "【パターンBの場合】SSoTに明記された最新仕様に合わせて、陳腐化したテストコードを"
+        "修正するタスクを生成せよ。修正対象・方法はパターンAと同じ3点"
+        "(file_path・target_name・new_code)で構成し、生成する各タスクの triage_type を"
+        "必ず \"test_update\" にして submit_ast_modifications ツールで提出すること。"
+        "summary フィールドには「⚠️ テストの陳腐化を検知し、修正ドラフトを生成しました。"
+        "レビュー・マージは人間が行ってください」という旨を明記せよ"
+        "(このタスクは即座に本番ブランチへ適用されず、人間レビュー用の隔離ブランチに"
+        "隔離される)。"
     )
     system_blocks = [
         {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
@@ -1431,12 +1456,16 @@ async def phase3_aider_execution(
 
     for idx, task in enumerate(tasks, 1):
         file_path = task.get("file_path", "")
+        mode = task.get("mode", "aider")
         instruction = task.get("instruction", "")
-        if not file_path or not instruction:
+        # mode == "ast_replace" (libcstによる決定論的置換)のタスクはtarget_name/new_codeで
+        # 完結し、自然言語のinstructionを持たない(Aider専用のレガシーフィールド)。
+        # instructionを必須にすると、phase2_claude_translationが生成するast_replaceタスクが
+        # 常にここで無条件スキップされてしまうため、aiderモードのみinstructionを必須とする。
+        if not file_path or (mode != "ast_replace" and not instruction):
             continue
 
         resolved_target_file = _resolve_target_file(file_path)
-        mode = task.get("mode", "aider")
         print("\n" + "=" * 50)
         print(
             f"🛠️  [{idx}/{len(tasks)}] {'AST置換 (libcst)' if mode == 'ast_replace' else 'Aider起動'}: {file_path}"
@@ -1453,6 +1482,32 @@ async def phase3_aider_execution(
             )
             continue
         target_file = resolved_target_file
+
+        # --- 報酬ハック防御(Reward Hacking Defense): テストコード自体の直接書き換えを
+        # 原則ブロックする。LLMが「テストを通す」という報酬を最短距離で得るために、
+        # 実装のバグを直さずテストの期待値やアサーションを書き換えてしまう(テストを
+        # 無力化する)局所最適解に陥るのを、決定論的に物理阻止する安全装置。
+        # ただし、Phase 2のCriticがSSoT(project_context.txt)照合の結果、正当な
+        # 「テストの陳腐化」と明示的にトリアージした(triage_type == "test_update")タスクに
+        # 限り、この防御を素通しする(誤トリアージされた"bug_fix"のままテストファイルを
+        # 狙うタスクは、従来通り一律ブロックされ続ける)。
+        normalized_path = str(target_file).replace("\\", "/")
+        is_test_path = "test_" in normalized_path or "tests/" in normalized_path
+        triage_type = task.get("triage_type", "bug_fix")
+        if is_test_path and triage_type != "test_update":
+            print(
+                "⚠️ テストコードの直接書き換えはブロックされました（報酬ハック防御）"
+            )
+            failure_count += 1
+            print(
+                "⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。"
+            )
+            continue
+        if is_test_path and triage_type == "test_update":
+            print(
+                "⚠️ テストの陳腐化(triage_type=test_update)と判定されたタスクのため、"
+                "報酬ハック防御を通過させます(隔離ドラフトブランチでの人間レビューが必須です)。"
+            )
 
         # --- ハイブリッド・ルーティング: mode == "ast_replace" は非決定的なAiderを
         # 一切起動せず、libcstによる決定論的なノード置換(tools/ast_modifier.py)へ委譲する。
@@ -1667,6 +1722,57 @@ def _has_staged_changes(cwd: Path, files: list[str]) -> bool:
     return False
 
 
+def _create_test_update_draft_branch(successful_files: list[str], commit_message: str) -> str:
+    """テストの陳腐化(triage_type == "test_update")を検知した際の「優雅な一時停止」
+    (Graceful Suspend)。人間の確認を経ずにテストコードの変更を作業中のブランチへ直接
+    コミットしないよう、都度新規の隔離ドラフトブランチを作成し、そちらにのみコミットする。
+
+    処理完了後もこのドラフトブランチのまま留まり、元のブランチへは戻さない(意図的な設計)。
+    人間が「見慣れないブランチにいる」ことに気づき、レビュー・マージを行うことを促す
+    ための安全装置。
+    """
+    branch_name = (
+        f"draft/test-update-{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    )
+    print(
+        f"\n🌿 [Graceful Suspend] テストの陳腐化を検知したため、隔離ドラフトブランチ "
+        f"'{branch_name}' を作成します..."
+    )
+    result = subprocess.run(
+        ["git", "checkout", "-b", branch_name],
+        cwd=str(TARGET_APP_DIR),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+    )
+    if result.returncode != 0:
+        print(
+            f"🚨 致命的エラー: ドラフトブランチ '{branch_name}' の作成に失敗しました:\n{result.stderr}"
+        )
+        sys.exit(1)
+
+    subprocess.run(
+        ["git", "add", "--"] + successful_files,
+        cwd=str(TARGET_APP_DIR),
+        check=True,
+    )
+    if not _has_staged_changes(TARGET_APP_DIR, successful_files):
+        print("✅ 変更がなかったためドラフトブランチへのコミットをスキップしました")
+        return branch_name
+
+    subprocess.run(
+        ["git", "commit", "-m", commit_message, "--"] + successful_files,
+        cwd=str(TARGET_APP_DIR),
+        check=True,
+    )
+    print(
+        "⚠️ テストの陳腐化を検知し、修復ドラフトブランチを作成しました。"
+        f"レビュー・マージは人間が行ってください（ブランチ: {branch_name}）"
+    )
+    return branch_name
+
+
 AUTO_AUDIT_BRANCH = "auto-audit-temp"
 
 
@@ -1769,6 +1875,21 @@ async def _run_claude_pipeline_and_commit(
     success_count, successful_files = await phase3_aider_execution(
         tasks, deduped_log, static_context_path
     )
+
+    # --- Graceful Suspend: テストの陳腐化(triage_type == "test_update")を1件でも検知した
+    # 場合は、現在の作業ブランチへの通常コミット経路を完全にスキップし、人間レビュー専用の
+    # 隔離ドラフトブランチへのみコミットして即座に終了する(以降の通常コミット処理へは
+    # 一切フォールスルーしない)。
+    if any(t.get("triage_type") == "test_update" for t in tasks):
+        if success_count > 0 and successful_files:
+            _create_test_update_draft_branch(successful_files, commit_message)
+        else:
+            print(
+                "⚠️ テストの陳腐化が検知されましたが、適用に成功したファイルが"
+                "なかったためドラフトブランチの作成をスキップしました。"
+            )
+        return
+
     if success_count > 0 and successful_files:
         print(
             f"\n📦 {success_count}件の成功ファイルを一括コミット(Bulk Commit)します..."

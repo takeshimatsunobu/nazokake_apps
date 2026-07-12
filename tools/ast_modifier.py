@@ -24,6 +24,7 @@ import os
 import sys
 import tempfile
 from pathlib import Path
+from typing import Literal
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -41,6 +42,9 @@ class AstModificationInstruction(BaseModel):
     file_path: str = Field(..., description="修正対象ファイルのパス")
     target_name: str = Field(..., description="置換対象の関数名またはクラス名(完全一致)")
     new_code: str = Field(..., description="置換後の関数/クラス定義の完全なソースコード")
+    triage_type: Literal["bug_fix", "test_update"] = Field(
+        default="bug_fix", description="バグ修正か、陳腐化したテストの更新か"
+    )
 
 
 class TargetNodeReplacer(cst.CSTTransformer):
@@ -101,6 +105,9 @@ def _get_top_level_names(code_str: str) -> set[str]:
             names.update(
                 target.id for target in node.targets if isinstance(target, ast.Name)
             )
+        elif isinstance(node, ast.AnnAssign):
+            if isinstance(node.target, ast.Name):
+                names.add(node.target.id)
     return names
 
 

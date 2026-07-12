@@ -1,0 +1,21 @@
+【ミッション: Criticへの仕様コンテキスト動的注入と自動PRドラフト生成 (追加課題 O)】
+Pytestエスカレーション時に、Claude（Critic）が「テストの陳腐化」をハルシネーションなく判断できるよう、SSoTを動的注入し、安全にテスト修復ブランチを切り出して一時停止する機構を tools/nazo_agent.py に実装してください。
+
+Step 1: PydanticスキーマとTool Callingの拡張
+tools/ast_modifier.py の AstModificationInstruction モデル（または submit_ast_modifications ツールの input_schema）に、以下のフィールドを追加してください。
+triage_type: Literal["bug_fix", "test_update"] = Field(default="bug_fix", description="バグ修正か、陳腐化したテストの更新か")
+
+Step 2: SSoTの動的注入とプロンプトの修正
+tools/nazo_agent.py の phase2_claude_translation 内のシステムプロンプト構築部を改修してください。
+・ プロジェクトルートの project_context.txt を読み込むロジックを追加し（存在しない場合は空文字）、システムプロンプト内に「【絶対的仕様書(SSoT)】」として動的に埋め込んでください。
+・ プロンプト内のパターンB（テストの陳腐化）の指示を修正し、「絶対にコードを修正してはならない」という制約を外し、「最新仕様に合わせてテストコードを修正するタスクを生成し、triage_type を "test_update" にして提出せよ」と変更してください。
+
+Step 3: 隔離ブランチの切り出しと安全な中断 (Graceful Suspend)
+tools/nazo_agent.py の _run_claude_pipeline_and_commit 内で、Claudeから返されたタスクリストの triage_type を確認してください。
+・ 1つでも "test_update" が含まれている場合、現在のブランチでのコミット処理をスキップしてください。
+・ 代わりに、git checkout -b draft/test-update-YYYYMMDD_HHMMSS で新しい一時ブランチを作成してください。
+・ そのブランチ上で subprocess.run(["git", "commit", ...]) を行い、「⚠️ テストの陳腐化を検知し、修復ドラフトブランチを作成しました。レビュー・マージは人間が行ってください」と出力して、プロセスを正常終了（return）させてください。
+
+Step 4: 静的解析とスモークテスト
+修正後、uv run ruff check --fix tools/nazo_agent.py tools/ast_modifier.py を実行してください。
+その後、ダミーのテストファイルと古い仕様書を模した project_context.txt を一時作成し、verify_logic_with_pytest 失敗からのエスカレーション経路を叩いて、ドラフトブランチが正しく切り出されることを確認してください。

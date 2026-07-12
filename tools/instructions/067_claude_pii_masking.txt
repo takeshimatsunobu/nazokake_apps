@@ -1,0 +1,31 @@
+【ミッション: デッドレター出力時のPIIマスキング・サニタイズ処理 (Epic 4 防弾化 - 追加課題 K)】
+デッドレター（DLQ）に機密情報がプレーンテキストで記録されるのを防ぐため、tools/nazo_agent.py に軽量なデータサニタイズ（マスキング）処理を実装してください。
+
+Step 1: サニタイズ関数の実装
+tools/nazo_agent.py 内に、文字列中の機密情報を検知してマスキングするヘルパー関数 def sanitize_pii(text: str) -> str: を実装してください。
+・import re を使用し、以下の機密パターンを正規表現で検知して置換すること。
+
+メールアドレス（例: [a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+ を [EMAIL MASKED] に置換）
+
+クレデンシャル/APIキーの典型パターン（例: sk-[a-zA-Z0-9]{20,} や Bearer\s+[a-zA-Z0-9\-._~+/]+=* などを [CREDENTIAL MASKED] に置換）
+
+電話番号の連続した数字パターン（必要に応じて [NUMBER MASKED] に置換）
+・入力が文字列でない場合は、文字列にキャストしてから処理するか、安全にそのまま返すこと。
+
+Step 2: _write_dead_letter への組み込み
+_write_dead_letter 関数の内部で、JSONとしてファイルにダンプする直前に、出力対象のデータに対して sanitize_pii を適用してください。
+・final_error, raw_response などの文字列には直接適用する。
+・system_prompt や messages などのリスト/辞書構造に対しては、再帰的または反復的に文字列値を抽出し、サニタイズを適用した上で安全なペイロードを再構築すること。
+・サニタイズ済みのペイロードのみを json.dump で物理ファイルに書き込むこと。
+
+Step 3: スモークテストとクリーンアップ
+
+隔離環境にダミーのテストスクリプト _tmp_pii_test.py を作成してください。
+
+テストスクリプト内で、ダミーの機密情報（"test.user@example.com", "Bearer sk-dummy1234567890abcdefghij", "090-1234-5678"等）を含むエラー文字列や辞書を作成し、_write_dead_letter を直接呼び出してください。
+
+生成されたデッドレターJSONファイルを確認し、機密情報がすべて [MASKED] 系の文字列に置換され、平文が一切漏洩していないことを確認してください。
+
+修正後の tools/nazo_agent.py に対して uv run ruff check --fix tools/nazo_agent.py を実行し、Linterを通過させてください。
+
+テスト完了後、作成した一時テストスクリプトおよび生成されたデッドレターJSONを削除し、実行結果を報告してください。

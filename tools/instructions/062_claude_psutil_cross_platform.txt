@@ -1,0 +1,16 @@
+【ミッション: OSコマンド依存の廃止とクロスプラットフォーム化 (Epic 1 防弾化)】
+
+Nazo-Agentのファイルから、Windows固有のコマンド（netstat, taskkill）と脆弱な subprocess 呼び出しをパージし、psutil を用いた堅牢でクロスプラットフォームなプロセス管理へリファクタリングしてください。
+
+### Step 1: 依存関係の追加
+1. プロジェクトルートの `requirements_orchestrator.txt` に `psutil` を追加し、`.venv` にインストールしてください。
+
+### Step 2: kill_process_by_port のセキュアなリファクタリング (tools/nazo_agent.py)
+1. `tools/nazo_agent.py` 内の `kill_process_by_port` 関数から、`subprocess.run` による `netstat` と `taskkill` の呼び出しを完全に削除してください。
+2. `psutil.net_connections()` と `psutil.Process(pid)` を用いて、指定されたポートを使用しているプロセスを特定し、終了させるロジックを実装してください（安全のため `terminate()` を呼び出し、タイムアウト後に `kill()` するなどの Gracefulな終了処理を含めること）。
+3. 【最重要要件】OSのセキュリティモデル（権限）の壁を考慮し、必ず `try-except` ブロックを用いて `psutil.AccessDenied`（権限不足）および `psutil.NoSuchProcess`（プロセスが既に存在しない）の例外を捕捉してください。例外発生時はシステムをクラッシュさせず、適切な警告ログ（「権限不足のためプロセスPIDの終了をスキップしました」等）を出力して安全に後続処理へ引き継いでください。
+
+### Step 3: 静的解析と報告
+1. 修正後、`uv run ruff check --fix tools/nazo_agent.py` および `uv run ruff format tools/nazo_agent.py` を実行してください。
+2. `python -m py_compile tools/nazo_agent.py` で構文エラーがないことを確認してください。
+3. 修正された `kill_process_by_port` 関数の差分概要と、静的解析の完了ログを報告してください。

@@ -1,18 +1,23 @@
 【ミッション: 自己修正ループの実装と正規表現フォールバックの撤廃 (Epic 1 防弾化 - 追加課題 H)】
+LLMの推論エラーを正規表現で無理やりパッチを当てるアンチパターンを撤廃し、PydanticのValidationErrorをそのままLLMにフィードバックして再生成させる「自律的リカバリ（Self-Correction）」の仕組みを実装してください。
 
-LLMの型崩れに対して正規表現で無理やりパッチを当てるアンチパターンから脱却し、エラーをLLMにフィードバックして再生成させる「Self-Correction（自己修正）ループ」を実装してください。
+Step 1: tools/ast_modifier.py の正規表現フォールバック撤廃 (Fail-Fast)
+・import re、_CODE_BLOCK_PATTERN、および _extract_python_code 関数をファイルから完全に削除してください。
+・apply_modification 内の ValidationError 発生時の救済ロジック（_extract_python_codeによる再パースの試み）を廃止してください。
+・例外発生時はフェイルファストを原則とし、推測や文字列置換を行わず、エラー内容をそのまま文字列または例外として直ちに返すように修正してください。
 
-### Step 1: 負債のパージ (tools/ast_modifier.py)
-1. tools/ast_modifier.py に残存している正規表現ベースのフォールバック機構（`_extract_python_code` 関数、および `_CODE_BLOCK_PATTERN` 変数）を完全に削除してください。
-2. `apply_modification` 関数内で、`ValidationError` 発生時に行っていた「salvaged辞書を用いた再パースの試み」を削除し、バリデーションエラー発生時は即座にそのエラー内容を文字列として返却（フェイルファスト）するようにコードを純化してください。
+Step 2: tools/nazo_agent.py の自己修正ループと段階的縮退 (Graceful Degradation) の実装
+・phase2_claude_translation 等のLLM呼び出し部において、Pydanticの ValidationError が発生した場合、エラーを握り潰さず、エラーメッセージとスタックトレースを抽出してください。
+・抽出したエラーをClaudeに tool_result (is_error=True) または user メッセージとして投げ返し、「指定されたJSONスキーマに違反しています。エラーを修正し、再出力せよ」と再生成を促すリトライループを構築してください。
+・ループには必ず明確な上限（MAX_SELF_CORRECTION_RETRIES = 3）をハードリミットとして設けてください。
+・上限に達した場合は、それ以上APIを叩くことを物理的に遮断してください。例外でプロセス全体をクラッシュさせるのではなく、タスク0件として安全に縮退運転（Graceful Degradation）に移行し、オーケストレーター（人間）に対して「3回のリトライすべて失敗。縮退運転で終了」等の明確な警告アラートをログ出力してください。
 
-### Step 2: 自己修正ループの実装 (tools/nazo_agent.py)
-1. tools/nazo_agent.py の `phase2_claude_translation` (または `submit_ast_modifications` ツールを処理する該当ループ内) において、Pydanticの `ValidationError` が発生した場合の処理を改修してください。
-2. エラーを握りつぶしてスキップするのではなく、発生した `ValidationError` の内容（エラーメッセージ）を捕捉し、Claude APIの messages 履歴に `tool_result` (is_error=True) または `user` メッセージとして追加してください。
-3. メッセージには「指定されたJSONスキーマに違反しています。以下のエラーを修正し、再度出力してください：\n{エラーの詳細}」という内容を含め、Claudeに再推論を促すループ処理を実装してください。
-4. 無限ループを防ぐため、この自己修正の再試行（リトライ）は最大3回までとし、3回連続で失敗した場合はそのファイルの処理を安全にスキップ（縮退運転）するようにしてください。
+Step 3: スモークテストとクリーンアップ
 
-### Step 3: テスト・報告・クリーンアップ
-1. 実装前後で `uv run ruff check --fix tools/ast_modifier.py tools/nazo_agent.py` を実行し、静的解析エラーがないことを確認してください。
-2. 意図的にスキーマ違反を起こすダミーレスポンスをシミュレートする一時テストスクリプトを作成し、Self-Correctionループが発火して最大リトライ回数で適切に抜ける、あるいは修正される挙動をスモークテストしてください。
-3. 実行結果のログを報告し、テスト用の一時ファイル群を削除してください。
+隔離環境にテスト用スクリプト _tmp_self_correction_test.py を作成してください。
+
+実際のAnthropic APIを用いて、意図的にスキーマ違反（例: new_codeをリストで返す等）を誘発させ、エラーメッセージがフィードバックされて自己修正が行われること、または3回失敗して安全に縮退運転へ移行することを確認してください。
+
+修正後の対象ファイルに対して uv run ruff check --fix tools/ast_modifier.py tools/nazo_agent.py を実行し、Linterを通過させてください。
+
+テスト完了後、作成した一時テストスクリプトを削除し、実行結果のサマリーを報告してください。

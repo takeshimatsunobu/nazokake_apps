@@ -1,0 +1,22 @@
+【ミッション: 前作業のコミット確定と Cognitive Load Auditor の実装 (Epic 2 - Feature 2.1)】
+
+ワーキングツリーに残存している前回の成果（Epic 1: psutilによるOS抽象化）を確実にGitへコミットした上で、Nazo-Agentにトークン爆発と無限課金を物理的に防ぐ「Stop & Split」機構を実装してください。
+
+### Step 1: 前回作業のコミット確定
+1. 現在のワーキングツリーにある `tools/nazo_agent.py` と `requirements_orchestrator.txt` の変更（psutil導入関連）をステージングしてください。
+2. コミットメッセージ `fix(tools): replace netstat/taskkill with psutil for cross-platform process management` でコミットを実行し、環境をクリーンにしてください。
+
+### Step 2: Cognitive Load Auditor の実装 (tools/nazo_agent.py)
+1. `tools/nazo_agent.py` 内に、入力テキストの行数および文字数を計算し、許容範囲内かを判定する `check_cognitive_load(text: str, max_lines: int | None = None, max_chars: int | None = None) -> tuple[bool, str]` 関数を定義してください。
+2. 以下の定数を定義し、ハードリミットとして使用してください。
+   - `MAX_ERROR_LOG_LINES = 300`
+   - `MAX_TOTAL_CONTEXT_CHARS = 40000`
+3. 以下の2箇所にフェイルセーフ（Stop & Split）を組み込んでください。
+   - `phase1_audit` 直後（生エラーログの行数を `MAX_ERROR_LOG_LINES` で検査）。
+   - Claude APIを呼び出す直前（プロンプトに組み込む直前の全文字列の合計を `MAX_TOTAL_CONTEXT_CHARS` で検査）。
+4. 閾値を超過した場合、API呼び出しを行わずに `sys.exit(1)` 等で処理を即時中断し、ターミナルに「🚨 Cognitive Overload: エラー範囲が広すぎます。タスクを分割（Split）してください。」と警告を出力するロジックとしてください。
+
+### Step 3: 静的解析とスモークテスト
+1. 修正後、`uv run ruff check --fix tools/nazo_agent.py` および `python -m py_compile tools/nazo_agent.py` を実行してください。
+2. Pythonのインタプリタ等を用いて、`check_cognitive_load` 関数が閾値超過時に正しく `False` を返すか単体テストを行ってください。
+3. Step 1のコミット完了ログ、実装の差分概要、およびテスト結果を報告してください。今回はこのステップでの自動コミットは不要です（完了確認後にユーザーが判断します）。

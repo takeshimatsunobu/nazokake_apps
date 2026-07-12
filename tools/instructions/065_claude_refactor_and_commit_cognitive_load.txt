@@ -1,0 +1,18 @@
+【ミッション: Cognitive Load Auditor のリファクタリングとコミット確定 (Epic 2 - Feature 2.1)】
+
+現在作業ツリーに残っている Cognitive Load Auditor の実装から「ハードコード」と「sys.exit(1)」のアンチパターンを排除（リファクタリング）し、安全な例外処理に置き換えた上で、Gitにコミットして状態を確定させてください。
+
+### Step 1: 環境変数化とカスタム例外の導入 (tools/nazo_agent.py)
+1. `tools/nazo_agent.py` 内に `class CognitiveLoadExceededError(Exception): pass` を定義してください。
+2. 定数 `MAX_ERROR_LOG_LINES` と `MAX_TOTAL_CONTEXT_CHARS` を、`os.getenv` を用いて `.env` から読み込むように変更してください（環境変数が無い場合のデフォルト値はそれぞれ 300, 40000 とする）。
+3. `phase1_audit` 直後および `phase2_claude_tool_augmented`（または `phase2_claude_translation`）内の `check_cognitive_load` 呼び出し部分を改修し、閾値超過時に `sys.exit(1)` ではなく `raise CognitiveLoadExceededError(...)` を送出するように変更してください。
+4. 上記の例外を該当処理の適切な上位層（`main_flow` のエラーハンドリング部分など）で捕捉し、「🚨 Cognitive Overload: タスクを分割（Split）してください」と警告を出力して、システムをクラッシュさせずに安全に処理を終了・スキップ（Graceful Shutdown）するようにフローを再構築してください。
+
+### Step 2: 静的解析と動作確認
+1. 修正後、`uv run ruff check --fix tools/nazo_agent.py` と `uv run ruff format tools/nazo_agent.py` を実行してください。
+2. `python -m py_compile tools/nazo_agent.py` で構文エラーがないことを確認してください。
+
+### Step 3: コミットの確定
+1. 修正された `tools/nazo_agent.py` のみをステージングしてください。
+2. コミットメッセージ `feat(tools): refactor Cognitive Load Auditor with custom exception and env vars` でコミットを実行し、ワーキングツリーをクリーンにしてください。
+3. リファクタリングの差分概要と、コミットの完了ハッシュを報告してください。

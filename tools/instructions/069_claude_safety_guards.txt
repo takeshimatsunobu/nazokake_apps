@@ -1,0 +1,16 @@
+【ミッション: 報酬ハック防御および Translator AI 実装 (アーキテクチャ統合)】
+Nazo-Agentが局所最適解に陥るのを防ぐため、以下の安全装置を実装してください。
+
+Step 1: テストコード保護（報酬ハック防御）
+tools/nazo_agent.py の phase3_aider_execution を開き、AST置換処理の実行前に以下のチェックを追加してください。
+・target_file のパス（文字列）に "test_" または "tests/" が含まれている場合、そのファイルへの修正適用をブロックし、コンソールに「⚠️ テストコードの直接書き換えはブロックされました（報酬ハック防御）」と警告を出力してスキップ（continue）する。
+
+Step 2: Translator AI (Criticトリアージの強化)
+tools/nazo_agent.py の phase2_claude_translation のシステムプロンプト（Criticトリアージ部分）を以下のように強化してください。
+・Ollamaのエラー（Pytestの失敗）を受け取った際、LLM特有の言い訳や事後正当化（False Positiveの理由付け）に影響されないよう、「純粋にPytestが落ちた事実（コードの実装不備）」のみを抽出し、客観的な修正指示（JSON）へ翻訳するよう明記する。
+
+Step 3: スモークテストとクリーンアップ
+1. 隔離環境にダミーのテストファイル _tmp_guard_test.py を作成し、意図的にこのファイルへの置換を指示するJSON（_tmp_guard_task.json）を作成してください。
+2. tools/nazo_agent.py (phase3_aider_execution 相当) を経由して処理を流し、テストコード保護機構が発動してファイルが上書きされないことを確認してください。
+3. uv run ruff check --fix tools/nazo_agent.py を実行し、Linterを通過させてください。
+4. テスト完了後、一時ファイルを削除し、実行結果を報告してください。
