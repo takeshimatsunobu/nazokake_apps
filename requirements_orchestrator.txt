@@ -12,3 +12,4 @@ pytest
 pytest-testmon
 pytest-xdist
 psutil
+filelock

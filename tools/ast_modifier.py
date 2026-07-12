@@ -31,8 +31,11 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
+import filelock
 import libcst as cst
 from pydantic import BaseModel, Field, ValidationError
+
+FILE_LOCK_TIMEOUT_SEC = 10
 
 
 class AstModificationInstruction(BaseModel):
@@ -120,24 +123,33 @@ def _atomic_write_text(path: Path, content: str) -> None:
     すげ替える。os.replaceはOS側で不可分な操作として保証されるため、書き込み中に
     プロセスが強制終了(OOM等)しても、対象ファイルが空(0バイト)や中途半端な内容の
     まま残ることはない(残るのは書き込み前の旧内容か、書き込み後の新内容のみ)。
+
+    書き込み~すげ替えの一連の操作は `f"{path}.lock"` に対するファイルロック
+    (filelock, タイムアウト付き)で保護し、複数プロセス/スレッドからの同時書き込みを
+    排他制御する。タイムアウト(規定10秒)以内にロックを獲得できない場合は
+    filelock.Timeout がそのまま伝播し、フェイルファストする。
     """
-    dir_name = os.path.dirname(str(path)) or "."
-    tmp = tempfile.NamedTemporaryFile(
-        mode="w", encoding="utf-8", errors="strict", dir=dir_name, delete=False
-    )
-    tmp_path = Path(tmp.name)
-    try:
-        tmp.write(content)
-        tmp.flush()
-        os.fsync(tmp.fileno())
-        tmp.close()
-        if path.exists():
-            shutil.copymode(path, tmp_path)
-        os.replace(tmp_path, path)
-    except Exception:
-        tmp.close()
-        tmp_path.unlink(missing_ok=True)
-        raise
+    lock = filelock.FileLock(f"{path}.lock", timeout=FILE_LOCK_TIMEOUT_SEC)
+    with lock:
+        dir_name = os.path.dirname(str(path)) or "."
+        tmp = tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", errors="strict", dir=dir_name, delete=False
+        )
+        tmp_path = Path(tmp.name)
+        try:
+            tmp.write(content)
+            tmp.flush()
+            os.fsync(tmp.fileno())
+            tmp.close()
+            if path.exists():
+                # copystatはパーミッションに加えmtime/atime等のメタデータも
+                # 一時ファイルへ引き継ぐ(copymodeの上位互換)。
+                shutil.copystat(path, tmp_path)
+            os.replace(tmp_path, path)
+        except Exception:
+            tmp.close()
+            tmp_path.unlink(missing_ok=True)
+            raise
 
 
 def _parse_new_node(new_code: str) -> cst.CSTNode:
