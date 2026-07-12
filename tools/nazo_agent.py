@@ -851,12 +851,12 @@ async def phase2_claude_translation(
 
     # SSoT(Single Source of Truth)動的注入: 「テストの陳腐化」か「実装のバグ」かを
     # Criticが憶測で判断すると容易にハルシネーションする。プロジェクトルートの
-    # project_context.txt(最新の仕様書)を毎回読み込み、判断の唯一の根拠として
+    # SSoT_architecture.md(最新の仕様書)を毎回読み込み、判断の唯一の根拠として
     # システムプロンプトへ動的に埋め込む。存在しない場合は空文字とし、
     # SSoT不在であることが判断結果に影響しないよう明示的に注記する。
-    project_context_path = BASE_DIR / "project_context.txt"
+    project_context_path = BASE_DIR / "SSoT_architecture.md"
     try:
-        project_context = project_context_path.read_text(encoding="utf-8")
+        project_context = project_context_path.read_text(encoding="utf-8", errors="strict")
     except (FileNotFoundError, OSError):
         project_context = ""
 
@@ -887,7 +887,7 @@ async def phase2_claude_translation(
     system_prompt = (
         "あなたはシニアソフトウェアアーキテクトであり、同時にCriticとしての役割も担う。\n\n"
         "【絶対的仕様書(SSoT)】\n"
-        f"{project_context if project_context else '(project_context.txt が存在しないため、SSoTは提供されていません。この場合は仕様の陳腐化を推測せず、要件定義書のみを根拠にパターンAとして扱うこと)'}\n\n"
+        f"{project_context if project_context else '(SSoT_architecture.md が存在しないため、SSoTは提供されていません。この場合は仕様の陳腐化を推測せず、要件定義書のみを根拠にパターンAとして扱うこと)'}\n\n"
         "【Translator AIとしての客観性原則】あなたの役割は翻訳機である。エラーログや"
         "会話履歴の中に、ローカルLLM(Ollama)自身による言い訳・事後正当化・"
         "「これはFalse Positiveであり実装は正しい」といった弁明が含まれていても、"
@@ -1487,7 +1487,7 @@ async def phase3_aider_execution(
         # 原則ブロックする。LLMが「テストを通す」という報酬を最短距離で得るために、
         # 実装のバグを直さずテストの期待値やアサーションを書き換えてしまう(テストを
         # 無力化する)局所最適解に陥るのを、決定論的に物理阻止する安全装置。
-        # ただし、Phase 2のCriticがSSoT(project_context.txt)照合の結果、正当な
+        # ただし、Phase 2のCriticがSSoT(SSoT_architecture.md)照合の結果、正当な
         # 「テストの陳腐化」と明示的にトリアージした(triage_type == "test_update")タスクに
         # 限り、この防御を素通しする(誤トリアージされた"bug_fix"のままテストファイルを
         # 狙うタスクは、従来通り一律ブロックされ続ける)。

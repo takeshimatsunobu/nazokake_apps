@@ -22,6 +22,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode
 
+from tools.ast_modifier import _atomic_write_text
 from tools.pyright_tool import get_type_info as _pyright_get_type_info
 
 MAX_REVISIONS = 3
@@ -161,7 +162,7 @@ def reporter_node(state: AuditState) -> dict:
     print(summary)
 
     if state["current_code"] != state["original_code"]:
-        Path(state["file_path"]).write_text(state["current_code"], encoding="utf-8")
+        _atomic_write_text(Path(state["file_path"]), state["current_code"])
 
     return {"audit_history": [f"[Reporter] {summary}"]}
 

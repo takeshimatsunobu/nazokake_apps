@@ -21,6 +21,7 @@ libcstはコメント・空白・インデント等の具象構文情報を保�
 import ast
 import json
 import os
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -121,13 +122,17 @@ def _atomic_write_text(path: Path, content: str) -> None:
     まま残ることはない(残るのは書き込み前の旧内容か、書き込み後の新内容のみ)。
     """
     dir_name = os.path.dirname(str(path)) or "."
-    tmp = tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=dir_name, delete=False)
+    tmp = tempfile.NamedTemporaryFile(
+        mode="w", encoding="utf-8", errors="strict", dir=dir_name, delete=False
+    )
     tmp_path = Path(tmp.name)
     try:
         tmp.write(content)
         tmp.flush()
         os.fsync(tmp.fileno())
         tmp.close()
+        if path.exists():
+            shutil.copymode(path, tmp_path)
         os.replace(tmp_path, path)
     except Exception:
         tmp.close()
@@ -170,7 +175,7 @@ def apply_modification(instruction: dict) -> str:
     except Exception as e:
         return f"Error: new_codeのパースに失敗しました: {e}"
 
-    source = path.read_text(encoding="utf-8-sig")
+    source = path.read_text(encoding="utf-8-sig", errors="strict")
     try:
         module = cst.parse_module(source)
     except Exception as e:
@@ -238,7 +243,7 @@ def main() -> None:
         print(f"Error: 指示ファイル '{instruction_path}' が見つかりません。")
         sys.exit(1)
 
-    instruction = json.loads(instruction_path.read_text(encoding="utf-8"))
+    instruction = json.loads(instruction_path.read_text(encoding="utf-8", errors="strict"))
     result = apply_modification(instruction)
     print(result)
     if result.startswith("Error:"):
