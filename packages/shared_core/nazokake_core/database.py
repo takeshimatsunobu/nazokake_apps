@@ -119,6 +119,16 @@ class NazokakeItemORM(Base):
     locked_at: Mapped[str | None] = mapped_column(String, nullable=True)
     completed_at: Mapped[str | None] = mapped_column(String, nullable=True)
     result_doc_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # --- Firestoreバックアップ同期(一方向Push)用ブックキーピング ---
+    # updated_at: ローカルでの最終変更時刻。upsert_item()が呼ばれるたびに必ずサーバー側で
+    # 上書きする(呼び出し元が指定した値は無視する)。Firestore側の対応ドキュメントの
+    # updated_at と比較し、ローカルの方が新しい場合のみPushする冪等性判定の基準値。
+    updated_at: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # sync_status: "pending"(未同期) / "synced"(同期済み) / "error"(直近の同期失敗、リトライ対象)。
+    # upsert_item()はローカル内容が変わるたびに必ず"pending"へリセットする
+    # (=同期ワーカーの成功/失敗マーキング以外の経路では常に再同期対象とみなす)。
+    sync_status: Mapped[str] = mapped_column(String, default="pending", index=True)
+    last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
 async def init_db() -> None:
@@ -142,9 +152,18 @@ async def upsert_item(payload: dict[str, Any]) -> None:
 
     payload はNazokakeItemの完全なdumpに限らず、rss_publisher.pyが書き込む
     部分dict(doc_id/odai/status/trend/created_atのみ)も受け付ける。
+
+    updated_at と sync_status は呼び出し元がpayloadに含めていても常にサーバー側で
+    上書きする(=このローカル変更をFirestoreバックアップ同期の対象として必ず
+    "pending" 化する)。同期ワーカー自身の成功/失敗マーキングは mark_synced() /
+    mark_sync_failed() という別経路(このupsert_itemを経由しない)で行う。
     """
     columns = {c.name for c in NazokakeItemORM.__table__.columns}
     row = {k: v for k, v in payload.items() if k in columns}
+    row.pop("updated_at", None)
+    row.pop("sync_status", None)
+    row["updated_at"] = datetime.now(timezone.utc).isoformat()
+    row["sync_status"] = "pending"
     async with get_session() as session:
         async with session.begin():
             existing = await session.get(NazokakeItemORM, row["doc_id"])
@@ -180,7 +199,7 @@ async def claim_pending_trend() -> dict[str, Any] | None:
             result = await session.execute(
                 update(NazokakeItemORM)
                 .where(NazokakeItemORM.doc_id == doc_id, NazokakeItemORM.status == "pending")
-                .values(status="processing", locked_at=now)
+                .values(status="processing", locked_at=now, updated_at=now, sync_status="pending")
                 .returning(NazokakeItemORM)
             )
             row = result.scalar_one_or_none()
@@ -197,7 +216,67 @@ async def mark_trend_completed(doc_id: str, result_doc_ids: list[str]) -> None:
             await session.execute(
                 update(NazokakeItemORM)
                 .where(NazokakeItemORM.doc_id == doc_id)
-                .values(status="completed", completed_at=now, result_doc_ids=result_doc_ids)
+                .values(
+                    status="completed",
+                    completed_at=now,
+                    result_doc_ids=result_doc_ids,
+                    updated_at=now,
+                    sync_status="pending",
+                )
+            )
+
+
+async def get_pending_sync_batch(limit: int = 20) -> list[dict[str, Any]]:
+    """sync_status が "pending" または "error"(リトライ対象) の行を最大limit件、
+    updated_at昇順(古いものから)で読み取る(読み取り専用、行ロックは取得しない)。
+
+    同期ワーカーは単一プロセスとして稼働する前提のため、claim_pending_trend()の
+    ような "processing" 遷移によるロックは行わない。同時に複数の同期ワーカーを
+    走らせる運用は想定していない。
+    """
+    async with get_session() as session:
+        result = await session.execute(
+            select(NazokakeItemORM)
+            .where(NazokakeItemORM.sync_status.in_(["pending", "error"]))
+            .order_by(NazokakeItemORM.updated_at)
+            .limit(limit)
+        )
+        rows = result.scalars().all()
+        return [{c.name: getattr(row, c.name) for c in NazokakeItemORM.__table__.columns} for row in rows]
+
+
+async def mark_synced(doc_id: str, expected_updated_at: str | None) -> None:
+    """Firestoreへの同期に成功した行を "synced" にする。
+
+    WHERE updated_at=expected_updated_at を条件に付けることで、同期処理の実行中に
+    別の書き込みでこの行が更に更新されていた場合は0行更新となり(=このmark_syncedは
+    黎明のsync_statusを取り消さない)、その新しい変更が次回の同期対象として
+    "pending" のまま残る(取りこぼしを防ぐ)。updated_at自体は書き換えない
+    (=このメソッドは「ローカル内容が変わった」という意味のブックキーピングには
+    影響を与えない)。
+    """
+    async with get_session() as session:
+        async with session.begin():
+            await session.execute(
+                update(NazokakeItemORM)
+                .where(NazokakeItemORM.doc_id == doc_id, NazokakeItemORM.updated_at == expected_updated_at)
+                .values(sync_status="synced", last_sync_error=None)
+            )
+
+
+async def mark_sync_failed(doc_id: str, error_message: str) -> None:
+    """Firestoreへの同期に失敗した行を "error" にし、失敗理由を残す(デッドレター)。
+
+    次回の同期ワーカー実行時に get_pending_sync_batch() が sync_status=="error" も
+    拾い上げるため、これは実質的にリトライ待ちキューとして機能する。updated_atは
+    書き換えない(ローカル内容自体は変化していないため)。
+    """
+    async with get_session() as session:
+        async with session.begin():
+            await session.execute(
+                update(NazokakeItemORM)
+                .where(NazokakeItemORM.doc_id == doc_id)
+                .values(sync_status="error", last_sync_error=error_message[:2000])
             )
 
 
@@ -308,6 +387,18 @@ def sync_claim_pending_trend() -> dict[str, Any] | None:
 
 def sync_mark_trend_completed(doc_id: str, result_doc_ids: list[str]) -> None:
     _serialized_writer.submit(lambda: mark_trend_completed(doc_id, result_doc_ids))
+
+
+def sync_get_pending_sync_batch(limit: int = 20) -> list[dict[str, Any]]:
+    return _serialized_writer.submit(lambda: get_pending_sync_batch(limit))
+
+
+def sync_mark_synced(doc_id: str, expected_updated_at: str | None) -> None:
+    _serialized_writer.submit(lambda: mark_synced(doc_id, expected_updated_at))
+
+
+def sync_mark_sync_failed(doc_id: str, error_message: str) -> None:
+    _serialized_writer.submit(lambda: mark_sync_failed(doc_id, error_message))
 
 
 # ------------------------------------------------------------------
