@@ -13,3 +13,4 @@ pytest-testmon
 pytest-xdist
 psutil
 filelock
+tenacity

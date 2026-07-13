@@ -34,6 +34,7 @@ if sys.platform == "win32":
 import filelock
 import libcst as cst
 from pydantic import BaseModel, Field, ValidationError
+from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 FILE_LOCK_TIMEOUT_SEC = 10
 
@@ -115,6 +116,12 @@ def _get_top_level_names(code_str: str) -> set[str]:
     return names
 
 
+@retry(
+    retry=retry_if_exception_type(filelock.Timeout),
+    wait=wait_exponential(multiplier=1, min=1, max=10),
+    stop=stop_after_attempt(5),
+    reraise=True,
+)
 def _atomic_write_text(path: Path, content: str) -> None:
     """対象ファイルを不可分(アトミック)に上書きする。
 
@@ -126,8 +133,10 @@ def _atomic_write_text(path: Path, content: str) -> None:
 
     書き込み~すげ替えの一連の操作は `f"{path}.lock"` に対するファイルロック
     (filelock, タイムアウト付き)で保護し、複数プロセス/スレッドからの同時書き込みを
-    排他制御する。タイムアウト(規定10秒)以内にロックを獲得できない場合は
-    filelock.Timeout がそのまま伝播し、フェイルファストする。
+    排他制御する。タイムアウト(規定10秒)以内にロックを獲得できない場合、
+    複数ワーカーからの一過性の競合を即座のフェイルファストにしないため、
+    tenacityによる指数的バックオフ(1,2,4,8,10秒...最大5回試行)で再試行する。
+    5回試行してもなお獲得できない場合のみ、filelock.Timeout が最終的に伝播する。
     """
     lock = filelock.FileLock(f"{path}.lock", timeout=FILE_LOCK_TIMEOUT_SEC)
     with lock:
