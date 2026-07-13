@@ -944,11 +944,26 @@ async def phase2_claude_translation(
     # 正しい型で再出力させる。最大3回試行し、3回連続で失敗した場合のみ、パイプライン
     # 全体を落とさず縮退運転(タスク0件として継続)する。
     MAX_SELF_CORRECTION_RETRIES = 3
-    messages: list = [{"role": "user", "content": f"【エラーログ】\n{compact_context}"}]
+    # エラーログ(compact_context)は自己修正リトライの全attemptで不変のまま
+    # messages[0]に居座り続けるため、Prompt Cachingの対象として最も効果が高い。
+    # 2回目以降のリトライではこのブロックがキャッシュヒットし、トークン消費を抑える。
+    error_log_text = f"【エラーログ】\n{compact_context}"
+    messages: list = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": error_log_text,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+        }
+    ]
 
     # Cognitive Load Auditor: API呼び出し直前に、実際に送信するプロンプト全体量を検査する。
     prompt_ok, prompt_detail = check_cognitive_load(
-        system_prompt + messages[0]["content"], max_chars=MAX_TOTAL_CONTEXT_CHARS
+        system_prompt + error_log_text, max_chars=MAX_TOTAL_CONTEXT_CHARS
     )
     if not prompt_ok:
         raise CognitiveLoadExceededError(
@@ -1137,6 +1152,11 @@ async def phase2_claude_tool_augmented(
         "必ず get_type_info ツールでPyrightの実診断結果を取得してから判断すること。"
         "調査が完了したら必ず submit_aider_plan ツールで最終結果を提出すること。"
     )
+    # このsystem_promptは MAX_TURNS 回の自律調査ループ全体で不変のまま毎ターン再送される
+    # ため、Prompt Cachingにより2ターン目以降のキャッシュヒットでコストを圧縮する。
+    system_blocks = [
+        {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
+    ]
 
     # Claude API に渡すツール定義(JSON Schema形式)
     investigation_tools = [
@@ -1222,11 +1242,25 @@ async def phase2_claude_tool_augmented(
     }
 
     all_tools = investigation_tools + [submit_tool]
-    messages = [{"role": "user", "content": f"【エラーログ】\n{compact_context}"}]
+    # エラーログ(compact_context)は MAX_TURNS 回の自律調査ループ全体で不変のまま
+    # messages[0]に居座り続けるため、Prompt Cachingの対象として効果が高い。
+    error_log_text = f"【エラーログ】\n{compact_context}"
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": error_log_text,
+                    "cache_control": {"type": "ephemeral"},
+                }
+            ],
+        }
+    ]
 
     # Cognitive Load Auditor: API呼び出し直前に、実際に送信するプロンプト全体量を検査する。
     prompt_ok, prompt_detail = check_cognitive_load(
-        system_prompt + messages[0]["content"], max_chars=MAX_TOTAL_CONTEXT_CHARS
+        system_prompt + error_log_text, max_chars=MAX_TOTAL_CONTEXT_CHARS
     )
     if not prompt_ok:
         raise CognitiveLoadExceededError(
@@ -1246,7 +1280,7 @@ async def phase2_claude_tool_augmented(
             response = await client.messages.create(
                 model="claude-sonnet-5",
                 max_tokens=8192,
-                system=system_prompt,
+                system=system_blocks,
                 messages=messages,
                 tools=all_tools,
                 tool_choice={"type": "tool", "name": "submit_aider_plan"}
