@@ -1100,6 +1100,50 @@ async def phase2_claude_translation(
     return result_json
 
 
+def _build_tree_lines(dir_path: Path, prefix: str, lines: list) -> None:
+    """dir_path直下を除外ルール適用済みで走査し、tree形式の行をlinesへ追記する再帰ヘルパー。"""
+    from tools.extract_source import _is_excluded_dir, _is_excluded_file
+
+    try:
+        entries = sorted(dir_path.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+    except OSError:
+        return
+    entries = [
+        e
+        for e in entries
+        if not (e.is_dir() and _is_excluded_dir(e.name))
+        and not (e.is_file() and _is_excluded_file(e))
+    ]
+    for i, entry in enumerate(entries):
+        is_last = i == len(entries) - 1
+        connector = "└── " if is_last else "├── "
+        lines.append(f"{prefix}{connector}{entry.name}{'/' if entry.is_dir() else ''}")
+        if entry.is_dir():
+            extension = "    " if is_last else "│   "
+            _build_tree_lines(entry, prefix + extension, lines)
+
+
+def generate_directory_tree() -> str:
+    """apps/, packages/, tools/ 配下のディレクトリツリーを文字列として生成する。
+
+    Tree-based Context アーキテクチャ(Epic 1 FinOps)の中核: フルソースコードダンプを
+    Claudeへ送る代わりに、この「地図」だけを渡し、実際に必要なファイルの内容は
+    Claude自身がread_file_section等のツールでOn-demandに取得する構成へ移行する。
+    除外ルール(仮想環境・生成物ディレクトリ、バイナリ拡張子等)は
+    tools/extract_source.py と共通化し、二重管理を避ける。
+    """
+    from tools.extract_source import TARGET_DIRS
+
+    lines: list = []
+    for target in TARGET_DIRS:
+        target_dir = BASE_DIR / target
+        if not target_dir.is_dir():
+            continue
+        lines.append(f"{target}/")
+        _build_tree_lines(target_dir, "", lines)
+    return "\n".join(lines)
+
+
 # --- Phase 2 (Tool-Augmented) ---
 async def phase2_claude_tool_augmented(
     user_instruction: str, error_log_path: Path
@@ -1142,12 +1186,21 @@ async def phase2_claude_tool_augmented(
         api_key=api_key, http_client=http_client, max_retries=0
     )
 
+    # Tree-based Context: フルソースコードを送信する代わりに、ディレクトリ構造(地図)だけを
+    # 渡す。実際に必要なファイルの内容は、以下のsystem_prompt内の指示に従い、Claude自身が
+    # read_file_section等のツールでOn-demandに取得する(Epic 1 FinOps)。
+    directory_tree = generate_directory_tree()
+
     system_prompt = (
         "あなたは冷徹な設計翻訳機であり、シニアソフトウェアアーキテクトです。"
         "以下の「要件定義書」と後ほど提示する「エラーログ」からAiderの修正手順を生成せよ。\n"
         f"【要件定義書】\n{user_instruction}\n\n"
-        "判断に必要な場合は get_symbol_definition / read_file_section ツールで"
-        f"対象領域({TARGET_APP_DIR / TARGET_CODE_DIR})の実コードを実際に確認してから判断すること。"
+        "【プロジェクトのディレクトリツリー（地図）】\n"
+        f"{directory_tree}\n\n"
+        "上記はファイル名・ディレクトリ構造のみであり、各ファイルの内容は一切含まれていない。"
+        "提供されたエラーログとこのディレクトリツリーを確認し、エラー解決に必要なソースコードは"
+        "推測せず、必ず get_symbol_definition / read_file_section ツールを用いて自律的に取得"
+        f"してから判断すること。対象領域は{TARGET_APP_DIR / TARGET_CODE_DIR}を基準とする。"
         "型エラー・型不整合が疑われる場合は、推測で修正案を組み立てず、"
         "必ず get_type_info ツールでPyrightの実診断結果を取得してから判断すること。"
         "調査が完了したら必ず submit_aider_plan ツールで最終結果を提出すること。"
