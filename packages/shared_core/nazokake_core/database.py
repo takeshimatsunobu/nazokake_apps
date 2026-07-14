@@ -24,7 +24,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, TypeVar
 
-from sqlalchemy import JSON, Boolean, Float, String, Text, event, select, update
+from sqlalchemy import JSON, Boolean, Float, String, Text, event, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import NullPool
@@ -119,6 +119,9 @@ class NazokakeItemORM(Base):
     locked_at: Mapped[str | None] = mapped_column(String, nullable=True)
     completed_at: Mapped[str | None] = mapped_column(String, nullable=True)
     result_doc_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    # ユーザー(道場破りフィード)による評価・添削コメントの追記履歴。
+    # {"user_score":..., "user_slug":..., "comment":...} のdictをリストで蓄積する。
+    human_evaluations: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
     # --- Firestoreバックアップ同期(一方向Push)用ブックキーピング ---
     # updated_at: ローカルでの最終変更時刻。upsert_item()が呼ばれるたびに必ずサーバー側で
     # 上書きする(呼び出し元が指定した値は無視する)。Firestore側の対応ドキュメントの
@@ -425,3 +428,77 @@ async def async_get_item(doc_id: str) -> dict[str, Any] | None:
         if row is None:
             return None
         return {c.name: getattr(row, c.name) for c in NazokakeItemORM.__table__.columns}
+
+
+def _row_to_ui_dict(row: NazokakeItemORM) -> dict[str, Any]:
+    """ORM行をUI向けdictへ変換する。
+
+    【絶対制約】クラウドへの同期状態(sync_status/last_sync_error)は描画のブロック
+    条件として一切使わせないため、レスポンスから除外する。
+    """
+    return {
+        c.name: getattr(row, c.name)
+        for c in NazokakeItemORM.__table__.columns
+        if c.name not in ("sync_status", "last_sync_error")
+    }
+
+
+async def async_get_feed_items(
+    limit: int = 5, cursor_random_weight: float | None = None
+) -> list[dict[str, Any]]:
+    """道場破りフィード(案C: 乱数フィールドハック)をrandom_weight降順でシークする。
+
+    カーソル無し(1バッチ目)でヒットが0件の場合のみ、末尾から先頭への巡回シークの
+    フォールバックとして先頭(random_weight最大)から再取得する。
+    """
+    async with get_session() as session:
+        stmt = select(NazokakeItemORM).where(NazokakeItemORM.feed_ready.is_(True))
+        if cursor_random_weight is not None:
+            stmt = stmt.where(NazokakeItemORM.random_weight < cursor_random_weight)
+        stmt = stmt.order_by(NazokakeItemORM.random_weight.desc()).limit(limit)
+        rows = (await session.execute(stmt)).scalars().all()
+        if not rows and cursor_random_weight is not None:
+            fallback_stmt = (
+                select(NazokakeItemORM)
+                .where(NazokakeItemORM.feed_ready.is_(True))
+                .order_by(NazokakeItemORM.random_weight.desc())
+                .limit(limit)
+            )
+            rows = (await session.execute(fallback_stmt)).scalars().all()
+        return [_row_to_ui_dict(row) for row in rows]
+
+
+async def async_get_golden_feed_items(
+    limit: int = 5, cursor_created_at: str | None = None
+) -> list[dict[str, Any]]:
+    """殿堂入り(golden)フィードをcreated_at降順でシークする。"""
+    async with get_session() as session:
+        golden_filter = or_(
+            NazokakeItemORM.gemini_status == "golden",
+            NazokakeItemORM.elyza_status == "golden",
+            NazokakeItemORM.is_golden_data.is_(True),
+        )
+        stmt = select(NazokakeItemORM).where(golden_filter)
+        if cursor_created_at is not None:
+            stmt = stmt.where(NazokakeItemORM.created_at < cursor_created_at)
+        stmt = stmt.order_by(NazokakeItemORM.created_at.desc()).limit(limit)
+        rows = (await session.execute(stmt)).scalars().all()
+        return [_row_to_ui_dict(row) for row in rows]
+
+
+async def async_append_human_evaluation(
+    doc_id: str, evaluation_entry: dict[str, Any], comment_entry: dict[str, Any]
+) -> bool:
+    """対象なぞかけへ、道場破りフィード経由のユーザー評価とコメントを1件追記する。
+
+    対象が存在しない場合はFalseを返す(呼び出し元はこれを404判定に使う)。
+    """
+    async with get_session() as session:
+        async with session.begin():
+            row = await session.get(NazokakeItemORM, doc_id)
+            if row is None:
+                return False
+            entries = list(row.human_evaluations or [])
+            entries.append({**evaluation_entry, **comment_entry})
+            row.human_evaluations = entries
+        return True

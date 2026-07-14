@@ -12,6 +12,10 @@
        (services.generation._OLLAMA_SEMAPHORE)がワーカープロセスごとに別インスタンス化
        されて無意味になり、複数プロセスが同時にVRAMへ殴りかかってOOMを起こすため、
        ユーザーが --workers を渡そうとした場合もエラーとして拒否する。
+    3. 【フロントエンド型同期】 uvicorn起動前に tools/export_openapi.py で openapi.json を
+       再ダンプし、npm run generate-types で apps/evaluator/frontend/api.d.ts を再生成する。
+       これにより起動するたびにフロントエンドのJSDoc型定義がバックエンドの最新契約と
+       同期される(Zombie UI/コントラクト破壊の検知漏れを防ぐ)。
 
 .EXAMPLE
     .\run_api.ps1
@@ -29,6 +33,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ProjectRoot = $PSScriptRoot
 $BackendDir = Join-Path $ProjectRoot "apps\evaluator\backend"
+$FrontendDir = Join-Path $ProjectRoot "apps\evaluator\frontend"
 $VenvDir = Join-Path $ProjectRoot ".venv"
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 
@@ -56,6 +61,28 @@ if (-not (Test-Path $BackendDir)) {
 # 渡そうとした場合は、無視して起動を継続させるのではなく明示的にエラーで拒否する。
 if ($ExtraArgs -and (($ExtraArgs -join " ") -match "(?i)(--workers|-w\b)")) {
     Write-Error "--workers はVRAM保護のため 1 に固定されています。このラッパー経由でのワーカー数指定は許可されていません。"
+    exit 1
+}
+
+# --- 【フロントエンド型同期】 -------------------------------------------------
+$FrontendNodeModules = Join-Path $FrontendDir "node_modules"
+
+if (-not (Test-Path $FrontendNodeModules)) {
+    Write-Error "フロントエンドの依存パッケージが未インストールです。'$FrontendDir' で 'npm install' を実行してから再試行してください。"
+    exit 1
+}
+
+Write-Host "🔄 OpenAPIスキーマをダンプ中..."
+& $VenvPython (Join-Path $ProjectRoot "tools\export_openapi.py")
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "OpenAPIスキーマのダンプに失敗しました(tools\export_openapi.py が非0で終了)。"
+    exit 1
+}
+
+Write-Host "🔄 フロントエンドの型定義(api.d.ts)を再生成中..."
+npm --prefix $FrontendDir run generate-types
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "フロントエンドの型定義生成に失敗しました(npm run generate-types が非0で終了)。"
     exit 1
 }
 
