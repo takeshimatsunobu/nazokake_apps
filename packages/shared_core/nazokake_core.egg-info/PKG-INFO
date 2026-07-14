@@ -1,5 +1,0 @@
-Metadata-Version: 2.4
-Name: nazokake-core
-Version: 0.1.0
-Summary: Nazokake Apps Shared Core Domain
-Requires-Dist: pydantic>=2.0.0

@@ -1,9 +1,0 @@
-{
-  "tasks": [
-    {
-      "file_path": "apps/evaluator/backend/dummy_benchmark.py",
-      "instruction": "calculate_score関数の戻り値の型不整合(pyright reportReturnType)を修正する。現状 `base: int` と `multiplier: float` の乗算結果は float になるにもかかわらず、関数シグネチャの戻り値型が `-> int` と宣言されているため矛盾している。実装(掛け算処理)は変更せず、関数シグネチャを `def calculate_score(base: int, multiplier: float) -> float:` に修正し、戻り値の型注釈を実際の計算結果の型(float)に合わせること。あわせて行2にある古いコメント `# floatを返すが、型ヒントはintになっている` は修正内容と矛盾するため削除する。他の関数(badly_formatted)には現時点でRuff/Pyrightエラーが検出されていないため変更しないこと。"
-    }
-  ],
-  "summary": "apps/evaluator/backend/dummy_benchmark.py の calculate_score関数において、pyrightが検出した戻り値型不整合(base:int * multiplier:float = float だが戻り値注釈が int)を、戻り値注釈をfloatに修正することで解消する。該当箇所の矛盾コメントも削除する。同ファイル内の badly_formatted 関数には検出されたRuff/Pyrightエラーが無いため修正対象外とする。\""
-}

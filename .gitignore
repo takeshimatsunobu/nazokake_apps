@@ -6,3 +6,34 @@
 # tracked independently on disk, deliberately excluded from this superproject's index.
 /apps/evaluator/
 /apps/batch_factory/
+
+# --- Git運用ガードレール(誤コミット事故防止) ---
+
+# 仮想環境
+.venv/
+.venv_ai/
+.venv_train/
+
+# SQLite本体およびWAL/SHMサイドカーファイル
+*.db
+*.db-wal
+*.db-shm
+*-wal
+*-shm
+
+# Nazo-Agentの出力物(デッドレター・監査ログ等、再生成可能な成果物)
+tools/audit_reports/
+
+# 一時ファイル・スモークテストの残骸
+_tmp*
+
+# 標準的な除外対象
+__pycache__/
+*.pyc
+*.log
+
+# パッケージビルド生成物
+*.egg-info/
+
+# 巨大な全コードダンプファイル
+all_source_code.txt
