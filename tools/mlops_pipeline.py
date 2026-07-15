@@ -7,11 +7,16 @@ MLOps完全自動パイプライン(Epic 3)。
   1. Pre-flight GPU Cleanup: nvidia-smiでVRAMを占有中のPIDを取得し、自身以外の
      不要なPythonプロセスをtaskkillで強制終了する。
   2. データ抽出: tools/extract_dataset.py をサブプロセスで実行する。
-  3. 学習: tools/train_unsloth.py を、自身のPIDを--ppidとして渡してサブプロセスで
-     実行する(Child Suicide機構による異常終了時のVRAM解放を成立させるため)。
+  3. 学習: tools/train_unsloth.py をサブプロセスで実行する。
   4. 自動評価(定量ゲート): tools/benchmark/run_benchmark.py を実行してメトリクスJSONを
      取得し、Success Rate Delta>=0 かつ Code Complexity増加率<10% を満たした場合のみ
      「学習成功およびデプロイ承認」として正常終了する。
+
+データ抽出/学習/自動評価の各サブプロセスは tools/process_manager.py 経由で起動する。
+以前は各スクリプト側が--ppidを受け取りポーリングで親の死活を監視して自爆する
+「Child Suicide」機構を持っていたが、検知遅延や実装の不確実性があったため廃止した。
+プロセスツリー(サブプロセスとその子孫)のアトミックな破棄は、このオーケストレーター側が
+OSネイティブな機構(POSIXのプロセスグループ/WindowsのJob Object)で保証する。
 
 いずれかのステップが失敗した時点で即座にパイプライン全体を異常終了させる
 フェイルファスト構成。
@@ -27,6 +32,8 @@ from pathlib import Path
 from statistics import mean
 
 import psutil
+
+import process_manager
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -120,31 +127,33 @@ def preflight_gpu_cleanup() -> list[int]:
 
 
 def run_step(step_name: str, cmd: list[str]) -> None:
-    """1ステップをBASE_DIR起点で同期実行する。失敗時は即座にsys.exit(1)する。"""
+    """1ステップをBASE_DIR起点で同期実行する。失敗時は即座にsys.exit(1)する。
+
+    tools/process_manager.ManagedProcess経由で起動することで、このステップ自身が
+    正常終了した後でも、その子孫プロセスに生き残りが無いことをOSネイティブな
+    機構(POSIXのプロセスグループ/WindowsのJob Object)で保証する(VRAMリークの
+    原因となるゾンビ子孫プロセスの排除)。
+
+    このcmdは"uv run python tools/..."であり、呼び出し先のPythonスクリプト自身が
+    sys.stdout.reconfigure(encoding="utf-8")で出力エンコーディングをUTF-8に固定して
+    いる(ネイティブWindowsコマンドではない)ため、encoding="utf-8"で受け取る。
+    errors="strict"により、想定外のバイト列が万一混入した場合は即座に例外として
+    検出する(errors="replace"による文字化けのサイレント黒箱化は行わない)。
+    """
     print(f"\n🔍 [Step] {step_name} を実行します... ({' '.join(cmd)})")
-    # このcmdは"uv run python tools/..."であり、呼び出し先のPythonスクリプト自身が
-    # sys.stdout.reconfigure(encoding="utf-8")で出力エンコーディングをUTF-8に固定して
-    # いる(ネイティブWindowsコマンドではない)ため、encoding="utf-8"で受け取る。
-    # errors="strict"により、想定外のバイト列が万一混入した場合は即座に例外として
-    # 検出する(errors="replace"による文字化けのサイレント黒箱化は行わない)。
-    result = subprocess.run(
-        cmd,
-        cwd=str(BASE_DIR),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-    )
+    with process_manager.ManagedProcess(cmd, cwd=str(BASE_DIR)) as proc:
+        stdout, stderr = proc.communicate()
+        returncode = proc.returncode
 
-    if result.stdout:
-        print(result.stdout, end="")
-    if result.stderr:
-        print(result.stderr, end="")
+    if stdout:
+        print(stdout, end="")
+    if stderr:
+        print(stderr, end="")
 
-    if result.returncode != 0:
+    if returncode != 0:
         print(
             f"🚨 [Fail-Fast] {step_name} が異常終了しました "
-            f"(code={result.returncode})。パイプラインを停止します。"
+            f"(code={returncode})。パイプラインを停止します。"
         )
         sys.exit(1)
 
@@ -242,8 +251,8 @@ def main() -> int:
     )
 
     run_step(
-        "学習(Child Suicide機構つき)",
-        ["uv", "run", "python", "tools/train_unsloth.py", "--ppid", str(os.getpid())],
+        "学習",
+        ["uv", "run", "python", "tools/train_unsloth.py"],
     )
 
     run_step(
