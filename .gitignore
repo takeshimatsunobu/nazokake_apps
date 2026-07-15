@@ -27,6 +27,9 @@ tools/audit_reports/
 # ベンチマークハーネスの生成物(メトリクスJSON等、再生成可能な成果物)
 tools/benchmark/reports/
 
+# safe_reset_infra.pyの一時バックアップ(異常終了時の残骸を誤コミットしないためのガード)
+data/db_backup_temp.json
+
 # 一時ファイル・スモークテストの残骸
 _tmp*
 
