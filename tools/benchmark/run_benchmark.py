@@ -14,17 +14,9 @@ apply_node/gemma_fallback_node/reporter_node を含まない推論専用の小�
 ここに構築する(agent_graph.py自体は無改変)。
 """
 
-import json
-import os
-
-# OLLAMA_HOSTがサーバーのbindアドレス(例: 0.0.0.0)のまま環境変数に残っている場合、
-# ChatOllamaがこれを接続先として継承してしまい接続に失敗する。ベンチマーク実行中は
-# 常にlocalhostのOllamaサーバーへ接続する(このプロセス内のみの上書きで、システム全体の
-# 環境変数は変更しない)。
-os.environ["OLLAMA_HOST"] = "127.0.0.1:11434"
-
 import argparse
 import ast
+import json
 import subprocess
 import sys
 import tempfile
@@ -42,6 +34,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+# tools.config が起動時にOLLAMA_HOST等をFail-Fast検証し、os.environへ正規化済みの値を
+# 反映する(以前この場所にあった無検証のos.environ["OLLAMA_HOST"]=...という
+# ハードコードされたワークアラウンドは廃止し、この一元化された設定モジュールに委ねる)。
+# ChatOllamaを構築する`tools.agent_graph`より必ず先にimportする必要がある。
+from tools import config  # noqa: E402, F401
 from langgraph.graph import END, StateGraph  # noqa: E402
 
 from tools import agent_graph  # noqa: E402
