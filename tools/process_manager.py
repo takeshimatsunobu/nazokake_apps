@@ -90,7 +90,7 @@ class ManagedProcess:
     def _start_posix(self) -> None:
         """新しいプロセスグループのリーダーとして起動する(POSIX)。"""
         self.popen = subprocess.Popen(
-            self.cmd, preexec_fn=os.setsid, **self._popen_kwargs()
+            self.cmd, preexec_fn=_setsid_or_reuse_existing_pgid, **self._popen_kwargs()
         )
 
     def _start_windows(self) -> None:
@@ -198,6 +198,20 @@ class ManagedProcess:
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.terminate_tree()
+
+
+def _setsid_or_reuse_existing_pgid() -> None:
+    """fork直後の子プロセス側(preexec_fn)でos.setsid()を試みる。
+
+    呼び出し元のプロセスが既にプロセスグループリーダーである場合、POSIXの仕様上
+    setsid()はPermissionError(EPERM)を送出する。この場合、新しいセッション/グループを
+    わざわざ作る必要は無い(既に自分自身がグループリーダーであり、そのPGID=自身のPIDを
+    そのまま利用できる)ため、例外を安全に握って処理を継続する(クラッシュさせない)。
+    """
+    try:
+        os.setsid()
+    except PermissionError:
+        pass  # 既にプロセスグループリーダー: 既存のPGID(=自身のPID)を再利用する
 
 
 def _kill_process_tree_with_psutil(pid: int) -> None:

@@ -25,6 +25,7 @@ OSネイティブな機構(POSIXのプロセスグループ/WindowsのJob Object
 from __future__ import annotations
 
 import json
+import locale
 import os
 import subprocess
 import sys
@@ -52,18 +53,40 @@ UNWANTED_PROCESS_NAME_KEYWORDS = ("python", "uvicorn")
 MAX_COMPLEXITY_GROWTH_RATE = 0.10  # 10%
 
 
+def _decode_native_output(data: bytes) -> str:
+    """ネイティブコマンドの出力バイト列を安全にデコードする。
+
+    まずUTF-8(errors="strict")でのデコードを試みる(run_native_command()が
+    PYTHONIOENCODING=utf-8を子プロセスへプロアクティブに要求しているため、多くの
+    場合はこれで成功する)。UTF-8として不正なバイト列だった場合のみ、
+    locale.getpreferredencoding(False)(システムの現在のロケール設定)を用いた
+    動的フォールバックデコードへ切り替える。特定のコードページ(例: "mbcs")を
+    ハードコードしないことで、実行環境のロケールに関わらず追従できる。
+    """
+    try:
+        return data.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        fallback_encoding = locale.getpreferredencoding(False)
+        return data.decode(fallback_encoding, errors="strict")
+
+
 def run_native_command(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
     """Windowsネイティブコマンド(nvidia-smi, taskkill等)との境界防衛
     (Anti-Corruption Layer)。
 
-    ネイティブコマンドの出力はPythonプロセス側のUTF-8とは異なり、OSのANSI/OEM
-    コードページ(このマシンではcp932)でエンコードされている。encoding="mbcs"
-    (Windowsのシステムコードページに対応するPython標準コーデック名)で
-    errors="strict"にデコードすることで、想定外のバイト列を無検証にerrors="replace"で
-    握り潰す(文字化けを黒箱化するサイレント破損)のではなく、直ちに例外として検出する。
+    子プロセスの環境変数にPYTHONIOENCODING=utf-8を強制し、UTF-8出力をプロアクティブに
+    要求する(ネイティブコマンド自体はPython製ではないため必ずしも従うわけではないが、
+    Python製の子プロセスやラッパー経由で呼ばれる場合に効く)。出力はバイト列のまま
+    受け取り、_decode_native_output()の「UTF-8優先・失敗時のみロケールへ動的フォール
+    バック」というデコード戦略に委ねる(特定のコードページのハードコードを排除する)。
     """
-    return subprocess.run(
-        cmd, capture_output=True, text=True, encoding="mbcs", errors="strict", **kwargs
+    env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+    result = subprocess.run(cmd, capture_output=True, env=env, **kwargs)
+    return subprocess.CompletedProcess(
+        args=result.args,
+        returncode=result.returncode,
+        stdout=_decode_native_output(result.stdout) if result.stdout else "",
+        stderr=_decode_native_output(result.stderr) if result.stderr else "",
     )
 
 
