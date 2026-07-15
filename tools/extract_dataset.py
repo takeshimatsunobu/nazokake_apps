@@ -17,8 +17,6 @@ JSONL書き出し、の順に処理する。
 from __future__ import annotations
 
 import asyncio
-import difflib
-import hashlib
 import itertools
 import json
 import re
@@ -27,6 +25,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from statistics import mean
 
+from datasketch import MinHash, MinHashLSH
 from sqlalchemy import or_, select
 
 from nazokake_core.database import NazokakeItemORM, ensure_db_ready, get_session
@@ -44,8 +43,16 @@ REJECTED_SCORE_MAX = 2.0
 # 同一お題(odai)あたりのDPOペア生成数の上限(組み合わせ爆発とノイズの多重抽出を防ぐ)。
 MAX_PAIRS_PER_ODAI = 5
 
-# difflib.SequenceMatcher.ratio()がこの値以上なら「実質的に同一パターンの重複」とみなす。
-SIMILARITY_THRESHOLD = 0.92
+# 文字ベースn-gramのサイズ(MinHashに渡す特徴集合の粒度)。
+NGRAM_SIZE = 3
+# MinHashの精度(permutation数)。大きいほどJaccard類似度の推定精度が上がるが計算コストも増える。
+MINHASH_NUM_PERM = 128
+# MinHashLSHの類似度閾値(Jaccard近似)。この値以上なら「実質的に同一パターンの重複」とみなす。
+LSH_SIMILARITY_THRESHOLD = 0.87
+
+# n-gram生成前に除去する対象(空白・記号)。\wはUnicode文字(漢字・かな含む)にマッチするため、
+# 意味のある文字だけを残して軽量な特徴集合を作れる。
+_NON_TOKEN_CHARS = re.compile(r"[\s\W]+")
 
 
 @dataclass
@@ -184,70 +191,66 @@ def build_dpo_pairs(chosen: list[Candidate], rejected: list[Candidate]) -> list[
     return pairs
 
 
-def _normalize(text: str) -> str:
-    return " ".join(text.split()).lower()
+def _ngram_tokens(text: str, n: int = NGRAM_SIZE) -> set[str]:
+    """テキストから空白・記号を除去し、文字ベースのn-gram集合を生成する軽量トークナイザー。
+
+    difflib.SequenceMatcherによる逐次比較(O(N^2))を避け、MinHash/LSHへ渡すための
+    軽量な特徴集合(Set)を作ることが目的。
+    """
+    cleaned = _NON_TOKEN_CHARS.sub("", text.lower())
+    if not cleaned:
+        return set()
+    if len(cleaned) < n:
+        return {cleaned}
+    return {cleaned[i : i + n] for i in range(len(cleaned) - n + 1)}
+
+
+def _build_minhash(tokens: set[str]) -> MinHash:
+    """n-gramトークン集合からMinHashシグネチャを計算する。"""
+    m = MinHash(num_perm=MINHASH_NUM_PERM)
+    for token in tokens:
+        m.update(token.encode("utf-8"))
+    return m
+
+
+def _dedupe_by_minhash_lsh(records: list[dict], text_key: str) -> list[dict]:
+    """同一prompt内で、text_key(SFTならcompletion、DPOならchosen)の内容がMinHash/LSHにより
+    類似(衝突)すると判定されたレコードを除外する。
+
+    プロンプトごとに独立したMinHashLSHインデックスを持つ(異なるお題の回答同士を誤って
+    重複判定しないため)。抽出済みレコードを1件ずつLSHへクエリし、類似するものが既に
+    無ければインデックスへ追加して出力対象とする(datasketchのバンディング法により
+    クエリ・挿入とも近似O(1)であり、difflib.SequenceMatcherの総当たり比較のような
+    O(N^2)の計算爆発を起こさない)。
+    """
+    lsh_by_prompt: dict[str, MinHashLSH] = {}
+    kept: list[dict] = []
+
+    for idx, rec in enumerate(records):
+        prompt = rec["prompt"]
+        lsh = lsh_by_prompt.setdefault(
+            prompt,
+            MinHashLSH(threshold=LSH_SIMILARITY_THRESHOLD, num_perm=MINHASH_NUM_PERM),
+        )
+
+        minhash = _build_minhash(_ngram_tokens(rec[text_key]))
+        if lsh.query(minhash):
+            continue  # 類似(衝突)する既存レコードが見つかったため重複として除外
+
+        lsh.insert(f"{prompt}::{idx}", minhash)
+        kept.append(rec)
+
+    return kept
 
 
 def dedupe_sft(records: list[dict]) -> list[dict]:
-    """完全一致(prompt+completionのハッシュ)、および同一prompt内での類似度重複を除外する。"""
-    seen_hashes: set[str] = set()
-    kept_completions_by_prompt: dict[str, list[str]] = {}
-    kept: list[dict] = []
-
-    for rec in records:
-        normalized_prompt = _normalize(rec["prompt"])
-        normalized_completion = _normalize(rec["completion"])
-        key = hashlib.sha256(
-            f"{normalized_prompt}\0{normalized_completion}".encode("utf-8")
-        ).hexdigest()
-        if key in seen_hashes:
-            continue
-
-        existing = kept_completions_by_prompt.get(rec["prompt"], [])
-        if any(
-            difflib.SequenceMatcher(None, normalized_completion, other).ratio()
-            >= SIMILARITY_THRESHOLD
-            for other in existing
-        ):
-            continue
-
-        seen_hashes.add(key)
-        kept_completions_by_prompt.setdefault(rec["prompt"], []).append(
-            normalized_completion
-        )
-        kept.append(rec)
-    return kept
+    """同一prompt内でcompletionがMinHash/LSHにより類似判定される重複を除外する。"""
+    return _dedupe_by_minhash_lsh(records, "completion")
 
 
 def dedupe_dpo(records: list[dict]) -> list[dict]:
-    """完全一致(prompt+chosen+rejectedのハッシュ)、および同一prompt内でのchosenの
-    類似度重複(同じパターンの多重抽出)を除外する。
-    """
-    seen_hashes: set[str] = set()
-    kept_chosen_by_prompt: dict[str, list[str]] = {}
-    kept: list[dict] = []
-
-    for rec in records:
-        normalized_fields = [
-            _normalize(rec[k]) for k in ("prompt", "chosen", "rejected")
-        ]
-        key = hashlib.sha256("\0".join(normalized_fields).encode("utf-8")).hexdigest()
-        if key in seen_hashes:
-            continue
-
-        normalized_chosen = _normalize(rec["chosen"])
-        existing = kept_chosen_by_prompt.get(rec["prompt"], [])
-        if any(
-            difflib.SequenceMatcher(None, normalized_chosen, other).ratio()
-            >= SIMILARITY_THRESHOLD
-            for other in existing
-        ):
-            continue
-
-        seen_hashes.add(key)
-        kept_chosen_by_prompt.setdefault(rec["prompt"], []).append(normalized_chosen)
-        kept.append(rec)
-    return kept
+    """同一prompt内でchosenがMinHash/LSHにより類似判定される重複を除外する。"""
+    return _dedupe_by_minhash_lsh(records, "chosen")
 
 
 # tools/nazo_agent.py の sanitize_pii() と同系統(メール/クレデンシャル/Bearerトークン/

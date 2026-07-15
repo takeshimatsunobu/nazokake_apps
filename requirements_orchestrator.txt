@@ -15,4 +15,5 @@ pytest-xdist
 psutil
 filelock
 tenacity
+datasketch
 pre-commit
