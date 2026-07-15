@@ -618,9 +618,9 @@ async def phase0_ruff_autofix() -> None:
             )
             stdout, stderr = await process.communicate()
             output = (
-                stdout.decode("utf-8", errors="replace")
+                stdout.decode("utf-8", errors="strict")
                 + "\n"
-                + stderr.decode("utf-8", errors="replace")
+                + stderr.decode("utf-8", errors="strict")
             ).strip()
             if output:
                 logger.debug(f"[Phase 0 / Ruff Autofix] {' '.join(cmd)}:\n{output}")
@@ -783,9 +783,9 @@ async def run_linter(tool_name: str) -> str:
             process.kill()
             return f"### ツール: {tool_name.upper()} (🚨 タイムアウト)\n```text\nプロセスがハングアップしました。\n```\n"
         output = (
-            stdout.decode("utf-8", errors="replace")
+            stdout.decode("utf-8", errors="strict")
             + "\n"
-            + stderr.decode("utf-8", errors="replace")
+            + stderr.decode("utf-8", errors="strict")
         ).strip()
         if not output:
             output = "出力なし"
@@ -856,7 +856,9 @@ async def phase2_claude_translation(
     # SSoT不在であることが判断結果に影響しないよう明示的に注記する。
     project_context_path = BASE_DIR / "SSoT_architecture.md"
     try:
-        project_context = project_context_path.read_text(encoding="utf-8", errors="strict")
+        project_context = project_context_path.read_text(
+            encoding="utf-8", errors="strict"
+        )
     except (FileNotFoundError, OSError):
         project_context = ""
 
@@ -905,12 +907,12 @@ async def phase2_claude_translation(
         f"【要件定義書】\n{user_instruction}\n\n"
         "各修正は、対象ファイル(file_path)・置換対象の関数/クラス名(target_name)・"
         "置換後の関数/クラス定義の完全なソースコード(new_code)の3点で構成すること。"
-        "triage_type は \"bug_fix\" とすること。解説文やMarkdownのコードブロック装飾は"
+        'triage_type は "bug_fix" とすること。解説文やMarkdownのコードブロック装飾は'
         "一切付けず、必ず submit_ast_modifications ツールの呼び出しのみで結果を提出すること。\n\n"
         "【パターンBの場合】SSoTに明記された最新仕様に合わせて、陳腐化したテストコードを"
         "修正するタスクを生成せよ。修正対象・方法はパターンAと同じ3点"
         "(file_path・target_name・new_code)で構成し、生成する各タスクの triage_type を"
-        "必ず \"test_update\" にして submit_ast_modifications ツールで提出すること。"
+        '必ず "test_update" にして submit_ast_modifications ツールで提出すること。'
         "summary フィールドには「⚠️ テストの陳腐化を検知し、修正ドラフトを生成しました。"
         "レビュー・マージは人間が行ってください」という旨を明記せよ"
         "(このタスクは即座に本番ブランチへ適用されず、人間レビュー用の隔離ブランチに"
@@ -1105,7 +1107,9 @@ def _build_tree_lines(dir_path: Path, prefix: str, lines: list) -> None:
     from tools.extract_source import _is_excluded_dir, _is_excluded_file
 
     try:
-        entries = sorted(dir_path.iterdir(), key=lambda p: (p.is_file(), p.name.lower()))
+        entries = sorted(
+            dir_path.iterdir(), key=lambda p: (p.is_file(), p.name.lower())
+        )
     except OSError:
         return
     entries = [
@@ -1582,9 +1586,7 @@ async def phase3_aider_execution(
         is_test_path = "test_" in normalized_path or "tests/" in normalized_path
         triage_type = task.get("triage_type", "bug_fix")
         if is_test_path and triage_type != "test_update":
-            print(
-                "⚠️ テストコードの直接書き換えはブロックされました（報酬ハック防御）"
-            )
+            print("⚠️ テストコードの直接書き換えはブロックされました（報酬ハック防御）")
             failure_count += 1
             print(
                 "⚠️ 部分的障害: このファイルの修正をスキップし、後続のタスクを継続します (縮退運転)。"
@@ -1725,9 +1727,9 @@ async def phase3_aider_execution(
                 process, idle_timeout=IDLE_TIMEOUT_SECONDS
             )
             output = (
-                stdout.decode("utf-8", errors="replace")
+                stdout.decode("utf-8", errors="strict")
                 + "\n"
-                + stderr.decode("utf-8", errors="replace")
+                + stderr.decode("utf-8", errors="strict")
             ).strip()
 
             elapsed = asyncio.get_running_loop().time() - start_time
@@ -1809,7 +1811,9 @@ def _has_staged_changes(cwd: Path, files: list[str]) -> bool:
     return False
 
 
-def _create_test_update_draft_branch(successful_files: list[str], commit_message: str) -> str:
+def _create_test_update_draft_branch(
+    successful_files: list[str], commit_message: str
+) -> str:
     """テストの陳腐化(triage_type == "test_update")を検知した際の「優雅な一時停止」
     (Graceful Suspend)。人間の確認を経ずにテストコードの変更を作業中のブランチへ直接
     コミットしないよう、都度新規の隔離ドラフトブランチを作成し、そちらにのみコミットする。

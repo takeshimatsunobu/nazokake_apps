@@ -30,6 +30,10 @@ param(
     [string[]]$ExtraArgs
 )
 
+# Pythonの実行環境がOSのANSIコードページ設定に依存せず常にUTF-8を使うよう強制する
+# (Windowsのロケール設定によってサイレントにcp932等へフォールバックする事故を防ぐ)。
+$env:PYTHONUTF8 = "1"
+
 $ErrorActionPreference = "Stop"
 $ProjectRoot = $PSScriptRoot
 $BackendDir = Join-Path $ProjectRoot "apps\evaluator\backend"

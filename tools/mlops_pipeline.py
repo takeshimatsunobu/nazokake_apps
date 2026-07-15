@@ -45,18 +45,29 @@ UNWANTED_PROCESS_NAME_KEYWORDS = ("python", "uvicorn")
 MAX_COMPLEXITY_GROWTH_RATE = 0.10  # 10%
 
 
+def run_native_command(cmd: list[str], **kwargs) -> subprocess.CompletedProcess:
+    """Windowsネイティブコマンド(nvidia-smi, taskkill等)との境界防衛
+    (Anti-Corruption Layer)。
+
+    ネイティブコマンドの出力はPythonプロセス側のUTF-8とは異なり、OSのANSI/OEM
+    コードページ(このマシンではcp932)でエンコードされている。encoding="mbcs"
+    (Windowsのシステムコードページに対応するPython標準コーデック名)で
+    errors="strict"にデコードすることで、想定外のバイト列を無検証にerrors="replace"で
+    握り潰す(文字化けを黒箱化するサイレント破損)のではなく、直ちに例外として検出する。
+    """
+    return subprocess.run(
+        cmd, capture_output=True, text=True, encoding="mbcs", errors="strict", **kwargs
+    )
+
+
 def preflight_gpu_cleanup() -> list[int]:
     """nvidia-smiでVRAM占有中のPIDを取得し、自身以外の不要なPythonプロセスを
     taskkill /F で強制終了する。戻り値は実際に終了させたPIDのリスト。
     """
     print("\n🧹 [Step 0] Pre-flight GPU Cleanup を実行します...")
     try:
-        result = subprocess.run(
+        result = run_native_command(
             ["nvidia-smi", "--query-compute-apps=pid", "--format=csv,noheader"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
             timeout=15,
         )
     except FileNotFoundError:
@@ -100,13 +111,7 @@ def preflight_gpu_cleanup() -> list[int]:
         print(
             f"   🔥 VRAM占有中の不要なPythonプロセスを検知: PID={pid} ({name}) -> taskkill"
         )
-        subprocess.run(
-            ["taskkill", "/PID", str(pid), "/F"],
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-        )
+        run_native_command(["taskkill", "/PID", str(pid), "/F"])
         killed.append(pid)
 
     if not killed:
@@ -117,16 +122,18 @@ def preflight_gpu_cleanup() -> list[int]:
 def run_step(step_name: str, cmd: list[str]) -> None:
     """1ステップをBASE_DIR起点で同期実行する。失敗時は即座にsys.exit(1)する。"""
     print(f"\n🔍 [Step] {step_name} を実行します... ({' '.join(cmd)})")
-    # encodingを明示しない場合、Windowsの既定コンソールコードページ(cp932)で
-    # 子プロセスのUTF-8出力(絵文字等)を読もうとしてUnicodeDecodeErrorが発生し、
-    # そのステップの出力が読み取れなくなる(プロセス自体は継続するため気付きにくい)。
+    # このcmdは"uv run python tools/..."であり、呼び出し先のPythonスクリプト自身が
+    # sys.stdout.reconfigure(encoding="utf-8")で出力エンコーディングをUTF-8に固定して
+    # いる(ネイティブWindowsコマンドではない)ため、encoding="utf-8"で受け取る。
+    # errors="strict"により、想定外のバイト列が万一混入した場合は即座に例外として
+    # 検出する(errors="replace"による文字化けのサイレント黒箱化は行わない)。
     result = subprocess.run(
         cmd,
         cwd=str(BASE_DIR),
         capture_output=True,
         text=True,
         encoding="utf-8",
-        errors="replace",
+        errors="strict",
     )
 
     if result.stdout:

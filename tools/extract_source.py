@@ -143,7 +143,7 @@ def extract_all_source(output_path: Path = OUTPUT_PATH) -> tuple[int, int]:
     """ソースコードを1ファイルへダンプする。戻り値は (書き込んだファイル数, スキップしたファイル数)。"""
     written = 0
     skipped = 0
-    with open(output_path, "w", encoding="utf-8", errors="replace") as out:
+    with open(output_path, "w", encoding="utf-8", errors="strict") as out:
         for path in iter_source_files():
             try:
                 size = path.stat().st_size
@@ -159,8 +159,12 @@ def extract_all_source(output_path: Path = OUTPUT_PATH) -> tuple[int, int]:
 
             rel_path = path.relative_to(REPO_ROOT).as_posix()
             try:
-                content = path.read_text(encoding="utf-8", errors="replace")
-            except OSError as e:
+                # errors="strict": UTF-8として不正なバイト列を無検証にU+FFFDへ置換
+                # (errors="replace")してダンプへ混入させる(サイレントなデータ破損)
+                # のではなく、UnicodeDecodeErrorとして検出し、当該ファイルだけを
+                # 明示的にスキップする(全体のダンプ処理は継続する)。
+                content = path.read_text(encoding="utf-8", errors="strict")
+            except (OSError, UnicodeDecodeError) as e:
                 print(f"⚠️ スキップ(読み込み失敗): {rel_path} ({e})")
                 skipped += 1
                 continue
