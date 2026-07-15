@@ -29,7 +29,7 @@ from statistics import mean
 
 from sqlalchemy import or_, select
 
-from nazokake_core.database import NazokakeItemORM, get_session
+from nazokake_core.database import NazokakeItemORM, ensure_db_ready, get_session
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "data"
@@ -286,6 +286,11 @@ def _write_jsonl(records: list[dict], path: Path) -> None:
 
 
 def main() -> int:
+    # DBファイルが存在しない、またはテーブル未作成(スキーマ未初期化)の環境でも
+    # 即座に例外で落ちないよう、クエリ前に必ずテーブルの存在を保証する
+    # (CREATE TABLE IF NOT EXISTS相当、既存データは変更しない)。
+    ensure_db_ready()
+
     candidates = asyncio.run(_fetch_candidates())
     print(f"抽出候補: {len(candidates)}件")
 
