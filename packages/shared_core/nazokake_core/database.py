@@ -13,6 +13,7 @@ Local-First アーキテクチャにおける「絶対的な正(Local SSoT)」�
    ため、`sync_*` 関数群が Serialized Writer のキューへタスクをpushする唯一の
    インターフェースとして機能する(直接DBへ書き込むことはない)。
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -24,12 +25,28 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from typing import Any, TypeVar
 
-from sqlalchemy import JSON, Boolean, Float, String, Text, event, or_, select, update
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    Float,
+    Integer,
+    String,
+    Text,
+    case,
+    event,
+    or_,
+    select,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import NullPool
 
 DEFAULT_DB_PATH = "nazokake_local.db"
+
+# ポイズンピル判定の閾値: mark_sync_failed()がこの回数に達したらsync_status="fatal"へ
+# 隔離し、get_pending_sync_batch()の対象から外す(無限リトライ防止)。
+MAX_SYNC_RETRIES = 3
 
 T = TypeVar("T")
 
@@ -98,7 +115,9 @@ class NazokakeItemORM(Base):
     scores_llmjp: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     s_total_llmjp: Mapped[float | None] = mapped_column(Float, nullable=True)
     overall_llmjp: Mapped[str | None] = mapped_column(Text, nullable=True)
-    axis_comments_llmjp: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    axis_comments_llmjp: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON, nullable=True
+    )
     source: Mapped[str | None] = mapped_column(String, nullable=True)
     model_id: Mapped[str | None] = mapped_column(String, nullable=True)
     evaluator_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -121,17 +140,24 @@ class NazokakeItemORM(Base):
     result_doc_ids: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     # ユーザー(道場破りフィード)による評価・添削コメントの追記履歴。
     # {"user_score":..., "user_slug":..., "comment":...} のdictをリストで蓄積する。
-    human_evaluations: Mapped[list[dict[str, Any]] | None] = mapped_column(JSON, nullable=True)
+    human_evaluations: Mapped[list[dict[str, Any]] | None] = mapped_column(
+        JSON, nullable=True
+    )
     # --- Firestoreバックアップ同期(一方向Push)用ブックキーピング ---
     # updated_at: ローカルでの最終変更時刻。upsert_item()が呼ばれるたびに必ずサーバー側で
     # 上書きする(呼び出し元が指定した値は無視する)。Firestore側の対応ドキュメントの
     # updated_at と比較し、ローカルの方が新しい場合のみPushする冪等性判定の基準値。
     updated_at: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
-    # sync_status: "pending"(未同期) / "synced"(同期済み) / "error"(直近の同期失敗、リトライ対象)。
+    # sync_status: "pending"(未同期) / "synced"(同期済み) / "error"(直近の同期失敗、リトライ対象) /
+    # "fatal"(MAX_SYNC_RETRIES連続失敗によるポイズンピル隔離、get_pending_sync_batchの対象外) /
+    # "discarded"(DLQ管理画面からの「破棄」操作、隔離状態を維持したままDLQ一覧の表示対象からも外す)。
     # upsert_item()はローカル内容が変わるたびに必ず"pending"へリセットする
     # (=同期ワーカーの成功/失敗マーキング以外の経路では常に再同期対象とみなす)。
     sync_status: Mapped[str] = mapped_column(String, default="pending", index=True)
     last_sync_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # retry_count: 連続同期失敗回数(ポイズンピル判定用)。upsert_item()でローカル内容が
+    # 変わるたびに0へリセットする(=新しい変更は「まだ1度も試していない」とみなす)。
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
 async def init_db() -> None:
@@ -150,6 +176,7 @@ async def get_session() -> AsyncIterator[AsyncSession]:
 # DAO: apps/batch_factory の各ワーカーから利用する、キュー操作込みのCRUD関数群。
 # ------------------------------------------------------------------
 
+
 async def upsert_item(payload: dict[str, Any]) -> None:
     """doc_id をキーに1件をUpsertする(Firestoreの `.set()` と同じ冪等挙動)。
 
@@ -158,15 +185,18 @@ async def upsert_item(payload: dict[str, Any]) -> None:
 
     updated_at と sync_status は呼び出し元がpayloadに含めていても常にサーバー側で
     上書きする(=このローカル変更をFirestoreバックアップ同期の対象として必ず
-    "pending" 化する)。同期ワーカー自身の成功/失敗マーキングは mark_synced() /
-    mark_sync_failed() という別経路(このupsert_itemを経由しない)で行う。
+    "pending" 化する)。retry_count も同様に必ず0へリセットする(=新しい変更は
+    まだ1度も同期を試みていないとみなす)。同期ワーカー自身の成功/失敗マーキングは
+    mark_synced() / mark_sync_failed() という別経路(このupsert_itemを経由しない)で行う。
     """
     columns = {c.name for c in NazokakeItemORM.__table__.columns}
     row = {k: v for k, v in payload.items() if k in columns}
     row.pop("updated_at", None)
     row.pop("sync_status", None)
+    row.pop("retry_count", None)
     row["updated_at"] = datetime.now(timezone.utc).isoformat()
     row["sync_status"] = "pending"
+    row["retry_count"] = 0
     async with get_session() as session:
         async with session.begin():
             existing = await session.get(NazokakeItemORM, row["doc_id"])
@@ -201,14 +231,24 @@ async def claim_pending_trend() -> dict[str, Any] | None:
 
             result = await session.execute(
                 update(NazokakeItemORM)
-                .where(NazokakeItemORM.doc_id == doc_id, NazokakeItemORM.status == "pending")
-                .values(status="processing", locked_at=now, updated_at=now, sync_status="pending")
+                .where(
+                    NazokakeItemORM.doc_id == doc_id,
+                    NazokakeItemORM.status == "pending",
+                )
+                .values(
+                    status="processing",
+                    locked_at=now,
+                    updated_at=now,
+                    sync_status="pending",
+                )
                 .returning(NazokakeItemORM)
             )
             row = result.scalar_one_or_none()
             if row is None:
                 return None  # 他ワーカーに先取りされた
-            return {c.name: getattr(row, c.name) for c in NazokakeItemORM.__table__.columns}
+            return {
+                c.name: getattr(row, c.name) for c in NazokakeItemORM.__table__.columns
+            }
 
 
 async def mark_trend_completed(doc_id: str, result_doc_ids: list[str]) -> None:
@@ -245,7 +285,10 @@ async def get_pending_sync_batch(limit: int = 20) -> list[dict[str, Any]]:
             .limit(limit)
         )
         rows = result.scalars().all()
-        return [{c.name: getattr(row, c.name) for c in NazokakeItemORM.__table__.columns} for row in rows]
+        return [
+            {c.name: getattr(row, c.name) for c in NazokakeItemORM.__table__.columns}
+            for row in rows
+        ]
 
 
 async def mark_synced(doc_id: str, expected_updated_at: str | None) -> None:
@@ -262,24 +305,36 @@ async def mark_synced(doc_id: str, expected_updated_at: str | None) -> None:
         async with session.begin():
             await session.execute(
                 update(NazokakeItemORM)
-                .where(NazokakeItemORM.doc_id == doc_id, NazokakeItemORM.updated_at == expected_updated_at)
+                .where(
+                    NazokakeItemORM.doc_id == doc_id,
+                    NazokakeItemORM.updated_at == expected_updated_at,
+                )
                 .values(sync_status="synced", last_sync_error=None)
             )
 
 
 async def mark_sync_failed(doc_id: str, error_message: str) -> None:
-    """Firestoreへの同期に失敗した行を "error" にし、失敗理由を残す(デッドレター)。
+    """Firestoreへの同期に失敗した行のretry_countを+1し、失敗理由を残す。
 
-    次回の同期ワーカー実行時に get_pending_sync_batch() が sync_status=="error" も
-    拾い上げるため、これは実質的にリトライ待ちキューとして機能する。updated_atは
-    書き換えない(ローカル内容自体は変化していないため)。
+    retry_countがMAX_SYNC_RETRIESに達した場合はsync_status="fatal"へ隔離し
+    (ポイズンピル判定)、次回以降のget_pending_sync_batch()の対象から完全に外す。
+    未満の場合は"error"(次回の同期ワーカー実行時にリトライ対象として拾われる)。
+    updated_atは書き換えない(ローカル内容自体は変化していないため)。
     """
     async with get_session() as session:
         async with session.begin():
+            new_retry_count = NazokakeItemORM.retry_count + 1
             await session.execute(
                 update(NazokakeItemORM)
                 .where(NazokakeItemORM.doc_id == doc_id)
-                .values(sync_status="error", last_sync_error=error_message[:2000])
+                .values(
+                    retry_count=new_retry_count,
+                    last_sync_error=error_message[:2000],
+                    sync_status=case(
+                        (new_retry_count >= MAX_SYNC_RETRIES, "fatal"),
+                        else_="error",
+                    ),
+                )
             )
 
 
@@ -290,6 +345,7 @@ async def mark_sync_failed(doc_id: str, error_message: str) -> None:
 # ここでは唯一のコンシューマがキューを順番に処理するため、プロセス内での書き込み
 # 競合は構造的に発生しない。
 # ------------------------------------------------------------------
+
 
 class _SerializedWriter:
     """常駐イベントループを1本のバックグラウンドスレッドで走らせ、その中で単一の
@@ -351,10 +407,14 @@ class _SerializedWriter:
         self._ensure_started()
         assert self._loop is not None and self._queue is not None
         result_future: concurrent.futures.Future = concurrent.futures.Future()
-        self._loop.call_soon_threadsafe(self._queue.put_nowait, (coro_factory, result_future))
+        self._loop.call_soon_threadsafe(
+            self._queue.put_nowait, (coro_factory, result_future)
+        )
         return result_future.result()
 
-    async def submit_async(self, coro_factory: Callable[[], Coroutine[Any, Any, T]]) -> T:
+    async def submit_async(
+        self, coro_factory: Callable[[], Coroutine[Any, Any, T]]
+    ) -> T:
         """coro_factory()をSerialized Writerのキューへpushし、呼び出し元のイベント
         ループをブロックせずに処理結果を待つ。
 
@@ -368,7 +428,9 @@ class _SerializedWriter:
         self._ensure_started()
         assert self._loop is not None and self._queue is not None
         result_future: concurrent.futures.Future = concurrent.futures.Future()
-        self._loop.call_soon_threadsafe(self._queue.put_nowait, (coro_factory, result_future))
+        self._loop.call_soon_threadsafe(
+            self._queue.put_nowait, (coro_factory, result_future)
+        )
         return await asyncio.wrap_future(result_future)
 
 
@@ -411,6 +473,7 @@ def sync_mark_sync_failed(doc_id: str, error_message: str) -> None:
 # 複数回の更新をまとめて1回のセッション/トランザクションに詰め込んではならない。
 # ------------------------------------------------------------------
 
+
 async def async_upsert_item(payload: dict[str, Any]) -> None:
     """upsert_item()のSerialized Writer経由・非ブロッキング版。"""
     await _serialized_writer.submit_async(lambda: upsert_item(payload))
@@ -428,6 +491,55 @@ async def async_get_item(doc_id: str) -> dict[str, Any] | None:
         if row is None:
             return None
         return {c.name: getattr(row, c.name) for c in NazokakeItemORM.__table__.columns}
+
+
+async def async_get_dlq_items() -> list[dict[str, Any]]:
+    """DLQ(sync_status=="fatal"、ポイズンピル隔離済み)の行を全カラムで取得する。
+
+    _row_to_ui_dict()とは異なり、sync_status/last_sync_error/retry_countを意図的に
+    含める(隔離理由そのものを見せることがDLQ管理画面の目的のため)。updated_at降順。
+    """
+    async with get_session() as session:
+        result = await session.execute(
+            select(NazokakeItemORM)
+            .where(NazokakeItemORM.sync_status == "fatal")
+            .order_by(NazokakeItemORM.updated_at.desc())
+        )
+        rows = result.scalars().all()
+        return [
+            {c.name: getattr(row, c.name) for c in NazokakeItemORM.__table__.columns}
+            for row in rows
+        ]
+
+
+async def async_retry_dlq_item(doc_id: str) -> bool:
+    """DLQからの「再試行」: sync_statusをpendingへ戻し、retry_count/last_sync_errorを
+    リセットする(次回の同期ワーカー実行時に再送対象となる)。対象が存在しないか、
+    既にfatal(隔離中)でない場合はFalseを返す(呼び出し元はこれを404判定に使う)。
+    """
+    async with get_session() as session:
+        async with session.begin():
+            row = await session.get(NazokakeItemORM, doc_id)
+            if row is None or row.sync_status != "fatal":
+                return False
+            row.sync_status = "pending"
+            row.retry_count = 0
+            row.last_sync_error = None
+        return True
+
+
+async def async_discard_dlq_item(doc_id: str) -> bool:
+    """DLQからの「破棄」: 隔離状態は維持したままsync_statusを"discarded"にし、
+    get_pending_sync_batch()およびDLQ一覧(async_get_dlq_items())の両方の対象から
+    外す。対象が存在しないか、既にfatal(隔離中)でない場合はFalseを返す。
+    """
+    async with get_session() as session:
+        async with session.begin():
+            row = await session.get(NazokakeItemORM, doc_id)
+            if row is None or row.sync_status != "fatal":
+                return False
+            row.sync_status = "discarded"
+        return True
 
 
 def _row_to_ui_dict(row: NazokakeItemORM) -> dict[str, Any]:
