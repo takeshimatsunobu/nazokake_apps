@@ -24,6 +24,9 @@
 # Nazo-Agentの出力物(デッドレター・監査ログ等、再生成可能な成果物)
 tools/audit_reports/
 
+# ベンチマークハーネスの生成物(メトリクスJSON等、再生成可能な成果物)
+tools/benchmark/reports/
+
 # 一時ファイル・スモークテストの残骸
 _tmp*
 

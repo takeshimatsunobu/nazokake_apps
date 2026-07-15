@@ -1,0 +1,1 @@
+SyntaxError: expected ':' (buggy.py, line 1)
