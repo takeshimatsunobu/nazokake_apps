@@ -26,25 +26,62 @@ OUTPUT_PATH = REPO_ROOT / "all_source_code.txt"
 
 # 環境・生成物ディレクトリ(ディレクトリ名の完全一致で、深さを問わず除外)。
 EXCLUDED_DIR_NAMES = {
-    ".venv", ".venv_ai", ".venv_train", ".venv_aider",
-    "__pycache__", "node_modules", ".git",
-    ".pytest_cache", ".ruff_cache", ".mypy_cache", ".benchmarks",
-    ".firebase", "chroma_db", "unsloth_compiled_cache", "llama-bin",
+    ".venv",
+    ".venv_ai",
+    ".venv_train",
+    ".venv_aider",
+    "__pycache__",
+    "node_modules",
+    ".git",
+    ".pytest_cache",
+    ".ruff_cache",
+    ".mypy_cache",
+    ".benchmarks",
+    ".firebase",
+    "chroma_db",
+    "unsloth_compiled_cache",
+    "llama-bin",
     ".aider.tags.cache.v4",
     # 過去の「全文コンテキスト抽出」の生成物置き場。ソースコードではなく、
     # secretを含む旧ダンプが混入していた実例(apps/evaluator/export_context_final/
     # context_part_01.md に serviceAccountKey.json の内容がそのまま含まれていた)が
     # あるため、除外する。
-    "export_context_final", "_ai_context",
+    "export_context_final",
+    "_ai_context",
 }
 
 # バイナリ・ログ・アーカイブ等、コンテキストとして不要な拡張子。
 EXCLUDED_EXTENSIONS = {
-    ".db", ".pyc", ".pyo", ".log", ".tgz", ".whl", ".lock", ".png",
-    ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".bmp",
-    ".zip", ".tar", ".gz", ".7z", ".pdf",
-    ".exe", ".dll", ".so", ".bin", ".pt", ".pth", ".safetensors", ".gguf",
-    ".ttf", ".woff", ".woff2",
+    ".db",
+    ".pyc",
+    ".pyo",
+    ".log",
+    ".tgz",
+    ".whl",
+    ".lock",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".gif",
+    ".ico",
+    ".svg",
+    ".bmp",
+    ".zip",
+    ".tar",
+    ".gz",
+    ".7z",
+    ".pdf",
+    ".exe",
+    ".dll",
+    ".so",
+    ".bin",
+    ".pt",
+    ".pth",
+    ".safetensors",
+    ".gguf",
+    ".ttf",
+    ".woff",
+    ".woff2",
 }
 
 # ディレクトリ名の末尾一致で除外するパターン(例: "nazokake_core.egg-info")。
@@ -92,7 +129,10 @@ def iter_source_files():
         for path in sorted(target_dir.rglob("*")):
             if not path.is_file():
                 continue
-            if any(_is_excluded_dir(part) for part in path.relative_to(REPO_ROOT).parts[:-1]):
+            if any(
+                _is_excluded_dir(part)
+                for part in path.relative_to(REPO_ROOT).parts[:-1]
+            ):
                 continue
             if _is_excluded_file(path):
                 continue
