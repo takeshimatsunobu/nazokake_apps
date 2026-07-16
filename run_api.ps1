@@ -16,11 +16,14 @@
        再ダンプし、npm run generate-types で apps/evaluator/frontend/api.d.ts を再生成する。
        これにより起動するたびにフロントエンドのJSDoc型定義がバックエンドの最新契約と
        同期される(Zombie UI/コントラクト破壊の検知漏れを防ぐ)。
-    4. 【スキーマ同期】 uvicorn起動の直前に packages/shared_core で alembic upgrade head を
-       同期的に実行し、物理DBスキーマをORMモデル定義の最新状態へ決定論的に揃える。
-       NAZOKAKE_DB_PATH をここで絶対パスに固定することで、alembicの実行時cwd
-       (packages/shared_core)とuvicornの実行時cwd(apps/evaluator/backend)が異なっても
-       両者が同一のDBファイルを指すことを保証する。
+    4. 【スキーマ同期】 uvicorn起動の直前に tools/run_migrations.py を同期的に実行し、
+       物理DBスキーマをORMモデル定義の最新状態へ決定論的に揃える。alembic CLIを直接
+       呼ばず、このラッパー経由にすることで、DBファイルに対するfilelockベースの
+       排他制御(MLOpsパイプライン等との同時実行競合の防止)と、alembic.iniの
+       UTF-8明示読み込み(OSロケール依存のエンコーディングエラー回避)を両立させる。
+       NAZOKAKE_DB_PATH をここで絶対パスに固定することで、run_migrations.pyと
+       uvicornの実行時cwd(apps/evaluator/backend)が異なっても両者が同一のDBファイルを
+       指すことを保証する。
 
 .EXAMPLE
     .\run_api.ps1
@@ -43,14 +46,13 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = $PSScriptRoot
 $BackendDir = Join-Path $ProjectRoot "apps\evaluator\backend"
 $FrontendDir = Join-Path $ProjectRoot "apps\evaluator\frontend"
-$SharedCoreDir = Join-Path $ProjectRoot "packages\shared_core"
 $VenvDir = Join-Path $ProjectRoot ".venv"
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 
 # nazokake_core.database はこの環境変数(未設定時は相対パス "nazokake_local.db")で
-# DBファイルの場所を解決する。alembic(cwd: packages/shared_core)とuvicorn
-# (cwd: apps/evaluator/backend)がそれぞれ異なるcwdから起動されても同一のDBファイルへ
-# 到達するよう、ここで絶対パスに固定して両者へ伝播させる。
+# DBファイルの場所を解決する。tools/run_migrations.pyとuvicorn(cwd: apps/evaluator/backend)
+# がそれぞれ異なるcwdから起動されても同一のDBファイルへ到達するよう、ここで絶対パスに
+# 固定して両者へ伝播させる。
 $env:NAZOKAKE_DB_PATH = Join-Path $ProjectRoot "nazokake_local.db"
 
 # tools/config.py の VRAM_LOCK_PATH は __file__ 基準の絶対パスのため常に一定だが、
@@ -110,16 +112,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # --- 【スキーマ同期】 ---------------------------------------------------------
-Write-Host "🔄 Alembicマイグレーションを適用中 (alembic upgrade head)..."
-Push-Location $SharedCoreDir
-try {
-    & $VenvPython -m alembic upgrade head
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Alembicマイグレーションの適用に失敗しました(alembic upgrade head が非0で終了)。"
-        exit 1
-    }
-} finally {
-    Pop-Location
+Write-Host "🔄 Alembicマイグレーションを適用中 (tools/run_migrations.py)..."
+& $VenvPython (Join-Path $ProjectRoot "tools\run_migrations.py")
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Alembicマイグレーションの適用に失敗しました(tools/run_migrations.py が非0で終了)。"
+    exit 1
 }
 
 $uvicornArgs = @(

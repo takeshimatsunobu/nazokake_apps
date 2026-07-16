@@ -30,6 +30,9 @@ tools/benchmark/reports/
 # VRAMグローバル排他ロック(ランタイムのみ存在するファイルロック本体)
 .vram.lock
 
+# tools/run_migrations.pyのマイグレーション排他ロック(ランタイムのみ存在するファイルロック本体)
+*.migration.lock
+
 # mlops_trigger.pyの「前回トリガー時点の件数」永続化状態(再生成可能)
 tools/mlops_trigger_state.json
 
