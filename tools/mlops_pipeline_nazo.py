@@ -117,6 +117,9 @@ def _record_experiment(report: dict | None, latency: float) -> None:
     )
     print("📝 [実験ログ] mlops_experiments.dbへ記録しました。")
 
+    metrics_path = mlops_experiments_db.export_metrics_to_json()
+    print(f"📊 [ダッシュボード] 静的JSONを更新しました: {metrics_path}")
+
 
 def main() -> int:
     start_time = time.monotonic()
