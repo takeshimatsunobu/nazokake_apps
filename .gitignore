@@ -39,9 +39,10 @@ tools/mlops_trigger_state.json
 # safe_reset_infra.pyの一時バックアップ(異常終了時の残骸を誤コミットしないためのガード)
 data/db_backup_temp.json
 
-# extract_dataset.pyが生成するSFT/DPOデータセット(再生成可能な成果物)
+# extract_dataset.pyが生成するSFT/DPOデータセットおよび抽出統計(再生成可能な成果物)
 data/sft_dataset.jsonl
 data/dpo_dataset.jsonl
+data/extraction_stats.json
 
 # 一時ファイル・スモークテストの残骸
 _tmp*

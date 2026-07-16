@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 
 # `uv run python tools/mlops_pipeline_nazo.py` のように直接実行すると sys.path[0] は
@@ -35,12 +36,15 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools import mlops_common  # noqa: E402
+from tools import mlops_experiments_db  # noqa: E402
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 EVALUATION_REPORT_PATH = BASE_DIR / "tools" / "audit_reports" / "evaluation_report.json"
 BASELINE_PATH = BASE_DIR / "tools" / "audit_reports" / "baseline_metrics_nazo.json"
+EXTRACTION_STATS_PATH = BASE_DIR / "data" / "extraction_stats.json"
+BASE_MODEL = "elyza:8b"
 
 
 def _load_baseline() -> dict | None:
@@ -89,7 +93,34 @@ def evaluate_quality_gate(report: dict) -> bool:
     return True
 
 
+def _record_experiment(report: dict | None, latency: float) -> None:
+    """今回のパイプライン実行結果を実験管理DB(mlops_experiments.db)へ不変ログとして
+    記録する。評価が完了しなかった場合(report=None)もsuccess_rate=Noneとして
+    記録し、「実行したが評価不能だった」という事実自体を欠落させない。
+    """
+    extraction_stats = None
+    if EXTRACTION_STATS_PATH.exists():
+        extraction_stats = json.loads(EXTRACTION_STATS_PATH.read_text(encoding="utf-8"))
+
+    accuracy = None
+    if report is not None and report.get("status") == "completed":
+        accuracy = report.get("metrics", {}).get("accuracy")
+
+    mlops_experiments_db.record_experiment(
+        pipeline_type="nazo",
+        dataset_size=(extraction_stats or {}).get("dataset_size"),
+        coreset_ratio=(extraction_stats or {}).get("coreset_ratio"),
+        base_model=BASE_MODEL,
+        success_rate=accuracy,
+        latency=latency,
+        regression_rate=None,  # なぞかけ生成モデルの評価にはRegression Rateの概念が無い
+    )
+    print("📝 [実験ログ] mlops_experiments.dbへ記録しました。")
+
+
 def main() -> int:
+    start_time = time.monotonic()
+
     mlops_common.preflight_gpu_cleanup()
 
     lock = mlops_common.acquire_vram_lock_with_backoff()
@@ -112,12 +143,18 @@ def main() -> int:
         lock.release()
         print("🔓 [VRAM排他制御] VRAMロックを解放しました。")
 
+    latency = time.monotonic() - start_time
+
     if not EVALUATION_REPORT_PATH.exists():
         print("🚨 [Fail-Fast] 評価レポートが見つかりませんでした。")
+        _record_experiment(None, latency)
         return 1
 
     report = json.loads(EVALUATION_REPORT_PATH.read_text(encoding="utf-8"))
-    if evaluate_quality_gate(report):
+    gate_passed = evaluate_quality_gate(report)
+    _record_experiment(report, latency)
+
+    if gate_passed:
         print("\n🎉 学習成功およびデプロイ承認(なぞかけ生成モデル)")
         return 0
 

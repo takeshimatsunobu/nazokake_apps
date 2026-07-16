@@ -7,8 +7,16 @@ tools/extract_dataset.py
 SFT用(data/sft_dataset.jsonl)およびDPO用(data/dpo_dataset.jsonl)のJSONLデータセットを
 出力する。
 
-抽出→閾値判定(chosen/rejected、中間スコアはドロップ)→デデュプリケーション→匿名化→
-JSONL書き出し、の順に処理する。
+抽出→コアーセット・リプレイのプール選定(未学習の最新データ85% + 過去の学習済み
+高評価/goldenデータから層化抽出した15%のコアーセット)→閾値判定(chosen/rejected、
+中間スコアはドロップ)→デデュプリケーション→匿名化→JSONL書き出し→trained_atの
+更新、の順に処理する。
+
+【コアーセット・リプレイ(破滅的忘却対策)】 毎回「未学習の最新データ」のみで学習すると、
+過去に学習した知識(パターン)を新しい学習で上書きしてしまう(破滅的忘却)。そのため、
+NazokakeItemORM.trained_at(NULL=未学習)で「未学習の最新データ」プールと「過去の
+学習済みデータ」プールを区別し、後者からスコア分布・お題(トピック)の多様性を
+担保する層化抽出法で少量(CORESET_RATIO)のコアーセットを毎回リプレイ用に混ぜ込む。
 
 使い方:
     uv run python tools/extract_dataset.py
@@ -19,6 +27,8 @@ from __future__ import annotations
 import asyncio
 import itertools
 import json
+import os
+import random
 import re
 import sys
 from dataclasses import dataclass
@@ -28,12 +38,18 @@ from statistics import mean
 from datasketch import MinHash, MinHashLSH
 from sqlalchemy import or_, select
 
-from nazokake_core.database import NazokakeItemORM, ensure_db_ready, get_session
+from nazokake_core.database import (
+    NazokakeItemORM,
+    async_mark_trained,
+    ensure_db_ready,
+    get_session,
+)
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 OUTPUT_DIR = PROJECT_ROOT / "data"
 SFT_OUTPUT_PATH = OUTPUT_DIR / "sft_dataset.jsonl"
 DPO_OUTPUT_PATH = OUTPUT_DIR / "dpo_dataset.jsonl"
+EXTRACTION_STATS_PATH = OUTPUT_DIR / "extraction_stats.json"
 
 # DPO(Direct Preference Optimization)の厳格な閾値: スコア4以上をchosen、2以下を
 # rejectedとし、中間スコア(2<score<4)はノイズとして容赦なく除外(Drop)する。
@@ -42,6 +58,15 @@ REJECTED_SCORE_MAX = 2.0
 
 # 同一お題(odai)あたりのDPOペア生成数の上限(組み合わせ爆発とノイズの多重抽出を防ぐ)。
 MAX_PAIRS_PER_ODAI = 5
+
+# --- コアーセット・リプレイ(破滅的忘却対策) --------------------------------
+# 「未学習の最新データ」プールから抽出する割合(残りは今回は見送り、次回以降に回す)。
+NEW_DATA_SAMPLE_RATIO = float(os.environ.get("NEW_DATA_SAMPLE_RATIO", "0.85"))
+# 「過去の学習済みデータ(is_golden_data=True または高評価)」プールから層化抽出で
+# リプレイ用コアーセットとして抽出する割合。環境変数 CORESET_RATIO で上書き可能。
+CORESET_RATIO = float(os.environ.get("CORESET_RATIO", "0.15"))
+# スコア帯の層化バケツ幅(この幅で四捨五入したスコアを層化キーの一部とする)。
+SCORE_BUCKET_WIDTH = 0.5
 
 # 文字ベースn-gramのサイズ(MinHashに渡す特徴集合の粒度)。
 NGRAM_SIZE = 3
@@ -62,6 +87,7 @@ class Candidate:
     answer_text: str
     score: float | None
     is_golden: bool
+    trained_at: str | None
 
 
 def _primary_answer_text(row: dict) -> str | None:
@@ -122,9 +148,96 @@ async def _fetch_candidates() -> list[Candidate]:
                 answer_text=answer_text,
                 score=_record_score(row),
                 is_golden=bool(row.get("is_golden_data")),
+                trained_at=row.get("trained_at"),
             )
         )
     return candidates
+
+
+def _stratify_key(candidate: Candidate) -> tuple[str, str]:
+    """お題(トピック)とスコア帯の組み合わせを層化抽出のキーとする。
+
+    is_golden_dataでスコアが無いレコードは専用バケツ("golden_or_unscored")に
+    まとめる(スコアが無いことをもって除外せず、golden自体を1つの層として扱う)。
+    """
+    if candidate.score is None:
+        score_bucket = "golden_or_unscored"
+    else:
+        bucket_index = round(candidate.score / SCORE_BUCKET_WIDTH)
+        score_bucket = f"{bucket_index * SCORE_BUCKET_WIDTH:.1f}"
+    return (candidate.odai, score_bucket)
+
+
+def stratified_sample(
+    candidates: list[Candidate], ratio: float, rng: random.Random
+) -> list[Candidate]:
+    """お題(トピック)×スコア帯で層化し、各層から比例的にサンプリングする。
+
+    スコア分布・お題の多様性が担保されたコアーセット(リプレイ用)を抽出することが
+    目的。層のサイズが大きい順に目標件数を割り当てることで、四捨五入による
+    丸め誤差を大きい層側に寄せ、小さい層が丸めで0件に切り捨てられて合計が
+    不足しがちな問題を緩和する。
+    """
+    if not candidates or ratio <= 0:
+        return []
+    target_total = min(len(candidates), round(len(candidates) * ratio))
+    if target_total <= 0:
+        return []
+
+    strata: dict[tuple[str, str], list[Candidate]] = {}
+    for c in candidates:
+        strata.setdefault(_stratify_key(c), []).append(c)
+
+    sampled: list[Candidate] = []
+    remaining_target = target_total
+    for key in sorted(strata, key=lambda k: len(strata[k]), reverse=True):
+        if remaining_target <= 0:
+            break
+        group = strata[key]
+        stratum_target = max(1, round(target_total * len(group) / len(candidates)))
+        stratum_target = min(stratum_target, len(group), remaining_target)
+        sampled.extend(rng.sample(group, stratum_target))
+        remaining_target -= stratum_target
+
+    return sampled
+
+
+def select_training_pool(
+    candidates: list[Candidate], rng: random.Random | None = None
+) -> tuple[list[Candidate], dict]:
+    """コアーセット・リプレイのプール選定: 「未学習の最新データ」85% +
+    「過去の学習済み(golden/高評価)データ」から層化抽出した15%のコアーセット。
+
+    戻り値は (今回の学習に使う候補リスト, 統計情報dict)。統計情報は
+    tools/mlops_pipeline_nazo.pyが実験ログ(mlops_experiments.db)へ記録する際、
+    およびdata/extraction_stats.jsonへの記録に使う。
+    """
+    rng = rng or random.Random()
+
+    new_pool = [c for c in candidates if c.trained_at is None]
+    old_pool = [c for c in candidates if c.trained_at is not None]
+    replay_source_pool = [
+        c for c in old_pool if c.is_golden or (c.score is not None and c.score >= CHOSEN_SCORE_MIN)
+    ]
+
+    new_sample = rng.sample(
+        new_pool, min(len(new_pool), round(len(new_pool) * NEW_DATA_SAMPLE_RATIO))
+    )
+    coreset_sample = stratified_sample(replay_source_pool, CORESET_RATIO, rng)
+
+    selected = new_sample + coreset_sample
+    stats = {
+        "candidates_total": len(candidates),
+        "new_pool_size": len(new_pool),
+        "new_sample_size": len(new_sample),
+        "replay_source_pool_size": len(replay_source_pool),
+        "coreset_sample_size": len(coreset_sample),
+        "dataset_size": len(selected),
+        "new_data_sample_ratio": NEW_DATA_SAMPLE_RATIO,
+        "coreset_ratio": CORESET_RATIO,
+        "new_sample_doc_ids": [c.doc_id for c in new_sample],
+    }
+    return selected, stats
 
 
 def classify(candidates: list[Candidate]) -> tuple[list[Candidate], list[Candidate]]:
@@ -297,7 +410,16 @@ def main() -> int:
     candidates = asyncio.run(_fetch_candidates())
     print(f"抽出候補: {len(candidates)}件")
 
-    chosen, rejected = classify(candidates)
+    selected, pool_stats = select_training_pool(candidates)
+    print(
+        f"コアーセット・リプレイ: 未学習の最新データ {pool_stats['new_sample_size']}件"
+        f"(プール{pool_stats['new_pool_size']}件中) + "
+        f"層化抽出コアーセット {pool_stats['coreset_sample_size']}件"
+        f"(リプレイ候補プール{pool_stats['replay_source_pool_size']}件中) "
+        f"= 合計{pool_stats['dataset_size']}件"
+    )
+
+    chosen, rejected = classify(selected)
     print(
         f"chosen: {len(chosen)}件 / rejected: {len(rejected)}件 (中間スコアはドロップ済み)"
     )
@@ -328,6 +450,23 @@ def main() -> int:
         f"✅ SFTデータセットを書き出しました: {SFT_OUTPUT_PATH} ({len(sft_records)}件)"
     )
     print(f"✅ DPOデータセットを書き出しました: {DPO_OUTPUT_PATH} ({len(dpo_pairs)}件)")
+
+    # 「未学習の最新データ」プールから今回サンプリングされたレコードのみtrained_atを
+    # 更新する(リプレイ用コアーセットは既に学習済みのため、元のtrained_atを保持する)。
+    new_sample_doc_ids = pool_stats["new_sample_doc_ids"]
+    asyncio.run(async_mark_trained(new_sample_doc_ids))
+    print(f"✅ trained_atを更新しました: {len(new_sample_doc_ids)}件")
+
+    stats_record = {
+        "sft_record_count": len(sft_records),
+        "dpo_pair_count": len(dpo_pairs),
+        **{k: v for k, v in pool_stats.items() if k != "new_sample_doc_ids"},
+    }
+    EXTRACTION_STATS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    EXTRACTION_STATS_PATH.write_text(
+        json.dumps(stats_record, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(f"✅ 抽出統計を書き出しました: {EXTRACTION_STATS_PATH}")
     return 0
 
 

@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import json
 import sys
+import time
 from pathlib import Path
 from statistics import mean
 
@@ -42,6 +43,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools import mlops_common  # noqa: E402
+from tools import mlops_experiments_db  # noqa: E402
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -49,6 +51,8 @@ if sys.platform == "win32":
 
 BENCHMARK_REPORTS_DIR = BASE_DIR / "tools" / "benchmark" / "reports"
 BASELINE_PATH = BENCHMARK_REPORTS_DIR / "baseline_metrics_agent.json"
+AGENT_SFT_PATH = BASE_DIR / "tools" / "dataset" / "agent_sft.jsonl"
+BASE_MODEL = "qwen2.5-coder:7b"
 
 MAX_COMPLEXITY_GROWTH_RATE = 0.10  # 10%
 
@@ -135,7 +139,46 @@ def evaluate_quality_gate(report: dict) -> bool:
     return True
 
 
+def _count_agent_sft_records() -> int | None:
+    if not AGENT_SFT_PATH.exists():
+        return None
+    with AGENT_SFT_PATH.open(encoding="utf-8") as f:
+        return sum(1 for line in f if line.strip())
+
+
+def _record_experiment(report: dict | None, latency: float) -> None:
+    """今回のパイプライン実行結果を実験管理DB(mlops_experiments.db)へ不変ログとして
+    記録する。評価が完了しなかった場合(report=None)もsuccess_rate=Noneとして
+    記録し、「実行したが評価不能だった」という事実自体を欠落させない。
+
+    dataset_sizeはtools/dataset/agent_sft.jsonlの累積行数(このパイプラインでは
+    tools/extract_dataset.pyのようなコアーセット・リプレイの層化抽出を行わないため、
+    coreset_ratioは常にNone)。
+    """
+    aggregate = (report or {}).get("aggregate", {})
+    complexity_growth_rate = None
+    if report is not None:
+        complexity_growth_rate = _average_complexity_growth_rate(
+            report.get("results", [])
+        )
+
+    mlops_experiments_db.record_experiment(
+        pipeline_type="agent",
+        dataset_size=_count_agent_sft_records(),
+        coreset_ratio=None,
+        base_model=BASE_MODEL,
+        success_rate=aggregate.get("success_rate"),
+        latency=latency,
+        regression_rate=aggregate.get("avg_regression_rate"),
+    )
+    print("📝 [実験ログ] mlops_experiments.dbへ記録しました。")
+    if complexity_growth_rate is not None:
+        print(f"   (参考) Code Complexity 増加率(平均): {complexity_growth_rate}")
+
+
 def main() -> int:
+    start_time = time.monotonic()
+
     mlops_common.preflight_gpu_cleanup()
 
     lock = mlops_common.acquire_vram_lock_with_backoff()
@@ -159,13 +202,19 @@ def main() -> int:
         lock.release()
         print("🔓 [VRAM排他制御] VRAMロックを解放しました。")
 
+    latency = time.monotonic() - start_time
+
     report_path = _find_latest_benchmark_report()
     if report_path is None:
         print("🚨 [Fail-Fast] ベンチマークレポートが見つかりませんでした。")
+        _record_experiment(None, latency)
         return 1
 
     report = json.loads(report_path.read_text(encoding="utf-8"))
-    if evaluate_quality_gate(report):
+    gate_passed = evaluate_quality_gate(report)
+    _record_experiment(report, latency)
+
+    if gate_passed:
         print("\n🎉 学習成功およびデプロイ承認(Nazo-Agent)")
         return 0
 

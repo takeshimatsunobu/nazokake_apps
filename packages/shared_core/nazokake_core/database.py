@@ -144,6 +144,13 @@ class NazokakeItemORM(Base):
     human_evaluations: Mapped[list[dict[str, Any]] | None] = mapped_column(
         JSON, nullable=True
     )
+    # コアーセット・リプレイ(破滅的忘却対策)用のブックキーピング。tools/extract_dataset.pyが
+    # このレコードをSFT/DPOデータセットへ実際に含めた直近の時刻(ISO8601)。NULL="未学習
+    # (このレコードはまだ一度も学習データセットへ含まれていない)"であり、「未学習の最新
+    # データ」プールの判定基準として使う。過去の学習済みデータ(この列がNOT NULL)は、
+    # is_golden_data/高評価のものに限り層化抽出でコアーセット(リプレイ用)として
+    # 再サンプリングされ得る。
+    trained_at: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     # --- Firestoreバックアップ同期(一方向Push)用ブックキーピング ---
     # updated_at: ローカルでの最終変更時刻。upsert_item()が呼ばれるたびに必ずサーバー側で
     # 上書きする(呼び出し元が指定した値は無視する)。Firestore側の対応ドキュメントの
@@ -661,3 +668,23 @@ async def async_append_human_evaluation(
             entries.append({**evaluation_entry, **comment_entry})
             row.human_evaluations = entries
         return True
+
+
+async def async_mark_trained(doc_ids: list[str]) -> None:
+    """コアーセット・リプレイのブックキーピング: 指定doc_id群のtrained_atを現在時刻へ
+    更新する(=このレコードが実際に学習データセットへ含まれたことを記録する)。
+
+    tools/extract_dataset.pyが「未学習の最新データ」プールから今回サンプリングした
+    レコードに対してのみ呼び出す(既に学習済み=リプレイ用コアーセットとして再サンプル
+    されたレコードのtrained_atは、意図的に更新しない=最初に学習された時刻を保持する)。
+    """
+    if not doc_ids:
+        return
+    now = datetime.now(timezone.utc).isoformat()
+    async with get_session() as session:
+        async with session.begin():
+            await session.execute(
+                update(NazokakeItemORM)
+                .where(NazokakeItemORM.doc_id.in_(doc_ids))
+                .values(trained_at=now)
+            )
