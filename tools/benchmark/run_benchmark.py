@@ -12,6 +12,15 @@ Nazo-Agentベンチマークハーネスのホスト側ドライバ。
 tools/agent_graph.py の supervisor_node/craftsman_node/validate_node をそのまま再利用し、
 apply_node/gemma_fallback_node/reporter_node を含まない推論専用の小さなLangGraphを
 ここに構築する(agent_graph.py自体は無改変)。
+
+【Hard Fail方針(Epic 2 セキュリティ厳格化)】 Docker隔離はこのベンチマークの
+安全性そのものの前提(非決定的なLLM生成コードをホスト上で直接実行しない)であり、
+オプショナルな機能ではない。dockerデーモンが稼働していない場合、対話的プロンプトを
+一切挟まずsys.stderrへ出力してただちにsys.exit(1)する(main()冒頭の
+_require_docker_or_die())。ホストOS上でtools/ast_modifier.pyの適用やpytestを直接
+実行する「フォールバック」経路は、この設計では構造的に存在しない
+(run_fixture()はDocker経由の_run_in_docker()以外にコード適用手段を持たず、
+_run_in_docker()自体もdocker runコマンドの起動のみを行う)。
 """
 
 import argparse
@@ -179,6 +188,16 @@ def _run_in_docker(fixture_dir: Path, task: dict, output_dir: Path) -> str:
             "docker",
             "run",
             "--rm",
+            # 【セキュリティ境界】非決定的なLLM生成コードを実行するコンテナに対する
+            # ホストリソース枯渇防止(ハードリミット)と外部通信の遮断。
+            "--network",
+            "none",
+            "--memory",
+            "2g",
+            "--cpus",
+            "1.0",
+            "--pids-limit",
+            "100",
             "-v",
             f"{BASE_DIR / 'tools'}:/mnt/tools:ro",
             "-v",
@@ -285,17 +304,70 @@ def run_fixture(name: str) -> dict:
     return result
 
 
-def _check_docker_available() -> bool:
+def _write_infrastructure_error_report(message: str) -> Path:
+    """Docker Pre-flight Check失敗時のメトリクスレポートを書き出す。
+
+    通常の成功時レポート(aggregateやresults等を含む完全な形)とは異なり、
+    ベンチマークが実際には1件も実行されなかったことを示す最小限の形にする
+    (statusフィールドで「実行結果が0件」と「インフラ的に実行不能だった」を
+    明確に区別する)。
+    """
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    report = {
+        "run_id": uuid.uuid4().hex,
+        "timestamp": timestamp,
+        "status": "Infrastructure Error",
+        "docker_available": False,
+        "error": message,
+    }
+    report_path = REPORTS_DIR / f"benchmark_{timestamp.replace(':', '-')}.json"
+    report_path.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    return report_path
+
+
+def _require_docker_or_die() -> None:
+    """dockerデーモンが実際に稼働しているかをPre-flightで確認する(Hard Fail)。
+
+    このベンチマークは非決定的なLLM生成コードをホスト上で直接実行しないことを
+    安全性の前提としており、Docker隔離はオプショナルな機能ではない。利用不可の
+    場合は対話的プロンプトを一切挟まず、エラーをsys.stderrへ出力した上で
+    メトリクスレポート(status="Infrastructure Error")を書き出し、直ちに
+    exit code 1で終了する。
+    """
     try:
-        subprocess.run(
-            ["docker", "version"], capture_output=True, text=True, timeout=10
+        result = subprocess.run(
+            ["docker", "info"], capture_output=True, text=True, timeout=10
         )
-        return True
-    except (FileNotFoundError, subprocess.TimeoutExpired):
-        return False
+        infra_error = result.returncode != 0
+        detail = result.stderr.strip()[:500] if infra_error else ""
+    except FileNotFoundError:
+        infra_error = True
+        detail = "dockerコマンドが見つかりません。"
+    except subprocess.TimeoutExpired:
+        infra_error = True
+        detail = "dockerデーモンへの接続がタイムアウトしました。"
+
+    if not infra_error:
+        return
+
+    message = (
+        "Dockerサンドボックスが利用できません。このベンチマークはDocker隔離を"
+        f"必須要件とするため実行を中止します。詳細: {detail}"
+    )
+    print(f"🚨 [Hard-Fail] {message}", file=sys.stderr)
+    report_path = _write_infrastructure_error_report(message)
+    print(f"レポートを書き出しました: {report_path}", file=sys.stderr)
+    sys.exit(1)
 
 
 def main() -> int:
+    # 【Pre-flight Check / Hard Fail】このベンチマークはDocker隔離を必須要件とする。
+    # 他の処理(fixture解決すら)より前に、対話的プロンプトを挟まず即座に確認する。
+    _require_docker_or_die()
+
     parser = argparse.ArgumentParser(description="Nazo-Agentベンチマークハーネス")
     parser.add_argument(
         "--fixture", help="実行するfixture名(省略時はfixtures/配下の全て)"
@@ -310,8 +382,6 @@ def main() -> int:
     if not fixture_names:
         print("実行対象のfixtureが見つかりませんでした。", file=sys.stderr)
         return 1
-
-    docker_available = _check_docker_available()
 
     results = []
     for name in fixture_names:
@@ -344,7 +414,9 @@ def main() -> int:
     report = {
         "run_id": uuid.uuid4().hex,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "docker_available": docker_available,
+        # この時点まで到達している = _require_docker_or_die()のPre-flight Checkを
+        # 通過済みであり、常にTrue(既存レポートスキーマとの後方互換のため残す)。
+        "docker_available": True,
         "fixtures_run": fixture_names,
         "results": results,
         "aggregate": {
