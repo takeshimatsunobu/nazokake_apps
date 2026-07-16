@@ -20,6 +20,7 @@ import asyncio
 import concurrent.futures
 import os
 import threading
+import uuid
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
@@ -158,6 +159,25 @@ class NazokakeItemORM(Base):
     # retry_count: 連続同期失敗回数(ポイズンピル判定用)。upsert_item()でローカル内容が
     # 変わるたびに0へリセットする(=新しい変更は「まだ1度も試していない」とみなす)。
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
+
+
+class AuditLogORM(Base):
+    """ポイズンピル(DLQ)操作等に対する不変な監査証跡(Audit Trail)。
+
+    既存データを一切変更しないAppend-onlyのログテーブルであり、このテーブル自身への
+    UPDATE/DELETEは想定しない(常にINSERTのみ)。
+    """
+
+    __tablename__ = "audit_logs"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    target_item_id: Mapped[str] = mapped_column(String, index=True)
+    actor: Mapped[str] = mapped_column(String)
+    action: Mapped[str] = mapped_column(String)
+    # レイアウト破壊を防ぐため、リクエスト内容や詳細なペイロードをJSONへ
+    # シリアライズして格納する(改行・カンマ等を含む自由記述テキストでも安全)。
+    reason: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[str] = mapped_column(String)
 
 
 async def init_db() -> None:
@@ -477,6 +497,33 @@ def sync_mark_sync_failed(doc_id: str, error_message: str) -> None:
 async def async_upsert_item(payload: dict[str, Any]) -> None:
     """upsert_item()のSerialized Writer経由・非ブロッキング版。"""
     await _serialized_writer.submit_async(lambda: upsert_item(payload))
+
+
+async def append_audit_log(
+    target_item_id: str, actor: str, action: str, reason_dict: dict[str, Any]
+) -> None:
+    """監査ログを1件追記する(Append-only、既存データの更新・削除は一切行わない)。"""
+    async with get_session() as session:
+        async with session.begin():
+            session.add(
+                AuditLogORM(
+                    id=str(uuid.uuid4()),
+                    target_item_id=target_item_id,
+                    actor=actor,
+                    action=action,
+                    reason=reason_dict,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                )
+            )
+
+
+async def async_append_audit_log(
+    target_item_id: str, actor: str, action: str, reason_dict: dict[str, Any]
+) -> None:
+    """append_audit_log()のSerialized Writer経由・非ブロッキング版。"""
+    await _serialized_writer.submit_async(
+        lambda: append_audit_log(target_item_id, actor, action, reason_dict)
+    )
 
 
 async def async_get_item(doc_id: str) -> dict[str, Any] | None:
