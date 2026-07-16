@@ -36,6 +36,12 @@ from pydantic_settings import BaseSettings, SettingsConfigDict  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+# アプリ本体(apps/evaluator/backend、ローカルLLM推論)とMLOps(tools/mlops_pipeline_*.py、
+# 学習/評価)が限られたVRAM(8GB)を排他的に使うためのグローバルファイルロック。
+# どちらが起動していても、このパスへのfilelock.FileLockで調停する(OSレベルの
+# ロックのため、プロセスが異常終了してもOSが自動的に解放する)。
+VRAM_LOCK_PATH = PROJECT_ROOT / ".vram.lock"
+
 # クライアント接続先としては到達不能な「サーバーのbind用アドレス」。OLLAMA_HOSTに
 # これが設定されていた場合、フォーマット自体は妥当でも実質的に不正な設定とみなす。
 _WILDCARD_HOSTS = {"0.0.0.0", "::", "*", ""}

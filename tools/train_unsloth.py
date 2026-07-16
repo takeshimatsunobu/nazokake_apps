@@ -8,10 +8,11 @@ tools/train_unsloth.py
 ポーリング間隔に起因する検知遅延や、ポーリングという仕組み自体の不確実性のため
 完全に廃止した(Epic 3)。
 
-プロセスツリーのアトミックな破棄は、呼び出し元(tools/mlops_pipeline.py)が
-tools/process_manager.py経由でOSネイティブな機構(POSIXのプロセスグループ/Windowsの
-Job Object)を用いて保証する責務へ委譲されている。このスクリプト自身はもはや
-自己の生死を監視する必要がなく、単純なモック処理のみを行う。
+プロセスツリーのアトミックな破棄は、呼び出し元(tools/mlops_pipeline_nazo.py /
+tools/mlops_pipeline_agent.py)が tools/process_manager.py 経由でOSネイティブな
+機構(POSIXのプロセスグループ/Windowsの Job Object)を用いて保証する責務へ
+委譲されている。このスクリプト自身はもはや自己の生死を監視する必要がなく、
+単純なモック処理のみを行う。
 
 今回は実際のUnslothによる学習ではなく、数秒スリープして終了するモック処理。
 """

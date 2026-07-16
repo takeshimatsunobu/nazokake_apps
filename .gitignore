@@ -27,6 +27,12 @@ tools/audit_reports/
 # ベンチマークハーネスの生成物(メトリクスJSON等、再生成可能な成果物)
 tools/benchmark/reports/
 
+# VRAMグローバル排他ロック(ランタイムのみ存在するファイルロック本体)
+.vram.lock
+
+# mlops_trigger.pyの「前回トリガー時点の件数」永続化状態(再生成可能)
+tools/mlops_trigger_state.json
+
 # safe_reset_infra.pyの一時バックアップ(異常終了時の残骸を誤コミットしないためのガード)
 data/db_backup_temp.json
 

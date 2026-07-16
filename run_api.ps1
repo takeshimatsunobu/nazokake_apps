@@ -53,6 +53,13 @@ $VenvPython = Join-Path $VenvDir "Scripts\python.exe"
 # 到達するよう、ここで絶対パスに固定して両者へ伝播させる。
 $env:NAZOKAKE_DB_PATH = Join-Path $ProjectRoot "nazokake_local.db"
 
+# tools/config.py の VRAM_LOCK_PATH は __file__ 基準の絶対パスのため常に一定だが、
+# apps/evaluator(別リポジトリ、cwd: apps/evaluator/backend)側はリポジトリルートの
+# tools.config へ依存できない(本番Cloud Run環境にtools/は存在しないため)。そのため
+# generation.py はこの環境変数を経由してのみ同一の絶対パスを知る。ここで
+# tools/config.py と同じ絶対パスに固定して伝播させる。
+$env:VRAM_LOCK_PATH = Join-Path $ProjectRoot ".vram.lock"
+
 # --- 【環境ガード】 ---------------------------------------------------------
 $venvActive = [bool]$env:VIRTUAL_ENV
 $venvDirExists = Test-Path $VenvDir
