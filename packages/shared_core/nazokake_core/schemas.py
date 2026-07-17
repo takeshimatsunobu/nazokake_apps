@@ -6,7 +6,7 @@ Firestore nazokake_items コレクション of スキーマ契約を Pydantic �
 from __future__ import annotations
 from datetime import datetime, timezone
 import random
-from typing import Literal, Dict, Any
+from typing import Literal, Dict
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 SCHEMA_VERSION = "1.0.0"

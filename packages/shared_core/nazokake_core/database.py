@@ -566,10 +566,32 @@ async def async_get_dlq_items() -> list[dict[str, Any]]:
         ]
 
 
-async def async_retry_dlq_item(doc_id: str) -> bool:
+async def async_get_audit_logs(limit: int = 100) -> list[dict[str, Any]]:
+    """audit_logsテーブルの監査証跡を、created_at降順(新しい順)で最大limit件取得する。
+
+    Append-onlyな不変ログであり、このDAO自身も読み取り専用(UPDATE/DELETEは行わない)。
+    """
+    async with get_session() as session:
+        result = await session.execute(
+            select(AuditLogORM).order_by(AuditLogORM.created_at.desc()).limit(limit)
+        )
+        rows = result.scalars().all()
+        return [
+            {c.name: getattr(row, c.name) for c in AuditLogORM.__table__.columns}
+            for row in rows
+        ]
+
+
+async def async_retry_dlq_item(
+    doc_id: str, *, actor: str = "system", reason_dict: dict[str, Any] | None = None
+) -> bool:
     """DLQからの「再試行」: sync_statusをpendingへ戻し、retry_count/last_sync_errorを
     リセットする(次回の同期ワーカー実行時に再送対象となる)。対象が存在しないか、
     既にfatal(隔離中)でない場合はFalseを返す(呼び出し元はこれを404判定に使う)。
+
+    ステータス更新と監査証跡(audit_logs)への追記を単一のトランザクション内で行う。
+    いずれかが失敗した場合は両方ロールバックされ、「操作(破壊的なステータス変更)は
+    成功したのに対応する監査証跡が残っていない」という不整合を構造的に排除する。
     """
     async with get_session() as session:
         async with session.begin():
@@ -579,13 +601,29 @@ async def async_retry_dlq_item(doc_id: str) -> bool:
             row.sync_status = "pending"
             row.retry_count = 0
             row.last_sync_error = None
+            session.add(
+                AuditLogORM(
+                    id=str(uuid.uuid4()),
+                    target_item_id=doc_id,
+                    actor=actor,
+                    action="RETRY_DLQ",
+                    reason=reason_dict,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                )
+            )
         return True
 
 
-async def async_discard_dlq_item(doc_id: str) -> bool:
+async def async_discard_dlq_item(
+    doc_id: str, *, actor: str = "system", reason_dict: dict[str, Any] | None = None
+) -> bool:
     """DLQからの「破棄」: 隔離状態は維持したままsync_statusを"discarded"にし、
     get_pending_sync_batch()およびDLQ一覧(async_get_dlq_items())の両方の対象から
     外す。対象が存在しないか、既にfatal(隔離中)でない場合はFalseを返す。
+
+    ステータス更新と監査証跡(audit_logs)への追記を単一のトランザクション内で行う
+    (async_retry_dlq_itemと同じ設計。破棄は復元不能な操作のため、監査証跡の
+    確実な同時記録が特に重要)。
     """
     async with get_session() as session:
         async with session.begin():
@@ -593,6 +631,16 @@ async def async_discard_dlq_item(doc_id: str) -> bool:
             if row is None or row.sync_status != "fatal":
                 return False
             row.sync_status = "discarded"
+            session.add(
+                AuditLogORM(
+                    id=str(uuid.uuid4()),
+                    target_item_id=doc_id,
+                    actor=actor,
+                    action="DISCARD_DLQ",
+                    reason=reason_dict,
+                    created_at=datetime.now(timezone.utc).isoformat(),
+                )
+            )
         return True
 
 
