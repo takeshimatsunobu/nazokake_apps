@@ -86,6 +86,19 @@ class ToolsSettings(BaseSettings):
             )
         return candidate
 
+    # CTOエスカレーション(tools/agent_graph.py)の閾値。Qwenが自己申告する
+    # confidence_scoreがこの値を下回るか、requires_escalation=Trueを申告した場合に
+    # クラウド上位モデル(Claude)へエスカレーションする。ハードコードせずここで
+    # 環境変数(.env)経由の上書きを許可する。
+    escalation_confidence_threshold: float = 0.8
+
+    # logprobsベースのエントロピー計算による、より厳密な不確実性推定への拡張余地を
+    # 予約するフィーチャートグル。現時点ではQwen自身が申告するconfidence_score
+    # (JSON出力内のフィールド)のみを信頼度の根拠として使用し、このトグル自体は
+    # 常にFalseで未実装・未使用(将来ここにOllamaのlogprobs対応を組み込む場合に
+    # 備えた明示的な無効化フラグ)。
+    enable_logprobs_entropy: bool = False
+
 
 def load_settings() -> ToolsSettings:
     """設定を読み込み検証する。失敗時は意味のあるメッセージを出してFail-Fastする。"""

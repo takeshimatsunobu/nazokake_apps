@@ -50,6 +50,20 @@ class AstModificationInstruction(BaseModel):
     triage_type: Literal["bug_fix", "test_update"] = Field(
         default="bug_fix", description="バグ修正か、陳腐化したテストの更新か"
     )
+    # CTOエスカレーション(tools/agent_graph.py)用の自己評価フィールド。デフォルト値は
+    # 「不確実性の申告なし」を表す安全側の値であり、ast_modifier.py自身の適用ロジック
+    # (apply_modification)はこれらの値を一切参照しない(Qwenの出力自己評価と、
+    # 実際にAST置換を適用できるかどうかの構文的検証は独立した関心事のため)。
+    confidence_score: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="この修正案に対するモデル自身の確信度(0.0=全く自信がない〜1.0=完全に確信)",
+    )
+    requires_escalation: bool = Field(
+        default=False,
+        description="Trueの場合、この修正案は上位モデル(CTOノード)によるレビューが必要",
+    )
 
 
 class TargetNodeReplacer(cst.CSTTransformer):
