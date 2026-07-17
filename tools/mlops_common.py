@@ -163,9 +163,17 @@ def run_step(step_name: str, cmd: list[str], *, tolerate_failure: bool = False) 
     機構(POSIXのプロセスグループ/WindowsのJob Object)で保証する(VRAMリークの
     原因となるゾンビ子孫プロセスの排除)。
 
-    tolerate_failure=True の場合、このステップが失敗しても例外・sys.exitで
-    パイプライン全体を止めず、警告を出してFalseを返すのみとする(呼び出し元が
-    「このステップは無くても後続を続行できる」と判断している場合のみ使う)。
+    tolerate_failure=True の場合、このステップが失敗しても例外を送出せず、
+    警告を出してFalseを返すのみとする(呼び出し元が「このステップは無くても
+    後続を続行できる」と判断している場合のみ使う)。
+
+    tolerate_failure=False でステップが異常終了した場合は RuntimeError を送出する
+    (以前はここでsys.exit(1)により即座にプロセスを終了させていたが、これにより
+    呼び出し元(各MLOpsパイプラインのmain())が実験管理DBへの記録
+    (_record_experiment)やダッシュボード用静的JSONの更新(export_metrics)を
+    一切実行できないまま死ぬサイレントな障害が生じていた。RuntimeErrorとして
+    送出することで、呼び出し元がtry/exceptで捕捉し、後始末を確実に行った上で
+    終了できるようにする)。
     """
     print(f"\n🔍 [Step] {step_name} を実行します... ({' '.join(cmd)})")
     with process_manager.ManagedProcess(cmd, cwd=str(BASE_DIR)) as proc:
@@ -190,7 +198,7 @@ def run_step(step_name: str, cmd: list[str], *, tolerate_failure: bool = False) 
         )
         print(message)
         send_alert_webhook(message)
-        sys.exit(1)
+        raise RuntimeError(message)
 
     print(f"✅ {step_name} が完了しました。")
     return True

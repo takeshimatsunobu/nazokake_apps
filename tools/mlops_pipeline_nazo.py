@@ -129,23 +129,34 @@ def main() -> int:
 
     lock = mlops_common.acquire_vram_lock_with_backoff()
     try:
-        mlops_common.run_step(
-            "データ抽出(なぞかけSFT/DPOデータセット)",
-            ["uv", "run", "python", "tools/extract_dataset.py"],
-        )
+        try:
+            mlops_common.run_step(
+                "データ抽出(なぞかけSFT/DPOデータセット)",
+                ["uv", "run", "python", "tools/extract_dataset.py"],
+            )
 
-        mlops_common.run_step(
-            "学習(なぞかけ生成モデル)",
-            ["uv", "run", "python", "tools/train_unsloth.py"],
-        )
+            mlops_common.run_step(
+                "学習(なぞかけ生成モデル)",
+                ["uv", "run", "python", "tools/train_unsloth.py"],
+            )
 
-        mlops_common.run_step(
-            "自動評価(なぞかけ生成モデルのホールドアウト検証)",
-            ["uv", "run", "python", "tools/evaluate_model.py"],
-        )
-    finally:
-        lock.release()
-        print("🔓 [VRAM排他制御] VRAMロックを解放しました。")
+            mlops_common.run_step(
+                "自動評価(なぞかけ生成モデルのホールドアウト検証)",
+                ["uv", "run", "python", "tools/evaluate_model.py"],
+            )
+        finally:
+            lock.release()
+            print("🔓 [VRAM排他制御] VRAMロックを解放しました。")
+    except RuntimeError as e:
+        # ステップのサブプロセス自体が異常終了した場合、以前はrun_step()内の
+        # sys.exit(1)でプロセスごと即死しており、実験管理DBへの記録
+        # (_record_experiment)もダッシュボード用静的JSON(export_metrics)の更新も
+        # 一切実行されないサイレントな障害だった(instructions/134で検出)。
+        # RuntimeErrorとして送出させ、ここで捕捉した上で必ず記録してから終了する。
+        latency = time.monotonic() - start_time
+        print(f"🚨 [Fail-Fast] ステップ異常終了によりパイプラインを停止します: {e}")
+        _record_experiment(None, latency)
+        return 1
 
     latency = time.monotonic() - start_time
 
