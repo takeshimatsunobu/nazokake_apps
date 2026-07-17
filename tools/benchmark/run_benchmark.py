@@ -229,9 +229,18 @@ def _run_in_docker(fixture_dir: Path, task: dict, output_dir: Path) -> str:
             "/mnt/output",
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            # 【ハードタイムアウト】run_target_specific_pytest()と同様、AI生成コードの
+            # 無限ループ等によるハングでベンチマーク全体が無期限にブロックされない
+            # ようにする。タイムアウトはシステムエラーではなく「AI生成コードの
+            # パフォーマンス異常」として記録し、他のfixtureの処理は継続させる。
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         except FileNotFoundError as e:
             return f"failed: {e}"
+        except subprocess.TimeoutExpired:
+            return (
+                "failed: Timeout Failure(AI生成コードのパフォーマンス異常): "
+                "300秒以内にdocker run(適用+Pytest実行)が完了しませんでした。"
+            )
 
         if result.returncode != 0:
             stderr_snippet = result.stderr.strip()[:500]
@@ -327,11 +336,16 @@ def run_target_specific_pytest(worktree_path: Path) -> dict:
         output_dir = Path(output_dir_str)
         junit_path = output_dir / "target_pytest.xml"
 
+        # 【絶対制約】worktree自体は/workspace:roとして読み取り専用マウントするため、
+        # コンテナ内でPython(pytest)がバイトコードキャッシュ(__pycache__/*.pyc)を書き
+        # 込もうとしてPermissionErrorになることを構造的に防ぐ(PYTHONDONTWRITEBYTECODE=1)。
         cmd = [
             "docker",
             "run",
             "--rm",
             *_docker_security_args(),
+            "-e",
+            "PYTHONDONTWRITEBYTECODE=1",
             "--entrypoint",
             "python",
             "-v",
@@ -344,17 +358,31 @@ def run_target_specific_pytest(worktree_path: Path) -> dict:
             "-m",
             "pytest",
             ".",
-            "-v",
             "-p",
             "no:cacheprovider",
+            "-v",
             "--junitxml=/output/target_pytest.xml",
         ]
         try:
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            # 【ハードタイムアウト】非決定的なLLM生成コードが無限ループ等でハングした
+            # 場合でも、ベンチマーク自体が無期限にブロックされないようtimeout=300を
+            # 明示する。タイムアウトはシステムエラーではなく「AI生成コードの
+            # パフォーマンス異常」として扱い、レポート生成自体は正常に継続させる。
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         except FileNotFoundError as e:
             return {
                 "returncode": None,
                 "error": f"dockerコマンドが見つかりません: {e}",
+                "junit_results": {},
+            }
+        except subprocess.TimeoutExpired:
+            return {
+                "returncode": None,
+                "error": (
+                    "Timeout Failure(AI生成コードのパフォーマンス異常): "
+                    "300秒以内にPytest実行が完了しませんでした。"
+                ),
+                "timed_out": True,
                 "junit_results": {},
             }
 
