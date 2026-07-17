@@ -31,7 +31,7 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
-from pydantic import field_validator  # noqa: E402
+from pydantic import SecretStr, field_validator  # noqa: E402
 from pydantic_settings import BaseSettings, SettingsConfigDict  # noqa: E402
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -98,6 +98,20 @@ class ToolsSettings(BaseSettings):
     # 常にFalseで未実装・未使用(将来ここにOllamaのlogprobs対応を組み込む場合に
     # 備えた明示的な無効化フラグ)。
     enable_logprobs_entropy: bool = False
+
+    # MLOpsパイプライン(tools/mlops_pipeline_agent.py)の定量評価ゲートにおける
+    # Code Complexity(ASTノード数)増加率の許容上限。以前はモジュール内の
+    # マジックナンバー(MAX_COMPLEXITY_GROWTH_RATE = 0.10)としてハードコードされて
+    # いたが、閾値の調整に毎回コード変更を要してしまうため、環境変数(.env)経由の
+    # 上書きを許可するここへ外部化する。
+    quality_gate_complexity_max: float = 0.10
+
+    # 異常終了時・定量評価ゲート不合格時にDiscord/Slack等へ通知するWebhook URL。
+    # 【絶対制約】この値はログや例外メッセージに平文で出現し得ないよう、
+    # pydantic.SecretStrで保持する(str(settings)やrepr(settings)でも
+    # "**********"にマスクされ、実際のURL文字列はget_secret_value()を明示的に
+    # 呼んだ場合のみ取得できる)。未設定(None)の場合、通知機能自体を無効化する。
+    alert_webhook_url: SecretStr | None = None
 
 
 def load_settings() -> ToolsSettings:

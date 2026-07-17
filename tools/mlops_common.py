@@ -20,11 +20,12 @@ import sys
 from pathlib import Path
 
 import filelock
+import httpx
 import psutil
 import tenacity
 
 from tools import process_manager
-from tools.config import VRAM_LOCK_PATH
+from tools.config import VRAM_LOCK_PATH, settings
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -127,6 +128,33 @@ def preflight_gpu_cleanup() -> list[int]:
     return killed
 
 
+def send_alert_webhook(message: str) -> None:
+    """異常終了・定量評価ゲート不合格時にDiscord/Slack等のWebhookへ通知を送る。
+
+    settings.alert_webhook_url が未設定(None)の場合、通知機能自体が無効化されて
+    いるとみなし何もせずreturnする。
+
+    【絶対制約】外部Webhookの障害(タイムアウト・DNS失敗・4xx/5xx等のあらゆる例外)は
+    ここで必ず捕捉し、標準エラー出力へログを出すのみに留める。呼び出し元
+    (run_step()のsys.exit(1)直前、各パイプラインのゲート判定後)はいずれもこの直後に
+    VRAMロックの解放(finally節)や後続のFail-Fast終了処理を控えているため、
+    ここで例外を伝播させるとその解放処理自体を巻き込んで壊してしまう。
+    """
+    if settings.alert_webhook_url is None:
+        return
+
+    url = settings.alert_webhook_url.get_secret_value()
+    try:
+        # Discord(content)/Slack(text)いずれの受信フォーマットにも解釈可能なよう、
+        # 両方のキーを含めた汎用ペイロードを送る。
+        httpx.post(url, json={"content": message, "text": message}, timeout=3.0)
+    except Exception as e:  # noqa: BLE001 - Webhook障害は握って継続する(絶対制約)
+        print(
+            f"⚠️  [アラート通知] Webhook送信に失敗しました(無視して継続します): {e}",
+            file=sys.stderr,
+        )
+
+
 def run_step(step_name: str, cmd: list[str], *, tolerate_failure: bool = False) -> bool:
     """1ステップをBASE_DIR起点で同期実行する。戻り値は成功したかどうか(bool)。
 
@@ -156,10 +184,12 @@ def run_step(step_name: str, cmd: list[str], *, tolerate_failure: bool = False) 
                 "このステップは必須ではないため続行します。"
             )
             return False
-        print(
+        message = (
             f"🚨 [Fail-Fast] {step_name} が異常終了しました "
             f"(code={returncode})。パイプラインを停止します。"
         )
+        print(message)
+        send_alert_webhook(message)
         sys.exit(1)
 
     print(f"✅ {step_name} が完了しました。")

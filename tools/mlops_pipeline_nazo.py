@@ -150,7 +150,9 @@ def main() -> int:
     latency = time.monotonic() - start_time
 
     if not EVALUATION_REPORT_PATH.exists():
-        print("🚨 [Fail-Fast] 評価レポートが見つかりませんでした。")
+        message = "🚨 [Fail-Fast] 評価レポートが見つかりませんでした。"
+        print(message)
+        mlops_common.send_alert_webhook(f"[MLOps/nazo] {message}")
         _record_experiment(None, latency)
         return 1
 
@@ -162,7 +164,9 @@ def main() -> int:
         print("\n🎉 学習成功およびデプロイ承認(なぞかけ生成モデル)")
         return 0
 
-    print("\n🛑 定量評価ゲートを通過しなかったため、デプロイを承認しません。")
+    message = "🛑 定量評価ゲートを通過しなかったため、デプロイを承認しません。"
+    print(f"\n{message}")
+    mlops_common.send_alert_webhook(f"[MLOps/nazo] {message}")
     return 1
 
 

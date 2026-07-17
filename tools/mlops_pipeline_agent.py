@@ -45,6 +45,7 @@ if str(BASE_DIR) not in sys.path:
 from tools import export_metrics  # noqa: E402
 from tools import mlops_common  # noqa: E402
 from tools import mlops_experiments_db  # noqa: E402
+from tools.config import settings  # noqa: E402
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -54,8 +55,6 @@ BENCHMARK_REPORTS_DIR = BASE_DIR / "tools" / "benchmark" / "reports"
 BASELINE_PATH = BENCHMARK_REPORTS_DIR / "baseline_metrics_agent.json"
 AGENT_SFT_PATH = BASE_DIR / "tools" / "dataset" / "agent_sft.jsonl"
 BASE_MODEL = "qwen2.5-coder:7b"
-
-MAX_COMPLEXITY_GROWTH_RATE = 0.10  # 10%
 
 
 def _find_latest_benchmark_report() -> Path | None:
@@ -126,11 +125,11 @@ def evaluate_quality_gate(report: dict) -> bool:
 
     if (
         complexity_growth_rate is not None
-        and complexity_growth_rate >= MAX_COMPLEXITY_GROWTH_RATE
+        and complexity_growth_rate >= settings.quality_gate_complexity_max
     ):
         print(
             f"🚨 [ゲート判定] Code Complexity増加率が上限"
-            f"({MAX_COMPLEXITY_GROWTH_RATE:.0%})を超えました。"
+            f"({settings.quality_gate_complexity_max:.0%})を超えました。"
         )
         return False
 
@@ -210,7 +209,9 @@ def main() -> int:
 
     report_path = _find_latest_benchmark_report()
     if report_path is None:
-        print("🚨 [Fail-Fast] ベンチマークレポートが見つかりませんでした。")
+        message = "🚨 [Fail-Fast] ベンチマークレポートが見つかりませんでした。"
+        print(message)
+        mlops_common.send_alert_webhook(f"[MLOps/agent] {message}")
         _record_experiment(None, latency)
         return 1
 
@@ -222,7 +223,9 @@ def main() -> int:
         print("\n🎉 学習成功およびデプロイ承認(Nazo-Agent)")
         return 0
 
-    print("\n🛑 定量評価ゲートを通過しなかったため、デプロイを承認しません。")
+    message = "🛑 定量評価ゲートを通過しなかったため、デプロイを承認しません。"
+    print(f"\n{message}")
+    mlops_common.send_alert_webhook(f"[MLOps/agent] {message}")
     return 1
 
 
