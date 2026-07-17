@@ -1811,101 +1811,56 @@ def _has_staged_changes(cwd: Path, files: list[str]) -> bool:
     return False
 
 
-def _create_test_update_draft_branch(
-    successful_files: list[str], commit_message: str
-) -> str:
-    """テストの陳腐化(triage_type == "test_update")を検知した際の「優雅な一時停止」
-    (Graceful Suspend)。人間の確認を経ずにテストコードの変更を作業中のブランチへ直接
-    コミットしないよう、都度新規の隔離ドラフトブランチを作成し、そちらにのみコミットする。
+async def _escalate_test_update_tasks_to_sandbox(tasks: list[dict]) -> None:
+    """テストの陳腐化(triage_type == "test_update")と判定された各タスクを、
+    tools/agent_graph.py の sandbox_verify_node による隔離ワークツリー(git worktree)+
+    Dockerサンドボックス検証+PRドラフト生成へ委譲する(instructions/126)。
 
-    処理完了後もこのドラフトブランチのまま留まり、元のブランチへは戻さない(意図的な設計)。
-    人間が「見慣れないブランチにいる」ことに気づき、レビュー・マージを行うことを促す
-    ための安全装置。
+    以前はここで専用の隔離ドラフトブランチ(draft/test-update-{timestamp})を
+    共有の作業ディレクトリ(TARGET_APP_DIR)上に作成し、そちらへ直接コミットしていたが、
+    git worktreeを使わないため「メインの作業ディレクトリを一切変更しない」隔離性を
+    保証できなかった。以降、隔離検証はすべてsandbox_verify_nodeに一元化する
+    (このため、修正の適用自体もここでは行わず、隔離ワークツリー内でのみ行われる)。
     """
-    branch_name = (
-        f"draft/test-update-{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    )
-    print(
-        f"\n🌿 [Graceful Suspend] テストの陳腐化を検知したため、隔離ドラフトブランチ "
-        f"'{branch_name}' を作成します..."
-    )
-    result = subprocess.run(
-        ["git", "checkout", "-b", branch_name],
-        cwd=str(TARGET_APP_DIR),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-    )
-    if result.returncode != 0:
-        print(
-            f"🚨 致命的エラー: ドラフトブランチ '{branch_name}' の作成に失敗しました:\n{result.stderr}"
-        )
-        sys.exit(1)
+    from tools.agent_graph import sandbox_verify_node
 
-    subprocess.run(
-        ["git", "add", "--"] + successful_files,
-        cwd=str(TARGET_APP_DIR),
-        check=True,
-    )
-    if not _has_staged_changes(TARGET_APP_DIR, successful_files):
-        print("✅ 変更がなかったためドラフトブランチへのコミットをスキップしました")
-        return branch_name
+    for task in tasks:
+        file_path = task.get("file_path", "")
+        target_name = task.get("target_name", "")
+        new_code = task.get("new_code", "")
+        resolved_target_file = _resolve_target_file(file_path)
+        if resolved_target_file is None or not target_name or not new_code:
+            print(
+                "⚠️ 警告: test_updateタスクの対象ファイル/target_name/new_codeが"
+                f"不正です。スキップします -> {file_path}"
+            )
+            continue
 
-    subprocess.run(
-        ["git", "commit", "-m", commit_message, "--"] + successful_files,
-        cwd=str(TARGET_APP_DIR),
-        check=True,
-    )
-    print(
-        "⚠️ テストの陳腐化を検知し、修復ドラフトブランチを作成しました。"
-        f"レビュー・マージは人間が行ってください（ブランチ: {branch_name}）"
-    )
-    return branch_name
+        try:
+            current_code = resolved_target_file.read_text(
+                encoding="utf-8", errors="strict"
+            )
+        except (FileNotFoundError, OSError):
+            current_code = ""
 
-
-AUTO_AUDIT_BRANCH = "auto-audit-temp"
-
-
-def _ensure_auto_audit_branch() -> None:
-    """LangGraph自律修復ループ(Feature 1.x)の実行前に、専用の隔離ブランチへ退避する。
-
-    既存ブランチがあればそのまま切り替え、無ければ作成して切り替える。
-    自律編集の影響を作業中の本来のブランチから隔離するための安全装置(Pre-flight)。
-    切り替え自体に失敗した場合(未コミット変更との衝突等)は、隔離が担保できない
-    ためパイプラインを続行させず安全に停止する。
-    """
-    print(
-        f"\n🌿 [Pre-flight] 自律修復ループ用の隔離ブランチ '{AUTO_AUDIT_BRANCH}' へ退避します..."
-    )
-    exists = (
-        subprocess.run(
-            ["git", "rev-parse", "--verify", AUTO_AUDIT_BRANCH],
-            cwd=str(TARGET_APP_DIR),
-            capture_output=True,
-        ).returncode
-        == 0
-    )
-
-    cmd = (
-        ["git", "checkout", AUTO_AUDIT_BRANCH]
-        if exists
-        else ["git", "checkout", "-b", AUTO_AUDIT_BRANCH]
-    )
-    result = subprocess.run(
-        cmd,
-        cwd=str(TARGET_APP_DIR),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="strict",
-    )
-    if result.returncode != 0:
-        print(
-            f"🚨 致命的エラー: ブランチ '{AUTO_AUDIT_BRANCH}' への切り替えに失敗しました:\n{result.stderr}"
-        )
-        sys.exit(1)
-    print(f"   ✅ ブランチ '{AUTO_AUDIT_BRANCH}' で作業します ({TARGET_APP_DIR})。")
+        cto_instruction = {
+            "file_path": str(resolved_target_file),
+            "target_name": target_name,
+            "new_code": new_code,
+            "triage_type": "test_update",
+        }
+        state = {
+            "file_path": str(resolved_target_file),
+            "current_code": current_code,
+            "diagnosis": (
+                "テストの陳腐化(triage_type=test_update)がClaude Criticにより"
+                "検知されました(SSoT_architecture.mdとの照合結果)。"
+            ),
+            "raw_json_text": json.dumps(cto_instruction, ensure_ascii=False),
+            "cto_instruction": cto_instruction,
+        }
+        result = await asyncio.to_thread(sandbox_verify_node, state)
+        print(result.get("result_message", ""))
 
 
 # --- Test-Driven Escalation Gatekeeper (アーキテクチャ統合 - 追加課題N: 選択的・並列実行) ---
@@ -1958,28 +1913,30 @@ async def _run_claude_pipeline_and_commit(
 
     main_flowの通常経路(engine=="claude")と、Ollama自律修復がpytest検証に失敗した際の
     エスカレーション経路の両方から共有される。
+
+    テストの陳腐化(triage_type == "test_update")と判定されたタスクは、共有の作業
+    ディレクトリ(TARGET_APP_DIR)へ直接適用する前にここで振り分け、
+    _escalate_test_update_tasks_to_sandbox() へすべて委譲する(隔離ワークツリー内でのみ
+    適用される)。それ以外(bug_fix)のタスクのみ、従来通りphase3_aider_executionで
+    直接適用し、一括コミットする。
     """
     static_context_path = build_static_context()
 
     triage_data = await phase2_claude_translation(user_instruction, log_path)
     tasks = triage_data.get("tasks", [])
-    success_count, successful_files = await phase3_aider_execution(
-        tasks, deduped_log, static_context_path
-    )
 
-    # --- Graceful Suspend: テストの陳腐化(triage_type == "test_update")を1件でも検知した
-    # 場合は、現在の作業ブランチへの通常コミット経路を完全にスキップし、人間レビュー専用の
-    # 隔離ドラフトブランチへのみコミットして即座に終了する(以降の通常コミット処理へは
-    # 一切フォールスルーしない)。
-    if any(t.get("triage_type") == "test_update" for t in tasks):
-        if success_count > 0 and successful_files:
-            _create_test_update_draft_branch(successful_files, commit_message)
-        else:
-            print(
-                "⚠️ テストの陳腐化が検知されましたが、適用に成功したファイルが"
-                "なかったためドラフトブランチの作成をスキップしました。"
-            )
+    test_update_tasks = [t for t in tasks if t.get("triage_type") == "test_update"]
+    bug_fix_tasks = [t for t in tasks if t.get("triage_type") != "test_update"]
+
+    if test_update_tasks:
+        await _escalate_test_update_tasks_to_sandbox(test_update_tasks)
+
+    if not bug_fix_tasks:
         return
+
+    success_count, successful_files = await phase3_aider_execution(
+        bug_fix_tasks, deduped_log, static_context_path
+    )
 
     if success_count > 0 and successful_files:
         print(
@@ -2173,9 +2130,6 @@ async def main_flow(user_instruction: str, engine: str = "ollama"):
     await startup_local_services()
 
     await phase0_ruff_autofix()
-
-    # --- Pre-flight: 自律修復ループ用の隔離ブランチへ退避(エンジン非依存) ---
-    _ensure_auto_audit_branch()
 
     # --- 共通前処理: エラーログ抽出 + 認知負荷監視(どちらのエンジンでも必須) ---
     log_path = await phase1_audit(is_final=False)

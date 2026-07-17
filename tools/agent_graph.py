@@ -453,17 +453,22 @@ def _find_git_repo_root(file_path: str) -> Path:
     return BASE_DIR
 
 
-def _run_benchmark_summary() -> dict:
+def _run_benchmark_summary(worktree_path: Path | None = None) -> dict:
     """tools/benchmark/run_benchmark.pyをサブプロセスとして実行し、終了コードと直近の
     メトリクスレポート(取得できれば)を返す。
 
-    ※ この検証は「今回のCTO修正案そのもの」に対するテストではなく、既存のDocker
-    サンドボックスハーネス(tools/benchmark/fixtures配下の固定シナリオ)による一般的な
-    安全性の健全性チェックである。Docker未導入の環境ではPre-flight Checkでhard failし
-    (exit code 1、instructions/119で実装済み)、その結果もそのまま誠実に記録する。
+    tools/benchmark/fixtures配下の固定シナリオによる一般的な安全性の健全性チェックに
+    加えて、worktree_pathを指定した場合は`--target-worktree`経由で、実際にエスカレー
+    ション対象ファイルが属するworktree内のPytestスイートもDockerサンドボックス内で
+    追加実行する(instructions/126、report["target_specific_pytest"]に格納される)。
+    Docker未導入の環境ではPre-flight Checkでhard failし(exit code 1、
+    instructions/119で実装済み)、その結果もそのまま誠実に記録する。
     """
+    cmd = ["uv", "run", "python", "tools/benchmark/run_benchmark.py"]
+    if worktree_path is not None:
+        cmd += ["--target-worktree", str(worktree_path)]
     result = subprocess.run(
-        ["uv", "run", "python", "tools/benchmark/run_benchmark.py"],
+        cmd,
         cwd=str(BASE_DIR),
         capture_output=True,
         text=True,
@@ -483,6 +488,41 @@ def _run_benchmark_summary() -> dict:
         "stderr_tail": result.stderr[-2000:],
         "report": report,
     }
+
+
+def _render_target_specific_pytest_section(report: dict) -> str:
+    """report["target_specific_pytest"](instructions/126、run_benchmark.pyが
+    --target-worktree指定時に追加実行する、エスカレーション対象ファイル固有の
+    Pytest結果)をMarkdownのアノテーションセクションへ整形する。
+
+    worktree_pathが未指定だった等で結果自体が存在しない場合は空文字を返す
+    (PRドラフトに空セクションを残さない)。
+    """
+    target_result = report.get("target_specific_pytest")
+    if not target_result:
+        return ""
+
+    returncode = target_result.get("returncode")
+    if returncode is None:
+        status = f"⚠️ 実行不可: {target_result.get('error', '(不明なエラー)')}"
+    elif returncode == 0:
+        status = "✅ 全テスト成功(exit code 0)"
+    else:
+        status = f"❌ 失敗(exit code {returncode})"
+
+    junit_results = target_result.get("junit_results") or {}
+    passed = sum(1 for ok in junit_results.values() if ok)
+    failed = sum(1 for ok in junit_results.values() if not ok)
+    stderr_tail = (target_result.get("stderr_tail") or "")[-1000:]
+
+    section = (
+        "\n## 対象ファイル固有のPytest検証(instructions/126)\n"
+        f"- 実行結果: {status}\n"
+        f"- テスト件数: 成功 {passed}件 / 失敗 {failed}件(合計{len(junit_results)}件)\n"
+    )
+    if failed or returncode not in (0, None):
+        section += f"- 標準エラー出力(末尾抜粋):\n```text\n{stderr_tail}\n```\n"
+    return section
 
 
 def _write_pr_draft(
@@ -505,6 +545,7 @@ def _write_pr_draft(
     )
     report = benchmark_summary.get("report") or {}
     aggregate = report.get("aggregate", report.get("status", "(レポート取得不可)"))
+    target_specific_section = _render_target_specific_pytest_section(report)
 
     body = (
         "# 🚨 CTOエスカレーション PRドラフト\n\n"
@@ -522,7 +563,8 @@ def _write_pr_draft(
         f"- ベンチマークハーネス(tools/benchmark/run_benchmark.py)の実行結果: {benchmark_status}\n"
         "  - ※この検証は既存のDockerサンドボックスハーネス(固定fixture)による一般的な"
         "安全性チェックであり、今回の修正対象ファイル固有のテストではありません。\n"
-        f"  - 集計結果: `{json.dumps(aggregate, ensure_ascii=False)}`\n\n"
+        f"  - 集計結果: `{json.dumps(aggregate, ensure_ascii=False)}`\n"
+        f"{target_specific_section}\n"
         "## レビュー・マージ手順(人間向け)\n"
         f"1. `cd {worktree_path}` で作業ディレクトリへ移動し、実際の差分・挙動を確認する。\n"
         f"2. 問題なければ通常のPRフローでこのブランチ(`{branch_name}`)をレビュー・マージする。\n"
@@ -624,7 +666,7 @@ def sandbox_verify_node(state: AuditState) -> dict:
             check=True,
         )
 
-        benchmark_summary = _run_benchmark_summary()
+        benchmark_summary = _run_benchmark_summary(worktree_path)
         pr_draft_path = _write_pr_draft(
             branch_name=branch_name,
             worktree_path=worktree_path,

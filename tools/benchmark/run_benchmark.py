@@ -171,6 +171,23 @@ def _parse_junit(xml_path: Path) -> dict:
     return results
 
 
+def _docker_security_args() -> list[str]:
+    """【セキュリティ境界】非決定的なLLM生成コードを実行するコンテナに対する
+    ホストリソース枯渇防止(ハードリミット)と外部通信の遮断(instructions/119)。
+    _run_in_docker()とrun_target_specific_pytest()の両方で共有する。
+    """
+    return [
+        "--network",
+        "none",
+        "--memory",
+        "2g",
+        "--cpus",
+        "1.0",
+        "--pids-limit",
+        "100",
+    ]
+
+
 def _run_in_docker(fixture_dir: Path, task: dict, output_dir: Path) -> str:
     """docker runでコンテナ内にfixtureをコピーし、AST置換の適用とPytest実行を行わせる。
 
@@ -188,16 +205,7 @@ def _run_in_docker(fixture_dir: Path, task: dict, output_dir: Path) -> str:
             "docker",
             "run",
             "--rm",
-            # 【セキュリティ境界】非決定的なLLM生成コードを実行するコンテナに対する
-            # ホストリソース枯渇防止(ハードリミット)と外部通信の遮断。
-            "--network",
-            "none",
-            "--memory",
-            "2g",
-            "--cpus",
-            "1.0",
-            "--pids-limit",
-            "100",
+            *_docker_security_args(),
             "-v",
             f"{BASE_DIR / 'tools'}:/mnt/tools:ro",
             "-v",
@@ -304,6 +312,60 @@ def run_fixture(name: str) -> dict:
     return result
 
 
+def run_target_specific_pytest(worktree_path: Path) -> dict:
+    """エスカレーション対象ファイルが実際に属するworktree(worktree_path)をDocker
+    コンテナへ読み取り専用マウントし、そのworktree内で発見されるPytestスイートを
+    実行する(instructions/126)。
+
+    tools/benchmark/fixtures配下の固定シナリオ(run_fixture)による一般的な
+    リグレッションチェックとは独立した、エスカレーション対象ファイル固有の検証。
+    修正はworktree側で既にコミット済みである前提のため、コンテナ内での書き込みは
+    テスト結果(junit xml)の出力先のみに限定し、worktree自体は読み取り専用で
+    マウントする(コンテナ内での意図しない書き込みを構造的に防ぐ)。
+    """
+    with tempfile.TemporaryDirectory() as output_dir_str:
+        output_dir = Path(output_dir_str)
+        junit_path = output_dir / "target_pytest.xml"
+
+        cmd = [
+            "docker",
+            "run",
+            "--rm",
+            *_docker_security_args(),
+            "--entrypoint",
+            "python",
+            "-v",
+            f"{worktree_path}:/workspace:ro",
+            "-v",
+            f"{output_dir}:/output:rw",
+            "-w",
+            "/workspace",
+            DOCKER_IMAGE,
+            "-m",
+            "pytest",
+            ".",
+            "-v",
+            "-p",
+            "no:cacheprovider",
+            "--junitxml=/output/target_pytest.xml",
+        ]
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True)
+        except FileNotFoundError as e:
+            return {
+                "returncode": None,
+                "error": f"dockerコマンドが見つかりません: {e}",
+                "junit_results": {},
+            }
+
+        return {
+            "returncode": result.returncode,
+            "stdout_tail": result.stdout[-2000:],
+            "stderr_tail": result.stderr[-2000:],
+            "junit_results": _parse_junit(junit_path),
+        }
+
+
 def _write_infrastructure_error_report(message: str) -> Path:
     """Docker Pre-flight Check失敗時のメトリクスレポートを書き出す。
 
@@ -372,6 +434,14 @@ def main() -> int:
     parser.add_argument(
         "--fixture", help="実行するfixture名(省略時はfixtures/配下の全て)"
     )
+    parser.add_argument(
+        "--target-worktree",
+        help=(
+            "エスカレーション対象ファイルが属するworktreeのパス(省略可)。指定時は"
+            "tools/benchmark/fixtures配下の固定シナリオに加えて、そのworktree内の"
+            "Pytestスイートも追加でDockerサンドボックス内で実行する(instructions/126)。"
+        ),
+    )
     args = parser.parse_args()
 
     if args.fixture:
@@ -429,6 +499,15 @@ def main() -> int:
             ),
         },
     }
+
+    if args.target_worktree:
+        print(f"=== 対象ファイル固有のPytest検証: {args.target_worktree} ===")
+        target_result = run_target_specific_pytest(Path(args.target_worktree))
+        print(json.dumps(target_result, ensure_ascii=False, indent=2, default=str))
+        # aggregate(fixtureの集計)とは意図的に分離し、別セクションとして格納する
+        # (対象固有テストの成否はレポートに記録するのみで、既存のexit code契約
+        # 「インフラ健全性のみを表す」には影響させない)。
+        report["target_specific_pytest"] = target_result
 
     REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     report_filename = f"benchmark_{report['timestamp'].replace(':', '-')}.json"
