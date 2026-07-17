@@ -16,9 +16,13 @@ apply_node/gemma_fallback_node/reporter_node を含まない推論専用の小�
 【Hard Fail方針(Epic 2 セキュリティ厳格化)】 Docker隔離はこのベンチマークの
 安全性そのものの前提(非決定的なLLM生成コードをホスト上で直接実行しない)であり、
 オプショナルな機能ではない。dockerデーモンが稼働していない場合、対話的プロンプトを
-一切挟まずsys.stderrへ出力してただちにsys.exit(1)する(main()冒頭の
-_require_docker_or_die())。ホストOS上でtools/ast_modifier.pyの適用やpytestを直接
-実行する「フォールバック」経路は、この設計では構造的に存在しない
+一切挟まずsys.stderrへ出力してただちにsys.exit(125)する(main()冒頭の
+_require_docker_or_die())。終了コード125はDocker CLI自体の慣例(コンテナ内部の
+コマンド失敗ではなく`docker run`の起動自体が失敗したことを示す)に倣ったもので、
+監視システムがこれを見て「インフラエラー(Docker起動不能)」と「アプリケーション
+エラー(コンテナ内のPytest失敗等、通常1)」を終了コードだけで明確に区別できるように
+するため(instructions/136)。ホストOS上でtools/ast_modifier.pyの適用やpytestを
+直接実行する「フォールバック」経路は、この設計では構造的に存在しない
 (run_fixture()はDocker経由の_run_in_docker()以外にコード適用手段を持たず、
 _run_in_docker()自体もdocker runコマンドの起動のみを行う)。
 """
@@ -425,7 +429,10 @@ def _require_docker_or_die() -> None:
     安全性の前提としており、Docker隔離はオプショナルな機能ではない。利用不可の
     場合は対話的プロンプトを一切挟まず、エラーをsys.stderrへ出力した上で
     メトリクスレポート(status="Infrastructure Error")を書き出し、直ちに
-    exit code 1で終了する。
+    exit code 125(Docker CLI慣例に倣ったインフラエラー専用コード)で終了する。
+    アプリケーションエラー(コンテナ内Pytest失敗等、通常exit code 1)と終了コード
+    だけで明確に区別できるようにするため、通常のFail-Fast(exit code 1)とは
+    意図的に分離している(instructions/136)。
     """
     try:
         result = subprocess.run(
@@ -450,7 +457,7 @@ def _require_docker_or_die() -> None:
     print(f"🚨 [Hard-Fail] {message}", file=sys.stderr)
     report_path = _write_infrastructure_error_report(message)
     print(f"レポートを書き出しました: {report_path}", file=sys.stderr)
-    sys.exit(1)
+    sys.exit(125)
 
 
 def main() -> int:
