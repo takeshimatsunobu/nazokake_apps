@@ -29,6 +29,7 @@ tools/ast_modifier.py をサブプロセスとして呼び出すことで委譲�
 いずれもOllamaへ `ollama pull <model>` 済みであること。
 """
 
+import contextlib
 import datetime
 import json
 import operator
@@ -469,6 +470,48 @@ def _find_git_repo_root(file_path: str) -> Path:
     return BASE_DIR
 
 
+@contextlib.contextmanager
+def managed_git_worktree(repo_root: Path):
+    """隔離用の一時 git worktree を UUID 名前空間で作成し、ブロック終了時に必ず物理
+    ディレクトリを破棄するコンテキストマネージャ。
+
+    ブランチ名を `escalation/issue-{unixtime}-{uuid4().hex}` として一意化することで、
+    同時に複数のエスカレーションが走っても worktree パス/ブランチ名が衝突しない。
+    worktree の作成に失敗した場合は RuntimeError を送出する(この時点ではまだ
+    worktree が存在しないため、finally での破棄処理には入らない)。作成に成功した
+    後は、yield 先(呼び出し元)の処理が正常終了・例外のいずれであっても、finally で
+    `git worktree remove --force` を実行して物理ディレクトリを必ずパージする
+    (レビュー用に残すのはブランチのみで、worktree自体は使い捨てとする)。
+    """
+    branch_name = f"escalation/issue-{int(time.time())}-{uuid.uuid4().hex}"
+    worktree_path = Path(tempfile.mkdtemp(prefix="nazo_escalation_")) / branch_name.replace(
+        "/", "_"
+    )
+    result_add = subprocess.run(
+        ["git", "worktree", "add", "-b", branch_name, str(worktree_path), "HEAD"],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result_add.returncode != 0:
+        raise RuntimeError(
+            f"隔離ブランチ/worktreeの作成に失敗しました: {result_add.stderr.strip()}"
+        )
+    try:
+        yield worktree_path, branch_name
+    finally:
+        subprocess.run(
+            ["git", "worktree", "remove", "--force", str(worktree_path)],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+
 def _run_benchmark_summary(worktree_path: Path | None = None) -> dict:
     """tools/benchmark/run_benchmark.pyをサブプロセスとして実行し、終了コードと直近の
     メトリクスレポート(取得できれば)を返す。
@@ -575,17 +618,18 @@ def _write_pr_draft(
         f"```python\n{instruction['new_code']}\n```\n\n"
         "## 隔離ブランチでのサンドボックス検証\n"
         f"- ブランチ: `{branch_name}`\n"
-        f"- 作業ディレクトリ(worktree): `{worktree_path}`\n"
+        f"- 検証用worktree(`{worktree_path}`)はこの検証完了後に自動的に破棄済みです"
+        "(ブランチ自体は破棄せず保持しています)。\n"
         f"- ベンチマークハーネス(tools/benchmark/run_benchmark.py)の実行結果: {benchmark_status}\n"
         "  - ※この検証は既存のDockerサンドボックスハーネス(固定fixture)による一般的な"
         "安全性チェックであり、今回の修正対象ファイル固有のテストではありません。\n"
         f"  - 集計結果: `{json.dumps(aggregate, ensure_ascii=False)}`\n"
         f"{target_specific_section}\n"
         "## レビュー・マージ手順(人間向け)\n"
-        f"1. `cd {worktree_path}` で作業ディレクトリへ移動し、実際の差分・挙動を確認する。\n"
+        f"1. `git worktree add <任意の作業ディレクトリ> {branch_name}` "
+        "(または `git checkout` でも可)でブランチを復元し、実際の差分・挙動を確認する。\n"
         f"2. 問題なければ通常のPRフローでこのブランチ(`{branch_name}`)をレビュー・マージする。\n"
-        f"3. 不要と判断した場合は `git worktree remove {worktree_path}` と "
-        f"`git branch -D {branch_name}` で後片付けする。\n\n"
+        f"3. 不要と判断した場合は `git branch -D {branch_name}` で後片付けする。\n\n"
         "---\n"
         "⏸️ このプロセスはここで安全に一時停止(Suspend)しています。以後の自動適用・"
         "マージは行いません。人間によるレビューが必要です。\n"
@@ -600,117 +644,100 @@ def sandbox_verify_node(state: AuditState) -> dict:
     ベンチマークハーネスを実行した上で、人間レビュー用のPRドラフトを生成する。
 
     このノードに到達するのはcto_instructionが設定されている場合のみ(_route_after_cto)。
-    worktree/ブランチは削除せず、人間のレビューのために残す(仕様。使い捨てではない)。
+    worktree自体は managed_git_worktree により処理の成功・失敗に関わらず必ず破棄される
+    (使い捨て)。人間レビューのために残るのはGitブランチのみ。
     """
     instruction = state["cto_instruction"]
     repo_root = _find_git_repo_root(state["file_path"])
-    branch_name = f"escalation/issue-{int(time.time())}"
-    worktree_path = Path(tempfile.mkdtemp(prefix="nazo_escalation_")) / branch_name.replace(
-        "/", "_"
-    )
-
-    result_add = subprocess.run(
-        ["git", "worktree", "add", "-b", branch_name, str(worktree_path), "HEAD"],
-        cwd=str(repo_root),
-        capture_output=True,
-        text=True,
-        encoding="utf-8",
-        errors="replace",
-    )
-    if result_add.returncode != 0:
-        message = (
-            "🚨 [サンドボックス検証失敗] 隔離ブランチ/worktreeの作成に失敗しました: "
-            f"{result_add.stderr.strip()}"
-        )
-        return {
-            "result_message": message,
-            "audit_history": [f"[サンドボックス検証] {message}"],
-        }
+    branch_name: str | None = None
 
     try:
-        target_abs_path = Path(instruction["file_path"]).resolve()
-        relative_path = target_abs_path.relative_to(repo_root.resolve())
-        instruction_in_worktree = dict(instruction)
-        instruction_in_worktree["file_path"] = str(worktree_path / relative_path)
+        with managed_git_worktree(repo_root) as (worktree_path, branch_name):
+            target_abs_path = Path(instruction["file_path"]).resolve()
+            relative_path = target_abs_path.relative_to(repo_root.resolve())
+            instruction_in_worktree = dict(instruction)
+            instruction_in_worktree["file_path"] = str(worktree_path / relative_path)
 
-        with tempfile.NamedTemporaryFile(
-            mode="w", suffix=".json", delete=False, encoding="utf-8", errors="strict"
-        ) as f:
-            json.dump(instruction_in_worktree, f, ensure_ascii=False, indent=2)
-            instruction_json_path = f.name
+            with tempfile.NamedTemporaryFile(
+                mode="w", suffix=".json", delete=False, encoding="utf-8", errors="strict"
+            ) as f:
+                json.dump(instruction_in_worktree, f, ensure_ascii=False, indent=2)
+                instruction_json_path = f.name
 
-        try:
-            apply_result = subprocess.run(
-                [
-                    "uv",
-                    "run",
-                    "python",
-                    str(BASE_DIR / "tools" / "ast_modifier.py"),
-                    instruction_json_path,
-                ],
-                cwd=str(BASE_DIR),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="strict",
+            try:
+                apply_result = subprocess.run(
+                    [
+                        "uv",
+                        "run",
+                        "python",
+                        str(BASE_DIR / "tools" / "ast_modifier.py"),
+                        instruction_json_path,
+                    ],
+                    cwd=str(BASE_DIR),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="strict",
+                )
+            finally:
+                Path(instruction_json_path).unlink(missing_ok=True)
+
+            if apply_result.returncode != 0:
+                message = (
+                    "🚨 [サンドボックス検証失敗] CTOの修正案の適用(ast_modifier.py)に"
+                    f"失敗しました: {(apply_result.stdout + apply_result.stderr).strip()}"
+                )
+                return {
+                    "result_message": message,
+                    "escalation_branch": branch_name,
+                    "audit_history": [f"[サンドボックス検証] {message}"],
+                }
+
+            subprocess.run(
+                ["git", "add", "--", str(relative_path)], cwd=str(worktree_path), check=True
             )
-        finally:
-            Path(instruction_json_path).unlink(missing_ok=True)
+            subprocess.run(
+                [
+                    "git",
+                    "commit",
+                    "-m",
+                    f"fix: CTOエスカレーションによる自動修正 ({branch_name})",
+                ],
+                cwd=str(worktree_path),
+                check=True,
+            )
 
-        if apply_result.returncode != 0:
+            benchmark_summary = _run_benchmark_summary(worktree_path)
+            pr_draft_path = _write_pr_draft(
+                branch_name=branch_name,
+                worktree_path=worktree_path,
+                instruction=instruction,
+                benchmark_summary=benchmark_summary,
+                state=state,
+            )
+
             message = (
-                "🚨 [サンドボックス検証失敗] CTOの修正案の適用(ast_modifier.py)に"
-                f"失敗しました: {(apply_result.stdout + apply_result.stderr).strip()}"
+                f"🧑‍💼 [CTOエスカレーション完了] 隔離ブランチ '{branch_name}' へ"
+                "修正案を適用・コミットしました(検証用worktreeは既に破棄済みです)。\n"
+                f"📄 PRドラフトを生成しました -> {pr_draft_path}\n"
+                "⏸️ 安全のため、このファイルへの自動適用処理を一時停止(Suspend)します。"
+                "人間によるレビュー・マージが必要です。"
             )
             return {
                 "result_message": message,
                 "escalation_branch": branch_name,
+                "pr_draft_path": str(pr_draft_path),
                 "audit_history": [f"[サンドボックス検証] {message}"],
             }
-
-        subprocess.run(
-            ["git", "add", "--", str(relative_path)], cwd=str(worktree_path), check=True
-        )
-        subprocess.run(
-            [
-                "git",
-                "commit",
-                "-m",
-                f"fix: CTOエスカレーションによる自動修正 ({branch_name})",
-            ],
-            cwd=str(worktree_path),
-            check=True,
-        )
-
-        benchmark_summary = _run_benchmark_summary(worktree_path)
-        pr_draft_path = _write_pr_draft(
-            branch_name=branch_name,
-            worktree_path=worktree_path,
-            instruction=instruction,
-            benchmark_summary=benchmark_summary,
-            state=state,
-        )
-
-        message = (
-            f"🧑‍💼 [CTOエスカレーション完了] 隔離ブランチ '{branch_name}' "
-            f"({worktree_path}) へ修正案を適用・コミットしました。\n"
-            f"📄 PRドラフトを生成しました -> {pr_draft_path}\n"
-            "⏸️ 安全のため、このファイルへの自動適用処理を一時停止(Suspend)します。"
-            "人間によるレビュー・マージが必要です。"
-        )
-        return {
-            "result_message": message,
-            "escalation_branch": branch_name,
-            "pr_draft_path": str(pr_draft_path),
-            "audit_history": [f"[サンドボックス検証] {message}"],
-        }
     except Exception as e:  # noqa: BLE001 - 予期しない失敗も安全に一時停止させる
         message = f"🚨 [サンドボックス検証失敗] 予期しないエラー: {e}"
-        return {
+        result: dict = {
             "result_message": message,
-            "escalation_branch": branch_name,
             "audit_history": [f"[サンドボックス検証] {message}"],
         }
+        if branch_name is not None:
+            result["escalation_branch"] = branch_name
+        return result
 
 
 def _unload_qwen() -> None:
