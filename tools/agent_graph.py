@@ -72,6 +72,16 @@ load_dotenv(BASE_DIR / ".env")
 # (シングルモデル・マルチロール)。
 llm = ChatOllama(model=OLLAMA_MODEL, temperature=0.1)
 
+# 【Constrained Decoding】7Bクラスの小型モデル特有のJSON構造崩れを、Few-shotのような
+# 「お願い」ではなく、Ollamaのネイティブな文法制約付き生成(format=JSON Schema)で
+# 物理的に排除する。職人ロール専用にformatをbindした別インスタンスを用意し、現場監督
+# ロール(自由記述の診断テキストを出力する`llm`本体)には一切影響させない。
+# langchain_ollama.ChatOllama.with_structured_output(method="json_schema")は内部で
+# 全く同じ self.bind(format=schema.model_json_schema()) を行う(1.1.0のソースで確認済み)
+# ため、ここではより直接的な等価実装を採用し、validate_node以降の既存の
+# raw_json_text文字列パース+リトライ契約(MAX_JSON_RETRIES)を一切変えずに済む。
+craftsman_llm = llm.bind(format=AstModificationInstruction.model_json_schema())
+
 # 【最終エスカレーション専用】サーキットブレーカー作動時にのみ呼び出す。
 # keep_alive=0により、Gemmaの推論完了直後に即座にVRAMを解放し、次回のQwen
 # Hot Loopのために明け渡す(常駐させない)。
@@ -177,7 +187,13 @@ def supervisor_node(state: AuditState) -> dict:
 def craftsman_node(state: AuditState) -> dict:
     """【職人ロール】現場監督の診断に基づき、AST置換用の修正指示を厳密なJSON形式で
     1つだけ出力する。前回の試行でスキーマ検証に失敗している場合は、そのエラー内容を
-    プロンプトへ明示的に含めて再出力させる(Retryループの実体)。"""
+    プロンプトへ明示的に含めて再出力させる(Retryループの実体)。
+
+    出力形式自体はcraftsman_llm(Constrained Decoding、format=AstModificationInstruction
+    のJSON Schema)がOllama側で文法的に強制するが、モデルに「どう考えさせるか」の質を
+    保つため、Few-shotプロンプト(CRAFTSMAN_FEWSHOT_EXAMPLE)の静的注入は維持する
+    (文法制約は出力の構文を保証するだけで、意味的に正しい修正内容までは保証しない)。
+    """
     retry_note = ""
     if state.get("last_validation_error"):
         retry_note = (
@@ -195,7 +211,7 @@ def craftsman_node(state: AuditState) -> dict:
         f"【対象ファイル: {state['file_path']}】\n```python\n{state['current_code']}\n```"
         f"{retry_note}"
     )
-    raw = _extract_text(llm.invoke(prompt)).strip()
+    raw = _extract_text(craftsman_llm.invoke(prompt)).strip()
     return {
         "raw_json_text": raw,
         "audit_history": [f"[職人] JSON出力(試行{state['retry_count'] + 1}回目)"],
