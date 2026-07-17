@@ -42,6 +42,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools import export_metrics  # noqa: E402
 from tools import mlops_common  # noqa: E402
 from tools import mlops_experiments_db  # noqa: E402
 
@@ -175,8 +176,8 @@ def _record_experiment(report: dict | None, latency: float) -> None:
     if complexity_growth_rate is not None:
         print(f"   (参考) Code Complexity 増加率(平均): {complexity_growth_rate}")
 
-    metrics_path = mlops_experiments_db.export_metrics_to_json()
-    print(f"📊 [ダッシュボード] 静的JSONを更新しました: {metrics_path}")
+    metrics_path = export_metrics.export_metrics()
+    print(f"📊 [ダッシュボード] 静的JSONをアトミックに更新しました: {metrics_path}")
 
 
 def main() -> int:

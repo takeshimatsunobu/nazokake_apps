@@ -13,7 +13,6 @@ tools/mlops_pipeline_nazo.py / tools/mlops_pipeline_agent.py がパイプライ�
 
 from __future__ import annotations
 
-import json
 import sqlite3
 import subprocess
 from datetime import datetime, timezone
@@ -21,13 +20,6 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 EXPERIMENTS_DB_PATH = Path(__file__).resolve().parent / "mlops_experiments.db"
-
-# メインAPI(apps/evaluator/backend)を経由せず、管理画面が直接fetchする静的JSON
-# ダンプ先。パス解決はBASE_DIR(リポジトリルート、__file__基準)から確実に行う。
-FRONTEND_METRICS_PATH = (
-    BASE_DIR / "apps" / "evaluator" / "frontend" / "public" / "mlops_metrics.json"
-)
-METRICS_EXPORT_LIMIT = 30
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS mlops_experiments (
@@ -112,35 +104,3 @@ def record_experiment(
         con.commit()
     finally:
         con.close()
-
-
-def export_metrics_to_json() -> Path:
-    """mlops_experimentsテーブルの直近METRICS_EXPORT_LIMIT件を、メインAPIを経由しない
-    静的JSON(apps/evaluator/frontend/public/mlops_metrics.json)へ上書き保存する。
-
-    管理画面(admin.html/admin.js)はこのファイルを直接fetchしてMLOps推移ダッシュボード
-    (折れ線グラフ)を描画する。行はタイムスタンプ昇順(古い順)に並べ直す
-    (折れ線グラフの横軸として自然な順序にするため)。
-    """
-    init_experiments_db()
-    con = sqlite3.connect(EXPERIMENTS_DB_PATH)
-    try:
-        con.row_factory = sqlite3.Row
-        rows = con.execute(
-            "SELECT * FROM mlops_experiments ORDER BY id DESC LIMIT ?",
-            (METRICS_EXPORT_LIMIT,),
-        ).fetchall()
-    finally:
-        con.close()
-
-    records = [dict(row) for row in reversed(rows)]
-    payload = {
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "rows": records,
-    }
-
-    FRONTEND_METRICS_PATH.parent.mkdir(parents=True, exist_ok=True)
-    FRONTEND_METRICS_PATH.write_text(
-        json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    return FRONTEND_METRICS_PATH
