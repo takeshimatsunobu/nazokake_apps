@@ -248,7 +248,12 @@ def _run_in_docker(fixture_dir: Path, task: dict, output_dir: Path) -> str:
             "-v",
             f"{task_tmp_dir}:/mnt/task:ro",
             "-v",
-            f"{output_dir}:/mnt/output:rw",
+            # 【SSoT】出力先のコンテナ内マウントポイントは/outputに統一する
+            # (instructions/154)。entrypoint.sh(instructions/153)がchown -R対象として
+            # /outputをハードコードしているため、/mnt/outputのままではentrypoint.shの
+            # 権限調整が実際のマウント先に反映されず、run_target_specific_pytest()側の
+            # /outputとも不整合だった(マジックストリングの混在)。
+            f"{output_dir}:/output:rw",
             DOCKER_IMAGE,
             "--fixture-dir",
             "/mnt/fixture",
@@ -257,7 +262,7 @@ def _run_in_docker(fixture_dir: Path, task: dict, output_dir: Path) -> str:
             "--ast-modifier",
             "/mnt/tools/ast_modifier.py",
             "--output-dir",
-            "/mnt/output",
+            "/output",
         ]
         try:
             # 【ハードタイムアウト】run_target_specific_pytest()と同様、AI生成コードの
