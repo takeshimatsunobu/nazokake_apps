@@ -1,0 +1,48 @@
+# infra/verification_env/docker-compose.yml
+# ============================================
+# 検証サーバー移行パッケージの決定論的なデプロイ定義(instructions/147)。
+#
+# 【背景】これまでREADME.mdは「本リポジトリをクローンして既存モジュールをそのまま
+# 実行する」という運用手順を文章で説明するに留まっており、実行環境(Pythonバージョン・
+# 依存関係・マウント構成)そのものはコード化されていなかった。このファイルは、
+# 経験再生アーキテクチャ(tools/ai_knowledge_base.jsonのビルド)とNazo-Agentベンチマークが
+# 依存するDockerサンドボックスイメージのビルドという、暗黙の前提だった2つの前処理を、
+# 明示的なコマンド・マウント設計として固定する。
+#
+# 使い方(検証サーバー上、リポジトリルートで):
+#   docker compose -f infra/verification_env/docker-compose.yml run --rm knowledge-base-builder
+#   docker compose -f infra/verification_env/docker-compose.yml build benchmark-sandbox
+#
+# 【アーキテクチャ上の注記】tools/benchmark/run_benchmark.py自体はホスト側(検証サーバーの
+# ベアメタル/venv)で動作し、AST適用・Pytest実行のみを`docker run`でサンドボックスへ
+# 委譲する設計(Docker-in-Docker/ソケットマウントを要求しない、既存のセキュリティ境界を
+# 維持する設計)である。したがってrun_benchmark.py自体はこのcompose内のサービスとして
+# 定義しない(ホスト側でuv run python tools/benchmark/run_benchmark.pyを直接実行する、
+# infra/verification_env/setup_verification_env.sh参照)。
+
+services:
+  # Nazo-Agentベンチマークのサンドボックス実行環境。イメージ名は
+  # tools/benchmark/run_benchmark.py:DOCKER_IMAGE = "nazo-benchmark-sandbox" と
+  # 完全に一致させる必要がある(run_benchmark.pyがこの名前でdocker runを直接起動するため)。
+  benchmark-sandbox:
+    build:
+      context: ../..
+      dockerfile: tools/benchmark/Dockerfile
+    image: nazo-benchmark-sandbox
+    # このサービス自体は常駐プロセスを持たない(ビルド専用)。`docker compose up`ではなく
+    # `docker compose build benchmark-sandbox`で明示的にビルドする運用とし、誤ってupで
+    # 起動しても即座にargparseエラーで終了するだけで害はないが、意図を明確にするため
+    # profilesで通常のup対象からは除外する。
+    profiles: ["build-only"]
+
+  # 経験再生アーキテクチャ(tools/knowledge_retriever.py)が読み込む
+  # tools/ai_knowledge_base.json を決定論的にビルドするワンショットサービス。
+  # ホストのuv/Python環境の有無・バージョン差異に依存せず、常に同一のPythonイメージで
+  # 再生成できるようにする(tools/compile_knowledge.pyは標準ライブラリのみに依存するため
+  # 追加のpip installは不要)。
+  knowledge-base-builder:
+    image: python:3.11-slim
+    working_dir: /workspace
+    volumes:
+      - ../..:/workspace
+    command: ["python", "tools/compile_knowledge.py"]

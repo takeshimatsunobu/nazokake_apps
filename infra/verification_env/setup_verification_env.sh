@@ -2,15 +2,19 @@
 # infra/verification_env/setup_verification_env.sh
 # =====================================================
 # Nazo-Agentベンチマーク(tools/benchmark/run_benchmark.py)を実行するための、
-# Rootless Docker + NVIDIA GPU検証サーバーのプロビジョニングスクリプト(instructions/145/146)。
+# Rootless Docker + NVIDIA GPU検証サーバーのプロビジョニングスクリプト
+# (instructions/145/146/147)。
 #
 # 【設計方針】
-# このスクリプトはOS/ホストレベルの前提条件(cgroup委譲・GPUランタイムフック)のみを
-# 準備する。アトミックI/O・CQRS静的JSONダンプ・5次元/6次元評価ゲート・軽量ローカルRAG
-# (Experience Replay)といったアプリケーション層のセキュア基盤は、このリポジトリを
-# クローンして既存モジュール(tools/export_metrics.py, tools/benchmark/run_benchmark.py,
-# tools/knowledge_retriever.py 等)をそのまま実行することで再現する(再実装・フォークは
-# 一切行わない。実装の二重化によるドリフトを構造的に禁止する)。
+# このスクリプトはOS/ホストレベルの前提条件(cgroup委譲・GPUランタイムフック)を
+# 準備した上で、infra/verification_env/docker-compose.yml が定義する2つの決定論的な
+# 前処理(Experience Replay知識ベースのビルド/ベンチマークサンドボックスイメージの
+# ビルド)を明示的に実行する。「リポジトリをクローンしてそのまま実行する」という
+# 暗黙の前提には依存しない(instructions/147)。アトミックI/O・CQRS静的JSONダンプ・
+# 5次元/6次元評価ゲートといった、それ以外のアプリケーション層のセキュア基盤は
+# 既存モジュール(tools/export_metrics.py, tools/benchmark/run_benchmark.py 等)を
+# 無改変のまま実行することで再利用する(再実装・フォークは一切行わない。実装の
+# 二重化によるドリフトを構造的に禁止する)。
 #
 # 【VRAM制限についての正直な技術的前提】
 # Dockerネイティブにはコンテナごとのハード VRAM 量子化機構が無い(NVIDIA vGPU/MPS
@@ -90,14 +94,25 @@ else
         "この手順はスキップします(REPO_DIR環境変数で上書き可能)。"
 fi
 
-echo "=== [4/4] 軽量ローカルRAG(Experience Replay)知識ベースの事前ビルド ==="
-# tools/knowledge_retriever.pyはtools/ai_knowledge_base.jsonの事前ビルドを前提とする。
+echo "=== [4/4] 軽量ローカルRAG(Experience Replay)知識ベースの決定論的ビルド ==="
+# 【絶対制約】ホストのuv/Python環境が正しく整っていることへの暗黙の依存を排除するため、
+# infra/verification_env/docker-compose.yml の knowledge-base-builder サービス
+# (python:3.11-slim、追加pip install不要)を用いて、常に同一の環境でビルドする。
+COMPOSE_FILE="$(dirname "${BASH_SOURCE[0]}")/docker-compose.yml"
 if [[ -d "${REPO_DIR}" ]]; then
-    sudo -u "${VERIFICATION_USER}" bash -lc "cd '${REPO_DIR}' && uv run python tools/compile_knowledge.py" \
-        || echo "⚠️  tools/compile_knowledge.py の実行に失敗しました。手動で再実行してください。" >&2
+    sudo -u "${VERIFICATION_USER}" bash -lc \
+        "cd '${REPO_DIR}' && docker compose -f '${COMPOSE_FILE}' run --rm knowledge-base-builder" \
+        || echo "⚠️  knowledge-base-builderサービスの実行に失敗しました。手動で再実行してください。" >&2
 else
     echo "ℹ️  ${REPO_DIR} が未クローンのため、この手順は手動で実行してください:" \
-        "cd ${REPO_DIR} && uv run python tools/compile_knowledge.py"
+        "cd ${REPO_DIR} && docker compose -f ${COMPOSE_FILE} run --rm knowledge-base-builder"
+fi
+
+echo "=== ベンチマークサンドボックスイメージのビルド ==="
+if [[ -d "${REPO_DIR}" ]]; then
+    sudo -u "${VERIFICATION_USER}" bash -lc \
+        "cd '${REPO_DIR}' && docker compose -f '${COMPOSE_FILE}' build benchmark-sandbox" \
+        || echo "⚠️  benchmark-sandboxイメージのビルドに失敗しました。手動で再実行してください。" >&2
 fi
 
 echo ""

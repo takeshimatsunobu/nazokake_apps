@@ -1,4 +1,4 @@
-# 検証サーバー: Rootless Docker + セキュア基盤の移行設計 (instructions/145/146)
+# 検証サーバー: Rootless Docker + セキュア基盤の移行設計 (instructions/145/146/147)
 
 ## 目的
 
@@ -29,6 +29,22 @@ OS/ホストレベルの前提条件(cgroup委譲・GPUランタイムフック)
 検証サーバーは本リポジトリを直接クローンして上記モジュールを無改変のまま実行する。
 これにより、開発機と検証サーバーで実装が二重化してドリフトするリスクを構造的に排除する。
 
+**【instructions/147での修正】** 以前は「クローンしてそのまま実行する」という運用手順を
+README上の文章のみで説明しており、実行環境(Pythonバージョン・依存関係・マウント構成)
+そのものはコード化されていなかった。これを`infra/verification_env/docker-compose.yml`
+として明示的にコード化した:
+- `knowledge-base-builder`サービス: `tools/ai_knowledge_base.json`(Experience Replayの
+  知識ベース)を、ホストのuv/Python環境に依存せず常に同一の`python:3.11-slim`イメージで
+  再生成する(`tools/compile_knowledge.py`は標準ライブラリのみに依存するため追加の
+  pip installは不要)。
+- `benchmark-sandbox`サービス: `tools/benchmark/Dockerfile`から
+  `nazo-benchmark-sandbox`イメージ(`run_benchmark.py`が`docker run`で直接起動する
+  イメージ名と一致させる)をビルドする定義。
+
+`setup_verification_env.sh`はこの2サービスを`docker compose run`/`docker compose build`
+で明示的に呼び出すよう改修済みであり、「暗黙の前提」への依存はこの2つの前処理については
+解消されている。
+
 ## セットアップ手順
 
 1. 検証サーバー上で本リポジトリをクローンする(`REPO_DIR`、既定は
@@ -43,8 +59,11 @@ OS/ホストレベルの前提条件(cgroup委譲・GPUランタイムフック)
    - `.env.verification.template` から `<REPO_DIR>/.env` を生成し、
      `NAZOKAKE_DB_PATH`/`VRAM_LOCK_PATH` を絶対パスに固定する(`run_api.ps1` の
      Windows向けパターンと同じ設計思想をLinux向けに再現)。
-   - `tools/compile_knowledge.py` を実行し、`tools/ai_knowledge_base.json`
-     (Experience Replayの知識ベース)を事前ビルドする。
+   - `docker compose -f infra/verification_env/docker-compose.yml run --rm
+     knowledge-base-builder` を実行し、`tools/ai_knowledge_base.json`
+     (Experience Replayの知識ベース)を決定論的に事前ビルドする。
+   - `docker compose -f infra/verification_env/docker-compose.yml build
+     benchmark-sandbox` を実行し、ベンチマークサンドボックスイメージをビルドする。
 4. `uv sync` 等で依存関係をインストールする(このスクリプトの範囲外)。
 
 ## VRAM決定論的制御についての技術的前提
