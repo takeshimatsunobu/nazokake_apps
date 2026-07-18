@@ -51,6 +51,7 @@ from pydantic import ValidationError
 
 from tools.ast_modifier import AstModificationInstruction
 from tools.config import settings
+from tools.knowledge_retriever import retrieve_experiences
 
 MAX_JSON_RETRIES = 3
 OLLAMA_MODEL = "qwen2.5-coder:7b"
@@ -311,6 +312,40 @@ def _load_ssot_context() -> str:
         return ""
 
 
+def _build_experience_replay_block(state: "AuditState") -> str:
+    """現在のエラーログ・Qwenの診断・自己申告内容から検索クエリを組み立て、
+    tools/knowledge_retriever.pyで過去の指示書のうち関連度上位の教訓を検索し、
+    CTOプロンプトの動的ブロックへ注入する文字列を組み立てる。
+
+    知識ベース未ビルド・検索失敗等でこの処理自体が失敗しても、CTOエスカレーション
+    フロー全体を巻き込んで失敗させない(ベストエフォート、失敗時は「見つからなかった」
+    扱いにフォールバックする)。
+    """
+    query = "\n".join(
+        filter(
+            None,
+            [
+                state.get("error_log", ""),
+                state.get("diagnosis", ""),
+                state.get("raw_json_text", ""),
+            ],
+        )
+    )
+    try:
+        experiences = retrieve_experiences(query, top_k=3)
+    except Exception as e:  # noqa: BLE001 - RAGの失敗でCTOエスカレーションを止めない
+        print(f"⚠️ [Experience Replay] 過去の教訓の検索に失敗しました(無視して続行): {e}")
+        experiences = []
+
+    if not experiences:
+        return "(該当する過去の教訓は見つかりませんでした。)"
+    return "\n".join(
+        f"- [instructions/{exp.get('id')}] {exp.get('summary', '')} "
+        f"(参照: {exp.get('filepath', '')})"
+        for exp in experiences
+    )
+
+
 def _build_cto_client() -> anthropic.Anthropic:
     """CTOエスカレーション専用のAnthropicクライアントを構築する。
 
@@ -359,13 +394,17 @@ def cto_node(state: AuditState) -> dict:
     cache_control(ephemeral)を付与し、その後続のuserメッセージへ動的なエラーログ・
     対象コード・Qwenの診断履歴を配置する(静的ブロックを先に確定させ、動的コンテンツを
     後方に置くことでPrompt Cachingのヒット率を最大化する設計。nazo_agent.pyの既存の
-    Claude連携と同じ配置)。
+    Claude連携と同じ配置)。この動的ブロックには、tools/knowledge_retriever.pyによる
+    軽量ローカルRAG(Dynamic Experience Replay)で検索した、過去の指示書のうち今回の
+    エラーログ・診断内容と関連性が高い上位数件の教訓も注入する(全履歴を詰め込む
+    アプローチは厳禁のため、関連度上位のみに絞る)。
 
     このノード自身はファイルへの書き込みを一切行わない(実際の適用はsandbox_verify_node
     が隔離ブランチ上でのみ行う)。
     """
     client = _build_cto_client()
     ssot_context = _load_ssot_context()
+    experience_replay_block = _build_experience_replay_block(state)
 
     system_prompt = (
         "あなたはシニアソフトウェアアーキテクト兼CTOです。ローカルの小型モデル"
@@ -385,6 +424,8 @@ def cto_node(state: AuditState) -> dict:
         f"【現場監督(Qwen)の診断】\n{state.get('diagnosis', '')}\n\n"
         "【職人(Qwen)の生成した修正案とその自己評価】\n"
         f"{_strip_code_fence(state.get('raw_json_text', ''))}\n\n"
+        "【過去の関連する教訓 (Experience Replay)】\n"
+        f"{experience_replay_block}\n\n"
         "上記の修正案はQwen自身が不確実性を申告しています。SSoTと実際のコードを踏まえて"
         "この修正が正しいかどうかを精査し、必要であれば改善したAST置換指示を"
         "submit_fix ツールの呼び出しのみで提出してください。"
