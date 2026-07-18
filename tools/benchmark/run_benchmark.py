@@ -252,6 +252,12 @@ def _run_in_docker(fixture_dir: Path, task: dict) -> dict:
     NDJSONイベントを、受信した瞬間にevents dictへ格納するため、コンテナが途中でクラッシュ
     しても、それまでに確定していた結果はホスト側にすでに保全されている。
 
+    【instructions/157: 入力側マウントの全廃と双方向IPCへの回帰】タスクデータ(修復指示)も
+    tempfileでtask.jsonをディスクへ書き出して読み取り専用マウントする方式(-v ...:/mnt/task:ro)
+    を廃止し、JSON文字列化してこのプロセスからコンテナのsys.stdinへ直接ストリーム注入する。
+    パーミッション緩和ではなく入力側マウント自体を無くすことで、Rootless Docker特有の
+    バインドマウント権限問題をアーキテクチャ的に再発させない。
+
     テスト対象コードの生ログ(pytest, ast_modifier.pyの標準出力)はstdout=None
     (パイプせず継承)としてこのプロセス自身のsys.stdoutへそのまま流れ落ちる。結果は
     stderrのNDJSONのみで完結するため、あえてパイプしないことで、生ログの量に応じた
@@ -262,110 +268,117 @@ def _run_in_docker(fixture_dir: Path, task: dict) -> dict:
     捕捉し、呼び出し元(1fixtureの処理)を継続させる(1fixtureのDocker失敗で他のfixtureの
     処理をブロックしない)。
     """
-    with tempfile.TemporaryDirectory() as task_tmp_dir:
-        task_json_path = Path(task_tmp_dir) / "task.json"
-        task_json_path.write_text(
-            json.dumps(task, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+    cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "-i",
+        *_docker_security_args(),
+        "-v",
+        f"{BASE_DIR / 'tools'}:/mnt/tools:ro",
+        "-v",
+        f"{BASE_DIR / 'packages'}:/mnt/packages:ro",
+        "-v",
+        f"{BASE_DIR / 'apps'}:/mnt/apps:ro",
+        "-v",
+        f"{fixture_dir}:/mnt/fixture:ro",
+        DOCKER_IMAGE,
+        "--fixture-dir",
+        "/mnt/fixture",
+        "--ast-modifier",
+        "/mnt/tools/ast_modifier.py",
+    ]
 
-        cmd = [
-            "docker",
-            "run",
-            "--rm",
-            *_docker_security_args(),
-            "-v",
-            f"{BASE_DIR / 'tools'}:/mnt/tools:ro",
-            "-v",
-            f"{BASE_DIR / 'packages'}:/mnt/packages:ro",
-            "-v",
-            f"{BASE_DIR / 'apps'}:/mnt/apps:ro",
-            "-v",
-            f"{fixture_dir}:/mnt/fixture:ro",
-            "-v",
-            f"{task_tmp_dir}:/mnt/task:ro",
-            DOCKER_IMAGE,
-            "--fixture-dir",
-            "/mnt/fixture",
-            "--task-json",
-            "/mnt/task/task.json",
-            "--ast-modifier",
-            "/mnt/tools/ast_modifier.py",
-        ]
+    events: dict[str, dict] = {}
+    stray_stderr_lines: list[str] = []
+    timed_out = False
 
-        events: dict[str, dict] = {}
-        stray_stderr_lines: list[str] = []
-        timed_out = False
+    try:
+        with subprocess.Popen(
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=None,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+        ) as proc:
+            try:
+                # タスクデータ(修復指示)をJSON文字列化し、標準入力へ直接ストリーム
+                # 注入する。書き込み後は必ずclose()し、コンテナ側のsys.stdin.read()に
+                # EOFを伝播させる(EOFが来るまでread()はブロックし続けるため必須)。
+                proc.stdin.write(json.dumps(task, ensure_ascii=False))
+                proc.stdin.close()
+            except BrokenPipeError:
+                # コンテナがfixture不在等で起動直後に終了した場合、stdinへの書き込みが
+                # 失敗することがあるが、その場合の最終的な失敗理由はstderr読み込み側で
+                # 捕捉できるため、ここでは無視して後続処理へ進む。
+                pass
 
-        try:
-            with subprocess.Popen(
-                cmd, stdout=None, stderr=subprocess.PIPE, text=True, bufsize=1
-            ) as proc:
+            def _on_timeout() -> None:
+                nonlocal timed_out
+                timed_out = True
+                proc.kill()
 
-                def _on_timeout() -> None:
-                    nonlocal timed_out
-                    timed_out = True
-                    proc.kill()
-
-                # 【ハードタイムアウト】run_target_specific_pytest()と同様、AI生成コードの
-                # 無限ループ等によるハングでベンチマーク全体が無期限にブロックされない
-                # ようにする。subprocess.run(timeout=300)がPopen化により使えなくなった分、
-                # ウォッチドッグスレッドで同じ意味論を再現する(kill後、子プロセスの
-                # パイプ書き込み端が閉じてEOFが伝播し、下の読み込みループは自然に終了する)。
-                timer = threading.Timer(300, _on_timeout)
-                timer.start()
-                try:
-                    for line in proc.stderr:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            event = json.loads(line)
-                        except json.JSONDecodeError:
-                            # docker CLI自身の起動失敗メッセージや、container_runner.py
-                            # 側の未捕捉例外トレースバック(非JSON)がここに来る。
-                            stray_stderr_lines.append(line)
-                            continue
-                        event_name = event.get("event")
-                        if event_name:
-                            # 受信した瞬間に確定させる: この直後にコンテナがクラッシュ
-                            # しても、ここまでの結果は失われない。
-                            events[event_name] = event
-                        else:
-                            stray_stderr_lines.append(line)
-                finally:
-                    timer.cancel()
-                returncode = proc.wait()
-        except FileNotFoundError as e:
-            return {
-                "docker_stage": f"failed: {e}",
-                "events": events,
-                "stray_stderr_lines": stray_stderr_lines,
-            }
-
-        if timed_out:
-            return {
-                "docker_stage": (
-                    "failed: Timeout Failure(AI生成コードのパフォーマンス異常): "
-                    "300秒以内にdocker run(適用+Pytest実行)が完了しませんでした。"
-                ),
-                "events": events,
-                "stray_stderr_lines": stray_stderr_lines,
-            }
-
-        if returncode != 0:
-            stderr_snippet = "\n".join(stray_stderr_lines).strip()[:500]
-            return {
-                "docker_stage": (
-                    f"failed: docker run exited with {returncode}: {stderr_snippet}"
-                ),
-                "events": events,
-                "stray_stderr_lines": stray_stderr_lines,
-            }
+            # 【ハードタイムアウト】run_target_specific_pytest()と同様、AI生成コードの
+            # 無限ループ等によるハングでベンチマーク全体が無期限にブロックされない
+            # ようにする。subprocess.run(timeout=300)がPopen化により使えなくなった分、
+            # ウォッチドッグスレッドで同じ意味論を再現する(kill後、子プロセスの
+            # パイプ書き込み端が閉じてEOFが伝播し、下の読み込みループは自然に終了する)。
+            timer = threading.Timer(300, _on_timeout)
+            timer.start()
+            try:
+                for line in proc.stderr:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        event = json.loads(line)
+                    except json.JSONDecodeError:
+                        # docker CLI自身の起動失敗メッセージや、container_runner.py
+                        # 側の未捕捉例外トレースバック(非JSON)がここに来る。
+                        stray_stderr_lines.append(line)
+                        continue
+                    event_name = event.get("event")
+                    if event_name:
+                        # 受信した瞬間に確定させる: この直後にコンテナがクラッシュ
+                        # しても、ここまでの結果は失われない。
+                        events[event_name] = event
+                    else:
+                        stray_stderr_lines.append(line)
+            finally:
+                timer.cancel()
+            returncode = proc.wait()
+    except FileNotFoundError as e:
         return {
-            "docker_stage": "completed",
+            "docker_stage": f"failed: {e}",
             "events": events,
             "stray_stderr_lines": stray_stderr_lines,
         }
+
+    if timed_out:
+        return {
+            "docker_stage": (
+                "failed: Timeout Failure(AI生成コードのパフォーマンス異常): "
+                "300秒以内にdocker run(適用+Pytest実行)が完了しませんでした。"
+            ),
+            "events": events,
+            "stray_stderr_lines": stray_stderr_lines,
+        }
+
+    if returncode != 0:
+        stderr_snippet = "\n".join(stray_stderr_lines).strip()[:500]
+        return {
+            "docker_stage": (
+                f"failed: docker run exited with {returncode}: {stderr_snippet}"
+            ),
+            "events": events,
+            "stray_stderr_lines": stray_stderr_lines,
+        }
+    return {
+        "docker_stage": "completed",
+        "events": events,
+        "stray_stderr_lines": stray_stderr_lines,
+    }
 
 
 def _fix_volume_permissions(*dirs: Path) -> None:

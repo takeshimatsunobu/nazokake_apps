@@ -4,8 +4,8 @@ tools/benchmark/container_runner.py
 Dockerサンドボックス内のENTRYPOINT。ホスト側のLLM推論には一切関与せず、以下だけを行う:
   1. 読み取り専用マウントされたfixtureを書き込み可能な/workspaceへコピーする。
   2. 修正前(baseline)のPytestを実行する。
-  3. 読み取り専用マウントされたtask.json(Nazo-Agentがホスト側で生成したAST置換指示)を
-     tools/ast_modifier.pyへ適用する。この適用の直前・直後で/workspace全体の
+  3. ホストからsys.stdin経由で受け取ったtask(Nazo-Agentがホスト側で生成したAST置換
+     指示)をtools/ast_modifier.pyへ適用する。この適用の直前・直後で/workspace全体の
      ファイルハッシュをスナップショットし、差分(Epic 2 5次元評価ゲートの
      「副作用(Blast Radius)」)を検出する。
   4. 修正後(postfix)のPytestを実行する。
@@ -19,6 +19,12 @@ Rootless Dockerにおけるバインドマウントのレースコンディシ�
 stdout/stderr)はsys.stdoutへそのまま流し、結果データチャネル(stderr)と厳格に
 分離する。ホスト側(run_benchmark.py)はこのstderrを行単位でストリーム読み込みし、
 コンテナが途中でクラッシュしても、それまでに受信済みの行はホスト側に保全される。
+
+【instructions/157: 入力側マウントの全廃と双方向IPCへの回帰】タスクデータの受け渡しも
+読み取り専用マウント(-v ...:/mnt/task:ro)経由のtask.jsonファイル読み込みを廃止し、
+ホストがsys.stdinへ直接ストリーム注入するJSON文字列をsys.stdin.read()で受け取る
+方式へ移行した。入力側マウントのパーミッションを緩和するのではなく、マウント自体を
+無くすことでRootless Docker特有の権限問題をアーキテクチャ的に再発させない。
 """
 
 import argparse
@@ -96,7 +102,6 @@ def _diff_snapshots(before: dict[str, str], after: dict[str, str]) -> list[str]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--fixture-dir", required=True)
-    parser.add_argument("--task-json", required=True)
     parser.add_argument(
         "--ast-modifier",
         required=True,
@@ -126,7 +131,11 @@ def main() -> int:
     baseline = _run_pytest("baseline")
     _emit({"event": "baseline_result", **baseline})
 
-    task = json.loads(Path(args.task_json).read_text(encoding="utf-8"))
+    # 【instructions/157】タスクデータは読み取り専用マウント済みファイルではなく、
+    # ホストプロセスがdocker run -iのstdinへ直接書き込んだJSON文字列として届く。
+    # ホスト側(run_benchmark.py)が書き込み後にproc.stdin.close()するため、
+    # read()はEOFまで正しくブロック・完走する。
+    task = json.loads(sys.stdin.read())
     # 職人ロール(小型モデル)がfile_pathを取り違えて出力するリスクに備え、実際に
     # 適用するファイルパスは常にこのコンテナのワークスペースパスで上書きする
     # (tools/agent_graph.pyのapply_nodeと同じ防御パターン)。
