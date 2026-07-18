@@ -86,9 +86,13 @@ def main() -> int:
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    if WORKSPACE.exists():
-        shutil.rmtree(WORKSPACE)
-    shutil.copytree(args.fixture_dir, WORKSPACE)
+    # 【絶対制約】コンテナは常に--rmで起動され(かつ/workspace自体はホストからマウント
+    # されない、Dockerfileがビルド時にmkdir+chownしたイメージ内の一時ディレクトリ)、
+    # 起動毎に必ず空の状態から始まる。明示的なshutil.rmtree(WORKSPACE)は不要であるだけ
+    # でなく、実行ユーザー(sandboxuser、非root)に権限のないディレクトリ削除を試みて
+    # PermissionErrorでクラッシュする原因になっていたため削除した。dirs_exist_ok=True
+    # により、Dockerfileが事前作成した(常に空の)/workspaceへそのままコピーする。
+    shutil.copytree(args.fixture_dir, WORKSPACE, dirs_exist_ok=True)
 
     baseline = _run_pytest(output_dir / "baseline.xml")
     (output_dir / "baseline_stdout.txt").write_text(
