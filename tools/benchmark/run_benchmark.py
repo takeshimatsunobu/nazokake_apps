@@ -30,6 +30,7 @@ _run_in_docker()自体もdocker runコマンドの起動のみを行う)。
 import argparse
 import ast
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -198,7 +199,7 @@ def _docker_security_args() -> list[str]:
     ホストリソース枯渇防止(ハードリミット)と外部通信の遮断(instructions/119)。
     _run_in_docker()とrun_target_specific_pytest()の両方で共有する。
     """
-    return [
+    args = [
         "--network",
         "none",
         "--memory",
@@ -208,6 +209,14 @@ def _docker_security_args() -> list[str]:
         "--pids-limit",
         "100",
     ]
+    # 【必須制約】--output-dir(-v ...:/output:rw等)へのホスト側マウントディレクトリは
+    # 実行ユーザーのUID/GIDで作成されるため、コンテナ内が既定のsandboxuser(イメージ
+    # ビルド時のUID)のままだと書き込み権限が無くPermissionErrorになる。ホストのUID/GID
+    # をそのままコンテナへ引き継ぐことで、マウント先の所有者と実際の書き込みユーザーを
+    # 一致させる。os.getuidはWindows等には存在しないため、hasattrで安全に判定する。
+    if hasattr(os, "getuid"):
+        args += ["--user", f"{os.getuid()}:{os.getgid()}"]
+    return args
 
 
 def _run_in_docker(fixture_dir: Path, task: dict, output_dir: Path) -> str:
