@@ -88,17 +88,22 @@ def main() -> int:
 
     # 【絶対制約】コンテナは常に--rmで起動され(かつ/workspace自体はホストからマウント
     # されない、Dockerfileがビルド時にmkdir+chownしたイメージ内の一時ディレクトリ)、
-    # 起動毎に必ず空の状態から始まる。明示的なshutil.rmtree(WORKSPACE)は不要であるだけ
-    # でなく、実行ユーザー(sandboxuser、非root)に権限のないディレクトリ削除を試みて
-    # PermissionErrorでクラッシュする原因になっていたため削除した。dirs_exist_ok=True
-    # により、Dockerfileが事前作成した(常に空の)/workspaceへそのままコピーする。
-    # copy_function=shutil.copy を明示することで、既定のshutil.copy2が行う
-    # メタデータ(パーミッションビット等)のコピーを無効化する。fixtureは読み取り専用
-    # マウント(-v ...:/mnt/fixture:ro)由来のため、コピー元の権限情報を引き継ぐ処理が
-    # 非rootの実行ユーザー(sandboxuser)に対してPermissionErrorを起こす原因になっていた。
-    shutil.copytree(
-        args.fixture_dir, WORKSPACE, dirs_exist_ok=True, copy_function=shutil.copy
-    )
+    # 起動毎に必ず空の状態から始まる。
+    #
+    # shutil.copytree自体(copy_function=shutil.copyを指定してもディレクトリの
+    # アトリビュートコピーは避けられない)が、読み取り専用マウント(-v ...:/mnt/fixture:ro)
+    # 由来のfixtureを非rootの実行ユーザー(sandboxuser)でコピーする際にPermissionErrorを
+    # 起こす原因になっていたため、shutil.copytreeを完全に廃止し、rglobによる手動
+    # トラバーサル+shutil.copyfile(データ実体のみ、権限メタデータを一切コピーしない)へ
+    # 置き換えた。
+    fixture_dir = Path(args.fixture_dir)
+    for src_path in fixture_dir.rglob("*"):
+        dest_path = WORKSPACE / src_path.relative_to(fixture_dir)
+        if src_path.is_dir():
+            dest_path.mkdir(parents=True, exist_ok=True)
+        else:
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(src_path, dest_path)
 
     baseline = _run_pytest(output_dir / "baseline.xml")
     (output_dir / "baseline_stdout.txt").write_text(
