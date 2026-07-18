@@ -50,8 +50,9 @@ from langgraph.graph import END, StateGraph
 from pydantic import ValidationError
 
 from tools.ast_modifier import AstModificationInstruction
+from tools.compile_knowledge import extract_keywords
 from tools.config import settings
-from tools.knowledge_retriever import retrieve_experiences
+from tools.knowledge_retriever import record_experience, retrieve_experiences
 
 MAX_JSON_RETRIES = 3
 OLLAMA_MODEL = "qwen2.5-coder:7b"
@@ -679,6 +680,30 @@ def _write_pr_draft(
     return draft_path
 
 
+def _record_successful_escalation_experience(
+    *, branch_name: str, pr_draft_path: Path, instruction: dict, state: AuditState
+) -> None:
+    """CTOエスカレーション経由の修正が実際にベンチマークへ通過した「成功体験」を
+    ai_knowledge_base.jsonへフィードバックする(instructions/159: 経験再生アーキテクチャ
+    のループ完結)。sandbox_verify_nodeからベンチマーク通過(returncode == 0)を確認した
+    直後にのみ呼び出す(失敗した修正案を将来の検索対象として汚染しないため)。
+    """
+    context_text = (
+        f"{state.get('diagnosis', '')} {state.get('error_log', '')} "
+        f"{instruction.get('target_name', '')} {instruction.get('triage_type', '')}"
+    )
+    entry = {
+        "id": f"runtime-{branch_name}",
+        "summary": (
+            f"[CTOエスカレーション成功] '{instruction.get('target_name')}' "
+            f"({state.get('file_path', '')})の修正がベンチマークに通過した"
+        )[:200],
+        "keywords": extract_keywords(context_text),
+        "filepath": str(pr_draft_path.relative_to(BASE_DIR)).replace("\\", "/"),
+    }
+    record_experience(entry)
+
+
 def sandbox_verify_node(state: AuditState) -> dict:
     """【隔離ブランチでのサンドボックス検証】CTOの修正案を、メインの作業ディレクトリを
     一切汚さない git worktree 上の専用ブランチへ適用・コミットし、既存のDockerサンドボックス
@@ -756,6 +781,16 @@ def sandbox_verify_node(state: AuditState) -> dict:
                 benchmark_summary=benchmark_summary,
                 state=state,
             )
+
+            if benchmark_summary.get("returncode") == 0:
+                # 【instructions/159】「ベンチマークを通過した」という成功体験のみを
+                # 次回以降のCTOエスカレーション時に検索可能な経験として記録する。
+                _record_successful_escalation_experience(
+                    branch_name=branch_name,
+                    pr_draft_path=pr_draft_path,
+                    instruction=instruction,
+                    state=state,
+                )
 
             message = (
                 f"🧑‍💼 [CTOエスカレーション完了] 隔離ブランチ '{branch_name}' へ"

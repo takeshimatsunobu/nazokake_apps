@@ -36,6 +36,33 @@ def _load_knowledge_base() -> list[dict]:
     return json.loads(KNOWLEDGE_BASE_PATH.read_text(encoding="utf-8"))
 
 
+def record_experience(entry: dict) -> None:
+    """成功した修正の「経験」を新規エントリとしてai_knowledge_base.jsonへ追記する。
+
+    tools/compile_knowledge.pyがtools/instructions/配下の指示書から事前コンパイルする
+    静的なエントリ群とは異なり、これは実行時に生成される動的なエントリ(instructions/159:
+    シャドウモード運用の要件「経験再生アーキテクチャのループ完結」)。呼び出し元
+    (tools/agent_graph.py の sandbox_verify_node)がCTOエスカレーション経由の修正が
+    ベンチマークに通過したことを確認した直後にのみ呼び出すことで、「ベンチマーク通過」
+    という成功体験を次回以降のretrieve_experiences()から即座に検索可能にする
+    (ループの完結)。
+
+    entryは既存の静的エントリと同一スキーマ({"id", "summary", "keywords", "filepath"})
+    を用いる。追記後は稼働ログとして標準出力へ記録内容を出力する(このフィードバックが
+    実際に発生したことの客観的な証跡)。
+    """
+    entries = _load_knowledge_base()
+    entries.append(entry)
+    KNOWLEDGE_BASE_PATH.write_text(
+        json.dumps(entries, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+    print(
+        "📚 [Experience Replay] 成功体験をai_knowledge_base.jsonへ記録しました: "
+        f"id={entry.get('id')!r} summary={entry.get('summary')!r} "
+        f"keywords={entry.get('keywords')!r}"
+    )
+
+
 def _build_idf(entries: list[dict]) -> dict[str, float]:
     """全エントリにわたる各キーワードの逆文書頻度(IDF)を計算する。
 
