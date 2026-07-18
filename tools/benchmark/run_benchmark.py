@@ -286,6 +286,48 @@ def _run_in_docker(fixture_dir: Path, task: dict, output_dir: Path) -> str:
         return "completed"
 
 
+def _fix_volume_permissions(*dirs: Path) -> None:
+    """Rootless Docker配下でコンテナ内非rootユーザー(sandboxuser)が作成したファイルの
+    所有権を、使い捨てコンテナ経由でホストの実行ユーザーへリストアする(instructions/155)。
+
+    Rootless dockerdのUser Namespace Remappingでは、コンテナ内のsandboxuser(UID 1000)は
+    ホスト側では高位のsubuidへマッピングされる。そのため、コンテナが書き込んだファイルを
+    tempfile.TemporaryDirectory()がホストの実行ユーザー権限でクリーンアップ(shutil.rmtree)
+    しようとするとPermissionError(EPERM)になる。一方、コンテナ内root(UID 0)はRootless
+    dockerd自身によってホストの実行ユーザーへ直接マッピングされるため、
+    `--entrypoint chown ... -R 0:0` の使い捨てコンテナで所有権をホスト実行ユーザーへ
+    戻すことで、この後続のクリーンアップを可能にする。
+
+    ベストエフォート(失敗してもクリーンアップ処理自体は継続させる。Docker未導入の
+    開発機ではFileNotFoundErrorが発生するが、無視して従来通りrmtreeに委ねる)。
+    """
+    if not dirs:
+        return
+    mounts: list[str] = []
+    mount_paths: list[str] = []
+    for i, d in enumerate(dirs, start=1):
+        mount_path = f"/mnt/{i}"
+        mounts += ["-v", f"{d}:{mount_path}:rw"]
+        mount_paths.append(mount_path)
+
+    cmd = [
+        "docker",
+        "run",
+        "--rm",
+        "--entrypoint",
+        "chown",
+        *mounts,
+        DOCKER_IMAGE,
+        "-R",
+        "0:0",
+        *mount_paths,
+    ]
+    try:
+        subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as e:
+        print(f"⚠️  [権限リストア] _fix_volume_permissions() をスキップします: {e}")
+
+
 def _read_blast_radius(output_dir: Path, target_filename: str = "buggy.py") -> dict:
     """コンテナ(container_runner.py)が書き出したblast_radius.json(AST修正適用の
     前後でファイルハッシュを比較して検出した「変更されたファイル一覧」)を読み、
@@ -354,36 +396,42 @@ def run_fixture(name: str) -> dict:
 
     with tempfile.TemporaryDirectory() as output_dir_str:
         output_dir = Path(output_dir_str)
-        result["docker_stage"] = _run_in_docker(fixture_dir, task, output_dir)
-        result["latency_ms"] = (time.perf_counter() - start) * 1000
-        # コンテナが実行されなかった場合(docker_stage != "completed")はファイルが
-        # 存在せず、changed_files=[]/blast_radius_count=Noneとして安全に返る。
-        result["blast_radius"] = _read_blast_radius(output_dir)
+        try:
+            result["docker_stage"] = _run_in_docker(fixture_dir, task, output_dir)
+            result["latency_ms"] = (time.perf_counter() - start) * 1000
+            # コンテナが実行されなかった場合(docker_stage != "completed")はファイルが
+            # 存在せず、changed_files=[]/blast_radius_count=Noneとして安全に返る。
+            result["blast_radius"] = _read_blast_radius(output_dir)
 
-        if result["docker_stage"] == "completed":
-            baseline = _parse_junit(output_dir / "baseline.xml")
-            postfix = _parse_junit(output_dir / "postfix.xml")
+            if result["docker_stage"] == "completed":
+                baseline = _parse_junit(output_dir / "baseline.xml")
+                postfix = _parse_junit(output_dir / "postfix.xml")
 
-            result["success"] = postfix.get(TARGET_TEST_NAME)
+                result["success"] = postfix.get(TARGET_TEST_NAME)
 
-            previously_passing_sanity = [
-                test_name
-                for test_name, passed in baseline.items()
-                if test_name != TARGET_TEST_NAME and passed
-            ]
-            regressed = [
-                test_name
-                for test_name in previously_passing_sanity
-                if not postfix.get(test_name, False)
-            ]
-            result["regression"] = {
-                "regressed_tests": regressed,
-                "regression_rate": (
-                    len(regressed) / len(previously_passing_sanity)
-                    if previously_passing_sanity
-                    else None
-                ),
-            }
+                previously_passing_sanity = [
+                    test_name
+                    for test_name, passed in baseline.items()
+                    if test_name != TARGET_TEST_NAME and passed
+                ]
+                regressed = [
+                    test_name
+                    for test_name in previously_passing_sanity
+                    if not postfix.get(test_name, False)
+                ]
+                result["regression"] = {
+                    "regressed_tests": regressed,
+                    "regression_rate": (
+                        len(regressed) / len(previously_passing_sanity)
+                        if previously_passing_sanity
+                        else None
+                    ),
+                }
+        finally:
+            # Rootless Docker配下でコンテナが書き込んだファイルの所有権をホストの
+            # 実行ユーザーへリストアしてから、withブロック終了時のtempfile自身の
+            # クリーンアップ(shutil.rmtree)へ進む(instructions/155)。
+            _fix_volume_permissions(output_dir)
 
     return result
 
@@ -401,64 +449,70 @@ def run_target_specific_pytest(worktree_path: Path) -> dict:
     """
     with tempfile.TemporaryDirectory() as output_dir_str:
         output_dir = Path(output_dir_str)
-        junit_path = output_dir / "target_pytest.xml"
-
-        # 【絶対制約】worktree自体は/workspace:roとして読み取り専用マウントするため、
-        # コンテナ内でPython(pytest)がバイトコードキャッシュ(__pycache__/*.pyc)を書き
-        # 込もうとしてPermissionErrorになることを構造的に防ぐ(PYTHONDONTWRITEBYTECODE=1)。
-        cmd = [
-            "docker",
-            "run",
-            "--rm",
-            *_docker_security_args(),
-            "-e",
-            "PYTHONDONTWRITEBYTECODE=1",
-            "--entrypoint",
-            "python",
-            "-v",
-            f"{worktree_path}:/workspace:ro",
-            "-v",
-            f"{output_dir}:/output:rw",
-            "-w",
-            "/workspace",
-            DOCKER_IMAGE,
-            "-m",
-            "pytest",
-            ".",
-            "-p",
-            "no:cacheprovider",
-            "-v",
-            "--junitxml=/output/target_pytest.xml",
-        ]
         try:
-            # 【ハードタイムアウト】非決定的なLLM生成コードが無限ループ等でハングした
-            # 場合でも、ベンチマーク自体が無期限にブロックされないようtimeout=300を
-            # 明示する。タイムアウトはシステムエラーではなく「AI生成コードの
-            # パフォーマンス異常」として扱い、レポート生成自体は正常に継続させる。
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        except FileNotFoundError as e:
-            return {
-                "returncode": None,
-                "error": f"dockerコマンドが見つかりません: {e}",
-                "junit_results": {},
-            }
-        except subprocess.TimeoutExpired:
-            return {
-                "returncode": None,
-                "error": (
-                    "Timeout Failure(AI生成コードのパフォーマンス異常): "
-                    "300秒以内にPytest実行が完了しませんでした。"
-                ),
-                "timed_out": True,
-                "junit_results": {},
-            }
+            junit_path = output_dir / "target_pytest.xml"
 
-        return {
-            "returncode": result.returncode,
-            "stdout_tail": result.stdout[-2000:],
-            "stderr_tail": result.stderr[-2000:],
-            "junit_results": _parse_junit(junit_path),
-        }
+            # 【絶対制約】worktree自体は/workspace:roとして読み取り専用マウントするため、
+            # コンテナ内でPython(pytest)がバイトコードキャッシュ(__pycache__/*.pyc)を書き
+            # 込もうとしてPermissionErrorになることを構造的に防ぐ(PYTHONDONTWRITEBYTECODE=1)。
+            cmd = [
+                "docker",
+                "run",
+                "--rm",
+                *_docker_security_args(),
+                "-e",
+                "PYTHONDONTWRITEBYTECODE=1",
+                "--entrypoint",
+                "python",
+                "-v",
+                f"{worktree_path}:/workspace:ro",
+                "-v",
+                f"{output_dir}:/output:rw",
+                "-w",
+                "/workspace",
+                DOCKER_IMAGE,
+                "-m",
+                "pytest",
+                ".",
+                "-p",
+                "no:cacheprovider",
+                "-v",
+                "--junitxml=/output/target_pytest.xml",
+            ]
+            try:
+                # 【ハードタイムアウト】非決定的なLLM生成コードが無限ループ等でハングした
+                # 場合でも、ベンチマーク自体が無期限にブロックされないようtimeout=300を
+                # 明示する。タイムアウトはシステムエラーではなく「AI生成コードの
+                # パフォーマンス異常」として扱い、レポート生成自体は正常に継続させる。
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+            except FileNotFoundError as e:
+                return {
+                    "returncode": None,
+                    "error": f"dockerコマンドが見つかりません: {e}",
+                    "junit_results": {},
+                }
+            except subprocess.TimeoutExpired:
+                return {
+                    "returncode": None,
+                    "error": (
+                        "Timeout Failure(AI生成コードのパフォーマンス異常): "
+                        "300秒以内にPytest実行が完了しませんでした。"
+                    ),
+                    "timed_out": True,
+                    "junit_results": {},
+                }
+
+            return {
+                "returncode": result.returncode,
+                "stdout_tail": result.stdout[-2000:],
+                "stderr_tail": result.stderr[-2000:],
+                "junit_results": _parse_junit(junit_path),
+            }
+        finally:
+            # Rootless Docker配下でコンテナが書き込んだファイルの所有権をホストの
+            # 実行ユーザーへリストアしてから、withブロック終了時のtempfile自身の
+            # クリーンアップ(shutil.rmtree)へ進む(instructions/155)。
+            _fix_volume_permissions(output_dir)
 
 
 def _write_infrastructure_error_report(message: str) -> Path:
