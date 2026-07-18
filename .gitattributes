@@ -1,0 +1,4 @@
+# シェルスクリプトはLinux上で実行されるため、CRLF化されるとshebangの解釈に失敗する
+# (#!/usr/bin/env bash\r は "bad interpreter" 等で失敗し得る)。core.autocrlfの
+# ローカル設定に依存せず、常にLF固定でコミットされることをこのリポジトリ自身で保証する。
+*.sh text eol=lf
