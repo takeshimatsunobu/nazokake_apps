@@ -47,22 +47,20 @@ services:
       - ../..:/workspace
     command: ["python", "tools/compile_knowledge.py"]
 
-  # 【instructions/160】MLOps自動起動トリガー(tools/mlops_trigger.py)のサイドカー化。
-  # ホストOSのcron等(このサーバー固有の暗黙の前提としてIaC化されない設定)への依存を
-  # 排除し、定期実行ロジック自体をこのdocker-compose.ymlの一部として明示的にコード化する。
-  #
-  # ホストの.venvをそのままマウントして直接実行する設計(コンテナ内で改めて
-  # pip install/uv syncを行わない)のため、`docker compose up -d mlops-scheduler`前に
-  # ホスト側で `uv sync` 済みであることが前提。
+  # 【instructions/161】MLOps自動起動トリガー(tools/mlops_trigger.py)のサイドカー化
+  # (完全コンテナネイティブ設計への全面是正版。instructions/160の設計はSREレビューで
+  # Rejectされ、以下の4点を修正した)。
   mlops-scheduler:
-    image: python:3.11-slim
-    working_dir: /workspace
-    # 【ホストのソースコード+.venvのマウント】リポジトリルート全体を1つのバインド
-    # マウントとしてマウントする。.venv自体もリポジトリルート直下(uv syncの既定配置)
-    # にあるため、これ1本で「ソースコード」と「.venv」の両方の要件を満たす
-    # (二重にマウントすると同一パスへの重複マウントで意味を持たないため、あえて分けない)。
+    build:
+      context: ../..
+      dockerfile: infra/verification_env/mlops_scheduler.Dockerfile
+    image: nazo-mlops-scheduler
+    # 【Step 1: .venvマウントの廃止】ホストの.venv/ソースコードのバインドマウントは
+    # 完全に撤回した。依存関係・アプリケーションコードは
+    # infra/verification_env/mlops_scheduler.Dockerfileがビルド時に
+    # requirements_orchestrator.txt/packages/shared_coreから決定論的に .venv へ
+    # インストール・COPYする(イミュータブルなイメージ)。
     volumes:
-      - ../..:/workspace
       # 【Rootless Dockerソケットのマウント】tools/mlops_trigger.py起動先のMLOpsパイプ
       # ライン(tools/mlops_pipeline_agent.py等)が定量評価ゲートとしてサブプロセスで
       # tools/benchmark/run_benchmark.pyを実行し、そこから`docker run`でベンチマーク
@@ -74,6 +72,16 @@ services:
     environment:
       # マウント先が既定パスと一致していても、明示することで挙動を自己文書化する。
       - DOCKER_HOST=unix:///var/run/docker.sock
+      # 【Step 2に伴う修正】network_mode: hostの撤回により、コンテナ内の127.0.0.1は
+      # もはやホストを指さない(コンテナ自身を指す)。tools/config.pyの既定値
+      # (http://127.0.0.1:11434)を、下のextra_hostsで定義するゲートウェイ経由の
+      # ホスト名へ明示的に上書きする。
+      - OLLAMA_HOST=http://host.docker.internal:11434
+    # 【Step 2: ネットワーク隔離の復元】network_mode: "host"(コンテナのネットワーク
+    # 名前空間をホストと完全に共有する特権エスケープ)を撤回し、既定のブリッジ
+    # ネットワークのまま、ホストOSへのアクセスだけを最低限のゲートウェイ経由に限定する。
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     # 【NVIDIA GPUパススルー】ML学習・評価(tools/mlops_pipeline_nazo.py/agent.py)が
     # GPUを利用できるようにする。setup_verification_env.shが前提とする
     # 「--gpus device=0 によるGPU単一専有」(VRAM 8GB制約下での決定論的な排他制御)と
@@ -85,29 +93,8 @@ services:
             - driver: nvidia
               device_ids: ["0"]
               capabilities: ["gpu"]
-    # 【ホストネットワークの共有】このサイドカーが呼び出すMLOpsパイプラインの評価ゲート
-    # (tools/benchmark/run_benchmark.py経由のNazo-Agent推論)は、ホスト上のOllama
-    # (既定 http://127.0.0.1:11434、tools/config.py)へ接続する必要がある。通常のブリッジ
-    # ネットワークではコンテナから見た127.0.0.1がホストを指さないため、ホストと同じ
-    # ネットワーク名前空間を共有する(Rootless dockerdでも`--network host`は利用可能)。
-    network_mode: "host"
     restart: unless-stopped
-    # 【Step 1: 定期実行ロジック】ホストOSのcron等に依存せず、シェルスクリプトの無限
-    # ループでtools/mlops_trigger.pyを1時間ごとに実行する。python:3.11-slimにはdocker
-    # CLI自体が入っていないため、起動時に一度だけ導入してから無限ループへ入る
-    # (ループ本体はホストのuv/Python環境を再現するのではなく、マウント済みの
-    # ホスト.venvのpythonバイナリを直接呼び出す)。
-    command:
-      - bash
-      - -c
-      - |
-        set -euo pipefail
-        apt-get update && apt-get install -y --no-install-recommends docker.io \
-          && rm -rf /var/lib/apt/lists/*
-        while true; do
-          echo "[mlops-scheduler] $(date -Is) tools/mlops_trigger.py を実行します..."
-          /workspace/.venv/bin/python tools/mlops_trigger.py \
-            || echo "[mlops-scheduler] $(date -Is) tools/mlops_trigger.py が異常終了しました(次回サイクルで再試行します)"
-          echo "[mlops-scheduler] $(date -Is) 次回実行まで1時間sleepします..."
-          sleep 3600
-        done
+    # 【Step 3: PID 1問題の解消】commandは指定しない。ENTRYPOINTは
+    # mlops_scheduler.Dockerfileが定義するtools/scheduler_daemon.py(signalモジュールで
+    # SIGTERM/SIGINTを直接トラップするPythonデーモン)。bashの無限sleepループ
+    # (シグナルを子プロセスへ伝播できずコンテナがゾンビ化する)は完全に廃止した。
