@@ -92,7 +92,13 @@ def main() -> int:
     # でなく、実行ユーザー(sandboxuser、非root)に権限のないディレクトリ削除を試みて
     # PermissionErrorでクラッシュする原因になっていたため削除した。dirs_exist_ok=True
     # により、Dockerfileが事前作成した(常に空の)/workspaceへそのままコピーする。
-    shutil.copytree(args.fixture_dir, WORKSPACE, dirs_exist_ok=True)
+    # copy_function=shutil.copy を明示することで、既定のshutil.copy2が行う
+    # メタデータ(パーミッションビット等)のコピーを無効化する。fixtureは読み取り専用
+    # マウント(-v ...:/mnt/fixture:ro)由来のため、コピー元の権限情報を引き継ぐ処理が
+    # 非rootの実行ユーザー(sandboxuser)に対してPermissionErrorを起こす原因になっていた。
+    shutil.copytree(
+        args.fixture_dir, WORKSPACE, dirs_exist_ok=True, copy_function=shutil.copy
+    )
 
     baseline = _run_pytest(output_dir / "baseline.xml")
     (output_dir / "baseline_stdout.txt").write_text(
