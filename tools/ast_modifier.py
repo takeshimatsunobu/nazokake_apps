@@ -151,28 +151,39 @@ def _atomic_write_text(path: Path, content: str) -> None:
     複数ワーカーからの一過性の競合を即座のフェイルファストにしないため、
     tenacityによる指数的バックオフ(1,2,4,8,10秒...最大5回試行)で再試行する。
     5回試行してもなお獲得できない場合のみ、filelock.Timeout が最終的に伝播する。
+
+    トランザクション(ロック区間)を抜けた直後、ロックファイル自身
+    (`f"{path}.lock"`)を物理的に破棄する。filelockはロック解放後もこの
+    ファイル自体を残すため、放置するとDockerサンドボックス側のBlast Radius検知
+    (Epic 2 5次元評価ゲート、instructions/158)が意図した書き込み対象以外の
+    ファイル変更として誤検知(偽陽性)する。書き込み自体が失敗した場合でも
+    ロックファイルだけは残さないよう、finallyで確実に破棄する。
     """
-    lock = filelock.FileLock(f"{path}.lock", timeout=FILE_LOCK_TIMEOUT_SEC)
-    with lock:
-        dir_name = os.path.dirname(str(path)) or "."
-        tmp = tempfile.NamedTemporaryFile(
-            mode="w", encoding="utf-8", errors="strict", dir=dir_name, delete=False
-        )
-        tmp_path = Path(tmp.name)
-        try:
-            tmp.write(content)
-            tmp.flush()
-            os.fsync(tmp.fileno())
-            tmp.close()
-            if path.exists():
-                # copystatはパーミッションに加えmtime/atime等のメタデータも
-                # 一時ファイルへ引き継ぐ(copymodeの上位互換)。
-                shutil.copystat(path, tmp_path)
-            os.replace(tmp_path, path)
-        except Exception:
-            tmp.close()
-            tmp_path.unlink(missing_ok=True)
-            raise
+    lock_path = Path(f"{path}.lock")
+    lock = filelock.FileLock(str(lock_path), timeout=FILE_LOCK_TIMEOUT_SEC)
+    try:
+        with lock:
+            dir_name = os.path.dirname(str(path)) or "."
+            tmp = tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", errors="strict", dir=dir_name, delete=False
+            )
+            tmp_path = Path(tmp.name)
+            try:
+                tmp.write(content)
+                tmp.flush()
+                os.fsync(tmp.fileno())
+                tmp.close()
+                if path.exists():
+                    # copystatはパーミッションに加えmtime/atime等のメタデータも
+                    # 一時ファイルへ引き継ぐ(copymodeの上位互換)。
+                    shutil.copystat(path, tmp_path)
+                os.replace(tmp_path, path)
+            except Exception:
+                tmp.close()
+                tmp_path.unlink(missing_ok=True)
+                raise
+    finally:
+        lock_path.unlink(missing_ok=True)
 
 
 def _parse_new_node(new_code: str) -> cst.CSTNode:
