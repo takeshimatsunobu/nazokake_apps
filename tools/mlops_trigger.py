@@ -8,10 +8,15 @@ tools/mlops_trigger.py
 
 条件A: なぞかけDPO/SFT候補(tools/extract_dataset.pyと同一の抽出条件:
        human_evaluations が1件以上 または is_golden_data=True)の「未学習」件数が
-       500件以上 -> tools/mlops_pipeline_nazo.py を起動
+       閾値(settings.mlops_trigger_nazo_threshold、既定500件)以上
+       -> tools/mlops_pipeline_nazo.py を起動
 条件B: Nazo-Agent成功修復ログ(tools/dataset/agent_sft.jsonlの行数。
        tools/nazo_agent.pyが自己修復に成功するたびに1行追記される)の
-       「未学習」件数が50件以上 -> tools/mlops_pipeline_agent.py を起動
+       「未学習」件数が閾値(settings.mlops_trigger_agent_threshold、既定50件)以上
+       -> tools/mlops_pipeline_agent.py を起動
+
+両閾値ともtools/config.pyのToolsSettingsで定義し、環境変数(.env)経由の上書きを
+許可する(モジュール内のマジックナンバーとしてハードコードしない)。
 
 「未学習」の判定について: どちらの候補集合にも「学習済みフラグ」は存在しないため、
 前回この条件でトリガーした時点の件数を状態ファイル(STATE_PATH)に記録し、
@@ -41,6 +46,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools import process_manager  # noqa: E402
+from tools.config import settings  # noqa: E402
 from tools.extract_dataset import _fetch_candidates  # noqa: E402
 
 if sys.platform == "win32":
@@ -49,9 +55,6 @@ if sys.platform == "win32":
 
 STATE_PATH = Path(__file__).resolve().parent / "mlops_trigger_state.json"
 AGENT_SFT_PATH = BASE_DIR / "tools" / "dataset" / "agent_sft.jsonl"
-
-NAZO_THRESHOLD = 500
-AGENT_THRESHOLD = 50
 
 
 def _load_state() -> dict:
@@ -117,7 +120,7 @@ def main() -> int:
     print(
         f"📊 [条件A] なぞかけDPO/SFT候補: 総数={nazo_total} / "
         f"前回トリガー時={state['nazo_last_triggered_count']} / "
-        f"未学習={nazo_pending} (閾値={NAZO_THRESHOLD})"
+        f"未学習={nazo_pending} (閾値={settings.mlops_trigger_nazo_threshold})"
     )
 
     agent_total = count_agent_success_logs()
@@ -125,11 +128,11 @@ def main() -> int:
     print(
         f"📊 [条件B] Nazo-Agent成功修復ログ: 総数={agent_total} / "
         f"前回トリガー時={state['agent_last_triggered_count']} / "
-        f"未学習={agent_pending} (閾値={AGENT_THRESHOLD})"
+        f"未学習={agent_pending} (閾値={settings.mlops_trigger_agent_threshold})"
     )
 
-    nazo_should_trigger = nazo_pending >= NAZO_THRESHOLD
-    agent_should_trigger = agent_pending >= AGENT_THRESHOLD
+    nazo_should_trigger = nazo_pending >= settings.mlops_trigger_nazo_threshold
+    agent_should_trigger = agent_pending >= settings.mlops_trigger_agent_threshold
 
     if not nazo_should_trigger and not agent_should_trigger:
         print("\nℹ️  いずれの条件も未達のため、パイプラインは起動しません。")

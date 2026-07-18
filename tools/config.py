@@ -113,6 +113,14 @@ class ToolsSettings(BaseSettings):
     # 呼んだ場合のみ取得できる)。未設定(None)の場合、通知機能自体を無効化する。
     alert_webhook_url: SecretStr | None = None
 
+    # tools/mlops_trigger.py(イベント駆動のワンショットMLOps起動トリガー)の
+    # 発火閾値。以前はモジュール内のマジックナンバー(NAZO_THRESHOLD = 500 /
+    # AGENT_THRESHOLD = 50)としてハードコードされていたが、運用中の調整に毎回
+    # コード変更を要してしまうため、環境変数(.env)経由の上書きを許可するここへ
+    # 外部化する。
+    mlops_trigger_nazo_threshold: int = 500
+    mlops_trigger_agent_threshold: int = 50
+
 
 def load_settings() -> ToolsSettings:
     """設定を読み込み検証する。失敗時は意味のあるメッセージを出してFail-Fastする。"""
