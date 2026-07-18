@@ -121,6 +121,14 @@ class ToolsSettings(BaseSettings):
     mlops_trigger_nazo_threshold: int = 500
     mlops_trigger_agent_threshold: int = 50
 
+    # Epic 2: Nazo-Agentの本番稼働(権限委譲)を客観的に判定する5次元定量評価ゲート
+    # (tools/benchmark/run_benchmark.py の evaluate_5d_quality_gate())の各次元の閾値。
+    # quality_gate_complexity_max は既存フィールドを共用する。
+    quality_gate_success_rate_min: float = 0.90
+    quality_gate_regression_rate_max: float = 0.0
+    quality_gate_max_retries: int = 3
+    quality_gate_allowed_blast_radius: int = 0
+
 
 def load_settings() -> ToolsSettings:
     """設定を読み込み検証する。失敗時は意味のあるメッセージを出してFail-Fastする。"""

@@ -51,7 +51,7 @@ if str(BASE_DIR) not in sys.path:
 # 反映する(以前この場所にあった無検証のos.environ["OLLAMA_HOST"]=...という
 # ハードコードされたワークアラウンドは廃止し、この一元化された設定モジュールに委ねる)。
 # ChatOllamaを構築する`tools.agent_graph`より必ず先にimportする必要がある。
-from tools import config  # noqa: E402, F401
+from tools.config import settings  # noqa: E402
 from langgraph.graph import END, StateGraph  # noqa: E402
 
 from tools import agent_graph  # noqa: E402
@@ -157,6 +157,24 @@ def compute_code_complexity(
     }
 
 
+def _average_complexity_growth_rate(results: list[dict]) -> float | None:
+    """各fixtureのASTノード数増減率の平均を返す(元のノード数を計算できたfixtureのみ
+    対象)。Epic 2 5次元評価ゲートの「Code Complexity」次元でこのレポート自身が
+    使用する(tools/mlops_pipeline_agent.pyにも同名の私設ヘルパーが存在するが、
+    ベンチマークハーネス自身のレポート生成をパイプライン側モジュールへ依存させたく
+    ないため、意図的にここでも自己完結させている)。
+    """
+    rates = []
+    for r in results:
+        complexity = r.get("code_complexity") or {}
+        original = complexity.get("original")
+        delta = complexity.get("node_count_delta")
+        if not original or delta is None or not original.get("node_count"):
+            continue
+        rates.append(delta / original["node_count"])
+    return (sum(rates) / len(rates)) if rates else None
+
+
 def _parse_junit(xml_path: Path) -> dict:
     """JUnit XML(pytest --junitxml)をパースし、{テスト名: passed(bool)}へ変換する。
 
@@ -254,6 +272,25 @@ def _run_in_docker(fixture_dir: Path, task: dict, output_dir: Path) -> str:
         return "completed"
 
 
+def _read_blast_radius(output_dir: Path, target_filename: str = "buggy.py") -> dict:
+    """コンテナ(container_runner.py)が書き出したblast_radius.json(AST修正適用の
+    前後でファイルハッシュを比較して検出した「変更されたファイル一覧」)を読み、
+    修正対象ファイル(target_filename)以外の変更数を数える(Epic 2 5次元評価ゲート
+    の「副作用(Blast Radius)」)。
+
+    ファイルが存在しない場合(コンテナが実行されなかった/クラッシュした場合)は
+    測定不能を表すNoneを返す(0とは意味的に異なるため、安全側に倒して「不合格」
+    判定させる)。
+    """
+    path = output_dir / "blast_radius.json"
+    if not path.exists():
+        return {"changed_files": [], "blast_radius_count": None}
+    data = json.loads(path.read_text(encoding="utf-8"))
+    changed_files = data.get("changed_files", [])
+    blast_radius_count = sum(1 for f in changed_files if f != target_filename)
+    return {"changed_files": changed_files, "blast_radius_count": blast_radius_count}
+
+
 def run_fixture(name: str) -> dict:
     """1fixtureぶんの推論→Docker適用・テスト→メトリクス計算を実行する。"""
     fixture_dir = FIXTURES_DIR / name
@@ -277,6 +314,9 @@ def run_fixture(name: str) -> dict:
         "regression": None,
         "code_complexity": None,
         "task": None,
+        # Epic 2 5次元評価ゲート: 推論効率(リトライ回数)は成否に関わらず常に記録する。
+        "efficiency": {"retry_count": final_state.get("retry_count", 0)},
+        "blast_radius": None,
     }
 
     if final_state.get("last_validation_error"):
@@ -296,6 +336,9 @@ def run_fixture(name: str) -> dict:
         output_dir = Path(output_dir_str)
         result["docker_stage"] = _run_in_docker(fixture_dir, task, output_dir)
         result["latency_ms"] = (time.perf_counter() - start) * 1000
+        # コンテナが実行されなかった場合(docker_stage != "completed")はファイルが
+        # 存在せず、changed_files=[]/blast_radius_count=Noneとして安全に返る。
+        result["blast_radius"] = _read_blast_radius(output_dir)
 
         if result["docker_stage"] == "completed":
             baseline = _parse_junit(output_dir / "baseline.xml")
@@ -460,6 +503,51 @@ def _require_docker_or_die() -> None:
     sys.exit(125)
 
 
+def evaluate_5d_quality_gate(report: dict) -> dict:
+    """Epic 2: Nazo-Agentの本番稼働(権限委譲)を客観的に判定する5次元定量評価ゲート。
+
+    以下の5次元をすべて評価し、1つでも閾値を満たさなければ不合格とする(いずれの
+    次元も、対応する値が測定不能(None)の場合は安全側に倒して不合格とする):
+      1. Success Rate      >= quality_gate_success_rate_min
+      2. Regression Rate   <= quality_gate_regression_rate_max (厳密に0を要求)
+      3. Code Complexity   <= quality_gate_complexity_max (増加率)
+      4. Efficiency        <= quality_gate_max_retries (リトライ回数の最大値)
+      5. Blast Radius      <= quality_gate_allowed_blast_radius (厳密に0を要求)
+
+    戻り値はレポートJSONへそのまま埋め込む{"passed": bool, "dimensions": {...}}形式。
+    """
+
+    def _dimension(value, threshold, *, le: bool) -> dict:
+        passed = value is not None and ((value <= threshold) if le else (value >= threshold))
+        return {"value": value, "threshold": threshold, "passed": passed}
+
+    aggregate = report.get("aggregate", {})
+    dimensions = {
+        "success_rate": _dimension(
+            aggregate.get("success_rate"), settings.quality_gate_success_rate_min, le=False
+        ),
+        "regression_rate": _dimension(
+            aggregate.get("avg_regression_rate"),
+            settings.quality_gate_regression_rate_max,
+            le=True,
+        ),
+        "code_complexity_growth_rate": _dimension(
+            aggregate.get("avg_complexity_growth_rate"),
+            settings.quality_gate_complexity_max,
+            le=True,
+        ),
+        "efficiency_retry_count": _dimension(
+            aggregate.get("max_retry_count"), settings.quality_gate_max_retries, le=True
+        ),
+        "blast_radius": _dimension(
+            aggregate.get("max_blast_radius"),
+            settings.quality_gate_allowed_blast_radius,
+            le=True,
+        ),
+    }
+    return {"passed": all(d["passed"] for d in dimensions.values()), "dimensions": dimensions}
+
+
 def main() -> int:
     # 【Pre-flight Check / Hard Fail】このベンチマークはDocker隔離を必須要件とする。
     # 他の処理(fixture解決すら)より前に、対話的プロンプトを挟まず即座に確認する。
@@ -503,6 +591,8 @@ def main() -> int:
                 "regression": None,
                 "code_complexity": None,
                 "task": None,
+                "efficiency": None,
+                "blast_radius": None,
                 "error": repr(e),
             }
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
@@ -514,6 +604,17 @@ def main() -> int:
         r["regression"]["regression_rate"]
         for r in results
         if r.get("regression") and r["regression"]["regression_rate"] is not None
+    ]
+    complexity_growth_rate = _average_complexity_growth_rate(results)
+    retry_counts = [
+        r["efficiency"]["retry_count"]
+        for r in results
+        if r.get("efficiency") and r["efficiency"].get("retry_count") is not None
+    ]
+    blast_radius_counts = [
+        r["blast_radius"]["blast_radius_count"]
+        for r in results
+        if r.get("blast_radius") and r["blast_radius"].get("blast_radius_count") is not None
     ]
 
     report = {
@@ -532,8 +633,12 @@ def main() -> int:
                 if regression_rates
                 else None
             ),
+            "avg_complexity_growth_rate": complexity_growth_rate,
+            "max_retry_count": max(retry_counts) if retry_counts else None,
+            "max_blast_radius": max(blast_radius_counts) if blast_radius_counts else None,
         },
     }
+    report["quality_gate_5d"] = evaluate_5d_quality_gate(report)
 
     if args.target_worktree:
         print(f"=== 対象ファイル固有のPytest検証: {args.target_worktree} ===")
