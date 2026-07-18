@@ -26,6 +26,7 @@ import tenacity
 
 from tools import process_manager
 from tools.config import VRAM_LOCK_PATH, settings
+from tools.exceptions import MLOpsInfrastructureError, PipelineExecutionError
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -167,13 +168,18 @@ def run_step(step_name: str, cmd: list[str], *, tolerate_failure: bool = False) 
     警告を出してFalseを返すのみとする(呼び出し元が「このステップは無くても
     後続を続行できる」と判断している場合のみ使う)。
 
-    tolerate_failure=False でステップが異常終了した場合は RuntimeError を送出する
+    tolerate_failure=False でステップが異常終了した場合はドメイン固有例外を送出する
     (以前はここでsys.exit(1)により即座にプロセスを終了させていたが、これにより
     呼び出し元(各MLOpsパイプラインのmain())が実験管理DBへの記録
     (_record_experiment)やダッシュボード用静的JSONの更新(export_metrics)を
-    一切実行できないまま死ぬサイレントな障害が生じていた。RuntimeErrorとして
-    送出することで、呼び出し元がtry/exceptで捕捉し、後始末を確実に行った上で
-    終了できるようにする)。
+    一切実行できないまま死ぬサイレントな障害が生じていた。例外として送出することで、
+    呼び出し元がtry/exceptで捕捉し、後始末を確実に行った上で終了できるようにする)。
+
+    サブプロセスの終了コードで例外の型を分岐させる: returncode==125は
+    tools/benchmark/run_benchmark.pyの_require_docker_or_die()が実際に送出する
+    Docker/インフラ不在専用の終了コード(instructions/136、Docker CLI慣例に倣う)
+    のため MLOpsInfrastructureError とする。それ以外の非0終了コードは、原則として
+    サブプロセス自体のロジック的なクラッシュとみなし PipelineExecutionError とする。
     """
     print(f"\n🔍 [Step] {step_name} を実行します... ({' '.join(cmd)})")
     with process_manager.ManagedProcess(cmd, cwd=str(BASE_DIR)) as proc:
@@ -198,7 +204,9 @@ def run_step(step_name: str, cmd: list[str], *, tolerate_failure: bool = False) 
         )
         print(message)
         send_alert_webhook(message)
-        raise RuntimeError(message)
+        if returncode == 125:
+            raise MLOpsInfrastructureError(message)
+        raise PipelineExecutionError(message)
 
     print(f"✅ {step_name} が完了しました。")
     return True

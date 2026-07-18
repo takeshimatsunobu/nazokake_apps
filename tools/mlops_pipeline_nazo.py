@@ -38,6 +38,7 @@ if str(BASE_DIR) not in sys.path:
 from tools import export_metrics  # noqa: E402
 from tools import mlops_common  # noqa: E402
 from tools import mlops_experiments_db  # noqa: E402
+from tools.exceptions import MLOpsInfrastructureError, PipelineExecutionError  # noqa: E402
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -147,14 +148,26 @@ def main() -> int:
         finally:
             lock.release()
             print("🔓 [VRAM排他制御] VRAMロックを解放しました。")
-    except RuntimeError as e:
-        # ステップのサブプロセス自体が異常終了した場合、以前はrun_step()内の
-        # sys.exit(1)でプロセスごと即死しており、実験管理DBへの記録
+    except MLOpsInfrastructureError as e:
+        # Docker不在等、インフラ起因でステップが異常終了した場合(instructions/136で
+        # run_benchmark.pyがreturncode=125として送出する信号がrun_step()経由でここまで
+        # 伝播する)。監視システムが区別できるよう、終了コードも125に揃える。
+        latency = time.monotonic() - start_time
+        print(f"🚨 [Infra-Fail] インフラエラーによりパイプラインを停止します: {e}")
+        _record_experiment(None, latency)
+        return 125
+    except PipelineExecutionError as e:
+        # サブプロセス自体のロジック的なクラッシュ(インフラエラー以外)。以前は
+        # run_step()内のsys.exit(1)でプロセスごと即死しており、実験管理DBへの記録
         # (_record_experiment)もダッシュボード用静的JSON(export_metrics)の更新も
         # 一切実行されないサイレントな障害だった(instructions/134で検出)。
-        # RuntimeErrorとして送出させ、ここで捕捉した上で必ず記録してから終了する。
         latency = time.monotonic() - start_time
         print(f"🚨 [Fail-Fast] ステップ異常終了によりパイプラインを停止します: {e}")
+        _record_experiment(None, latency)
+        return 1
+    except Exception as e:  # noqa: BLE001 - 予期しない失敗も必ず記録してから終了する
+        latency = time.monotonic() - start_time
+        print(f"🚨 [Fail-Fast] 予期しないエラーによりパイプラインを停止します: {e}")
         _record_experiment(None, latency)
         return 1
 
