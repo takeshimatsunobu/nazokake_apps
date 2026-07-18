@@ -33,6 +33,7 @@ import json
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import uuid
 import xml.etree.ElementTree as ET
@@ -175,14 +176,12 @@ def _average_complexity_growth_rate(results: list[dict]) -> float | None:
     return (sum(rates) / len(rates)) if rates else None
 
 
-def _parse_junit(xml_path: Path) -> dict:
-    """JUnit XML(pytest --junitxml)をパースし、{テスト名: passed(bool)}へ変換する。
+def _parse_junit_testcases(root: ET.Element) -> dict:
+    """パース済みJUnit XMLツリーから{テスト名: passed(bool)}を作る共通ロジック。
 
-    ファイルが存在しない場合(コンテナ実行が行われなかった場合)は空dictを返す。
+    ファイルから読む_parse_junit()と、NDJSON経由のXML文字列から読む
+    _parse_junit_xml_text()の両方から呼ばれる。
     """
-    if not xml_path.exists():
-        return {}
-    root = ET.parse(xml_path).getroot()
     results = {}
     for testcase in root.iter("testcase"):
         name = testcase.get("name")
@@ -191,6 +190,31 @@ def _parse_junit(xml_path: Path) -> dict:
         )
         results[name] = not failed
     return results
+
+
+def _parse_junit(xml_path: Path) -> dict:
+    """JUnit XML(pytest --junitxml)をファイルから読みパースする。
+
+    run_target_specific_pytest()専用(そちらは今もDockerコンテナ内でjunit xmlを
+    一時ファイルへ書き出す方式のため)。ファイルが存在しない場合(コンテナ実行が
+    行われなかった場合)は空dictを返す。
+    """
+    if not xml_path.exists():
+        return {}
+    return _parse_junit_testcases(ET.parse(xml_path).getroot())
+
+
+def _parse_junit_xml_text(xml_text: str | None) -> dict:
+    """container_runner.pyがNDJSONイベント(baseline_result/postfix_result)に埋め込んで
+    送ってきたJUnit XML文字列をパースする(run_fixture()専用、ファイルI/Oを介さない、
+    instructions/156)。
+
+    xml_textがNone/空文字列の場合(イベントが届かなかった、あるいはjunit_xmlキーが
+    空だった場合)は空dictを返す。
+    """
+    if not xml_text:
+        return {}
+    return _parse_junit_testcases(ET.fromstring(xml_text))
 
 
 def _docker_security_args() -> list[str]:
@@ -219,12 +243,24 @@ def _docker_security_args() -> list[str]:
     ]
 
 
-def _run_in_docker(fixture_dir: Path, task: dict, output_dir: Path) -> str:
-    """docker runでコンテナ内にfixtureをコピーし、AST置換の適用とPytest実行を行わせる。
+def _run_in_docker(fixture_dir: Path, task: dict) -> dict:
+    """docker runでコンテナを起動し、NDJSON(stderr)をリアルタイムに行単位でストリーム
+    読み込みする(instructions/156: ファイルマウント廃止とNDJSONストリーミングI/O)。
 
-    戻り値はdocker_stage文字列("completed" または "failed: <理由>")。dockerコマンド
-    自体が存在しない場合もここでのみ捕捉し、呼び出し元(1fixtureの処理)を継続させる
-    (1fixtureのDocker失敗で他のfixtureの処理をブロックしない)。
+    ホスト⇄コンテナ間の結果受け渡しに書き込み可能なバインドマウント(-v output:/output:rw)
+    を一切使わない。コンテナ(container_runner.py)がsys.stderrへ1行ずつflushして送る
+    NDJSONイベントを、受信した瞬間にevents dictへ格納するため、コンテナが途中でクラッシュ
+    しても、それまでに確定していた結果はホスト側にすでに保全されている。
+
+    テスト対象コードの生ログ(pytest, ast_modifier.pyの標準出力)はstdout=None
+    (パイプせず継承)としてこのプロセス自身のsys.stdoutへそのまま流れ落ちる。結果は
+    stderrのNDJSONのみで完結するため、あえてパイプしないことで、生ログの量に応じた
+    パイプ背圧によるデッドロックの心配自体を構造的に排除する。
+
+    戻り値は{"docker_stage": "completed"または"failed: <理由>", "events": dict,
+    "stray_stderr_lines": list[str]}。dockerコマンド自体が存在しない場合もここでのみ
+    捕捉し、呼び出し元(1fixtureの処理)を継続させる(1fixtureのDocker失敗で他のfixtureの
+    処理をブロックしない)。
     """
     with tempfile.TemporaryDirectory() as task_tmp_dir:
         task_json_path = Path(task_tmp_dir) / "task.json"
@@ -247,13 +283,6 @@ def _run_in_docker(fixture_dir: Path, task: dict, output_dir: Path) -> str:
             f"{fixture_dir}:/mnt/fixture:ro",
             "-v",
             f"{task_tmp_dir}:/mnt/task:ro",
-            "-v",
-            # 【SSoT】出力先のコンテナ内マウントポイントは/outputに統一する
-            # (instructions/154)。entrypoint.sh(instructions/153)がchown -R対象として
-            # /outputをハードコードしているため、/mnt/outputのままではentrypoint.shの
-            # 権限調整が実際のマウント先に反映されず、run_target_specific_pytest()側の
-            # /outputとも不整合だった(マジックストリングの混在)。
-            f"{output_dir}:/output:rw",
             DOCKER_IMAGE,
             "--fixture-dir",
             "/mnt/fixture",
@@ -261,29 +290,82 @@ def _run_in_docker(fixture_dir: Path, task: dict, output_dir: Path) -> str:
             "/mnt/task/task.json",
             "--ast-modifier",
             "/mnt/tools/ast_modifier.py",
-            "--output-dir",
-            "/output",
         ]
-        try:
-            # 【ハードタイムアウト】run_target_specific_pytest()と同様、AI生成コードの
-            # 無限ループ等によるハングでベンチマーク全体が無期限にブロックされない
-            # ようにする。タイムアウトはシステムエラーではなく「AI生成コードの
-            # パフォーマンス異常」として記録し、他のfixtureの処理は継続させる。
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-        except FileNotFoundError as e:
-            return f"failed: {e}"
-        except subprocess.TimeoutExpired:
-            return (
-                "failed: Timeout Failure(AI生成コードのパフォーマンス異常): "
-                "300秒以内にdocker run(適用+Pytest実行)が完了しませんでした。"
-            )
 
-        if result.returncode != 0:
-            stderr_snippet = result.stderr.strip()[:500]
-            return (
-                f"failed: docker run exited with {result.returncode}: {stderr_snippet}"
-            )
-        return "completed"
+        events: dict[str, dict] = {}
+        stray_stderr_lines: list[str] = []
+        timed_out = False
+
+        try:
+            with subprocess.Popen(
+                cmd, stdout=None, stderr=subprocess.PIPE, text=True, bufsize=1
+            ) as proc:
+
+                def _on_timeout() -> None:
+                    nonlocal timed_out
+                    timed_out = True
+                    proc.kill()
+
+                # 【ハードタイムアウト】run_target_specific_pytest()と同様、AI生成コードの
+                # 無限ループ等によるハングでベンチマーク全体が無期限にブロックされない
+                # ようにする。subprocess.run(timeout=300)がPopen化により使えなくなった分、
+                # ウォッチドッグスレッドで同じ意味論を再現する(kill後、子プロセスの
+                # パイプ書き込み端が閉じてEOFが伝播し、下の読み込みループは自然に終了する)。
+                timer = threading.Timer(300, _on_timeout)
+                timer.start()
+                try:
+                    for line in proc.stderr:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            event = json.loads(line)
+                        except json.JSONDecodeError:
+                            # docker CLI自身の起動失敗メッセージや、container_runner.py
+                            # 側の未捕捉例外トレースバック(非JSON)がここに来る。
+                            stray_stderr_lines.append(line)
+                            continue
+                        event_name = event.get("event")
+                        if event_name:
+                            # 受信した瞬間に確定させる: この直後にコンテナがクラッシュ
+                            # しても、ここまでの結果は失われない。
+                            events[event_name] = event
+                        else:
+                            stray_stderr_lines.append(line)
+                finally:
+                    timer.cancel()
+                returncode = proc.wait()
+        except FileNotFoundError as e:
+            return {
+                "docker_stage": f"failed: {e}",
+                "events": events,
+                "stray_stderr_lines": stray_stderr_lines,
+            }
+
+        if timed_out:
+            return {
+                "docker_stage": (
+                    "failed: Timeout Failure(AI生成コードのパフォーマンス異常): "
+                    "300秒以内にdocker run(適用+Pytest実行)が完了しませんでした。"
+                ),
+                "events": events,
+                "stray_stderr_lines": stray_stderr_lines,
+            }
+
+        if returncode != 0:
+            stderr_snippet = "\n".join(stray_stderr_lines).strip()[:500]
+            return {
+                "docker_stage": (
+                    f"failed: docker run exited with {returncode}: {stderr_snippet}"
+                ),
+                "events": events,
+                "stray_stderr_lines": stray_stderr_lines,
+            }
+        return {
+            "docker_stage": "completed",
+            "events": events,
+            "stray_stderr_lines": stray_stderr_lines,
+        }
 
 
 def _fix_volume_permissions(*dirs: Path) -> None:
@@ -328,21 +410,21 @@ def _fix_volume_permissions(*dirs: Path) -> None:
         print(f"⚠️  [権限リストア] _fix_volume_permissions() をスキップします: {e}")
 
 
-def _read_blast_radius(output_dir: Path, target_filename: str = "buggy.py") -> dict:
-    """コンテナ(container_runner.py)が書き出したblast_radius.json(AST修正適用の
-    前後でファイルハッシュを比較して検出した「変更されたファイル一覧」)を読み、
-    修正対象ファイル(target_filename)以外の変更数を数える(Epic 2 5次元評価ゲート
-    の「副作用(Blast Radius)」)。
+def _compute_blast_radius(
+    blast_radius_event: dict | None, target_filename: str = "buggy.py"
+) -> dict:
+    """container_runner.pyがNDJSONで送出したblast_radiusイベント(_run_in_docker()の
+    events["blast_radius"]、AST修正適用の前後でファイルハッシュを比較して検出した
+    「変更されたファイル一覧」)から、修正対象ファイル(target_filename)以外の変更数を
+    数える(Epic 2 5次元評価ゲートの「副作用(Blast Radius)」)。
 
-    ファイルが存在しない場合(コンテナが実行されなかった/クラッシュした場合)は
+    イベントが届かなかった場合(コンテナが実行されなかった/クラッシュした場合)は
     測定不能を表すNoneを返す(0とは意味的に異なるため、安全側に倒して「不合格」
     判定させる)。
     """
-    path = output_dir / "blast_radius.json"
-    if not path.exists():
+    if blast_radius_event is None:
         return {"changed_files": [], "blast_radius_count": None}
-    data = json.loads(path.read_text(encoding="utf-8"))
-    changed_files = data.get("changed_files", [])
+    changed_files = blast_radius_event.get("changed_files", [])
     blast_radius_count = sum(1 for f in changed_files if f != target_filename)
     return {"changed_files": changed_files, "blast_radius_count": blast_radius_count}
 
@@ -394,44 +476,47 @@ def run_fixture(name: str) -> dict:
         task["target_name"], buggy_source, task["new_code"]
     )
 
-    with tempfile.TemporaryDirectory() as output_dir_str:
-        output_dir = Path(output_dir_str)
-        try:
-            result["docker_stage"] = _run_in_docker(fixture_dir, task, output_dir)
-            result["latency_ms"] = (time.perf_counter() - start) * 1000
-            # コンテナが実行されなかった場合(docker_stage != "completed")はファイルが
-            # 存在せず、changed_files=[]/blast_radius_count=Noneとして安全に返る。
-            result["blast_radius"] = _read_blast_radius(output_dir)
+    docker_result = _run_in_docker(fixture_dir, task)
+    events = docker_result["events"]
+    result["docker_stage"] = docker_result["docker_stage"]
+    result["latency_ms"] = (time.perf_counter() - start) * 1000
+    # コンテナが実行されなかった/クラッシュした場合(docker_stage != "completed")は
+    # events.get("blast_radius")がNoneのままとなり、changed_files=[]/
+    # blast_radius_count=Noneとして安全に返る。
+    result["blast_radius"] = _compute_blast_radius(events.get("blast_radius"))
+    # ヘルシーな実行では常に空。空でない場合、container_runner.py側で結果チャネル
+    # (stderr)へ想定外の非JSON出力が混入したことを示す早期警告として、成否に
+    # 関わらず常にレポートへ残す(instructions/156: stderrはNDJSON専用チャネル)。
+    result["container_stray_stderr"] = docker_result["stray_stderr_lines"]
 
-            if result["docker_stage"] == "completed":
-                baseline = _parse_junit(output_dir / "baseline.xml")
-                postfix = _parse_junit(output_dir / "postfix.xml")
+    if result["docker_stage"] == "completed":
+        baseline = _parse_junit_xml_text(
+            events.get("baseline_result", {}).get("junit_xml")
+        )
+        postfix = _parse_junit_xml_text(
+            events.get("postfix_result", {}).get("junit_xml")
+        )
 
-                result["success"] = postfix.get(TARGET_TEST_NAME)
+        result["success"] = postfix.get(TARGET_TEST_NAME)
 
-                previously_passing_sanity = [
-                    test_name
-                    for test_name, passed in baseline.items()
-                    if test_name != TARGET_TEST_NAME and passed
-                ]
-                regressed = [
-                    test_name
-                    for test_name in previously_passing_sanity
-                    if not postfix.get(test_name, False)
-                ]
-                result["regression"] = {
-                    "regressed_tests": regressed,
-                    "regression_rate": (
-                        len(regressed) / len(previously_passing_sanity)
-                        if previously_passing_sanity
-                        else None
-                    ),
-                }
-        finally:
-            # Rootless Docker配下でコンテナが書き込んだファイルの所有権をホストの
-            # 実行ユーザーへリストアしてから、withブロック終了時のtempfile自身の
-            # クリーンアップ(shutil.rmtree)へ進む(instructions/155)。
-            _fix_volume_permissions(output_dir)
+        previously_passing_sanity = [
+            test_name
+            for test_name, passed in baseline.items()
+            if test_name != TARGET_TEST_NAME and passed
+        ]
+        regressed = [
+            test_name
+            for test_name in previously_passing_sanity
+            if not postfix.get(test_name, False)
+        ]
+        result["regression"] = {
+            "regressed_tests": regressed,
+            "regression_rate": (
+                len(regressed) / len(previously_passing_sanity)
+                if previously_passing_sanity
+                else None
+            ),
+        }
 
     return result
 

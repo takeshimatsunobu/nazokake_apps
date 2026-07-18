@@ -3,15 +3,22 @@ tools/benchmark/container_runner.py
 =====================================
 Dockerサンドボックス内のENTRYPOINT。ホスト側のLLM推論には一切関与せず、以下だけを行う:
   1. 読み取り専用マウントされたfixtureを書き込み可能な/workspaceへコピーする。
-  2. 修正前(baseline)のPytestを実行し、JUnit XMLへ記録する。
+  2. 修正前(baseline)のPytestを実行する。
   3. 読み取り専用マウントされたtask.json(Nazo-Agentがホスト側で生成したAST置換指示)を
      tools/ast_modifier.pyへ適用する。この適用の直前・直後で/workspace全体の
      ファイルハッシュをスナップショットし、差分(Epic 2 5次元評価ゲートの
-     「副作用(Blast Radius)」)を blast_radius.json として書き出す。
-  4. 修正後(postfix)のPytestを実行し、JUnit XMLへ記録する。
-成功/失敗の判定やメトリクス計算はホスト側(run_benchmark.py)が、書き込み可能な
---output-dir から読み取ったJUnit XML/適用結果を元に行う(このスクリプト自身は
-コンテナのexit codeで全体の成否を語らない。fixture不在等の想定外の例外時のみ1を返す)。
+     「副作用(Blast Radius)」)を検出する。
+  4. 修正後(postfix)のPytestを実行する。
+
+【instructions/156: ファイルマウント廃止とNDJSONストリーミングI/O】
+Rootless Dockerにおけるバインドマウントのレースコンディション(instructions/149-155で
+対処してきたsubuid/権限問題群)を根本的に回避するため、ホストとコンテナ間の結果の
+受け渡しに書き込み可能なファイル共有(--output-dir)を一切使わない。代わりに、
+結果が1件確定するごとに1行のJSON(NDJSON)としてsys.stderrへリアルタイムでflushする。
+テスト対象コード自身が吐き出す生ログ(汚染データ、pytestやast_modifier.pyの
+stdout/stderr)はsys.stdoutへそのまま流し、結果データチャネル(stderr)と厳格に
+分離する。ホスト側(run_benchmark.py)はこのstderrを行単位でストリーム読み込みし、
+コンテナが途中でクラッシュしても、それまでに受信済みの行はホスト側に保全される。
 """
 
 import argparse
@@ -20,32 +27,47 @@ import json
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 WORKSPACE = Path("/workspace")
 
 
-def _run_pytest(junit_path: Path) -> dict:
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-m",
-            "pytest",
-            ".",
-            "-q",
-            "-p",
-            "no:cacheprovider",
-            f"--junitxml={junit_path}",
-        ],
-        cwd=str(WORKSPACE),
-        capture_output=True,
-        text=True,
-    )
-    return {
-        "returncode": result.returncode,
-        "stdout": result.stdout,
-        "stderr": result.stderr,
-    }
+def _emit(event: dict) -> None:
+    """結果イベントを1行のNDJSONとしてsys.stderrへ書き出し、直ちにflushする。
+
+    テスト対象コードの生ログ(sys.stdout)と厳格に分離された、このコンテナと
+    ホスト側run_benchmark.pyとの唯一の結果データチャネル。
+    """
+    sys.stderr.write(json.dumps(event, ensure_ascii=False) + "\n")
+    sys.stderr.flush()
+
+
+def _run_pytest(label: str) -> dict:
+    """Pytestを実行する。標準出力・標準エラーはリダイレクトせずこのプロセス自身の
+    sys.stdoutへ直接流す(テスト対象コードの生ログを汚染データとして結果チャネル
+    (stderr)から分離するため)。JUnit XMLはコンテナ内の一時ファイルへ出力後、
+    その内容を読み取ってから即座に削除する(ホストとのファイル共有は行わない)。
+    """
+    with tempfile.TemporaryDirectory() as junit_tmp_dir:
+        junit_path = Path(junit_tmp_dir) / f"{label}.xml"
+        result = subprocess.run(
+            [
+                sys.executable,
+                "-m",
+                "pytest",
+                ".",
+                "-q",
+                "-p",
+                "no:cacheprovider",
+                f"--junitxml={junit_path}",
+            ],
+            cwd=str(WORKSPACE),
+            stdout=sys.stdout,
+            stderr=subprocess.STDOUT,
+        )
+        junit_xml = junit_path.read_text(encoding="utf-8") if junit_path.exists() else ""
+    return {"returncode": result.returncode, "junit_xml": junit_xml}
 
 
 def _snapshot_files(root: Path) -> dict[str, str]:
@@ -80,11 +102,7 @@ def main() -> int:
         required=True,
         help="ホストのtools/ast_modifier.pyへの読み取り専用マウント済みパス",
     )
-    parser.add_argument("--output-dir", required=True)
     args = parser.parse_args()
-
-    output_dir = Path(args.output_dir)
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     # 【絶対制約】コンテナは常に--rmで起動され(かつ/workspace自体はホストからマウント
     # されない、Dockerfileがビルド時にmkdir+chownしたイメージ内の一時ディレクトリ)、
@@ -105,10 +123,8 @@ def main() -> int:
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(src_path, dest_path)
 
-    baseline = _run_pytest(output_dir / "baseline.xml")
-    (output_dir / "baseline_stdout.txt").write_text(
-        baseline["stdout"] + "\n" + baseline["stderr"], encoding="utf-8"
-    )
+    baseline = _run_pytest("baseline")
+    _emit({"event": "baseline_result", **baseline})
 
     task = json.loads(Path(args.task_json).read_text(encoding="utf-8"))
     # 職人ロール(小型モデル)がfile_pathを取り違えて出力するリスクに備え、実際に
@@ -125,37 +141,25 @@ def main() -> int:
 
     apply_result = subprocess.run(
         [sys.executable, args.ast_modifier, str(resolved_task_path)],
-        capture_output=True,
-        text=True,
+        stdout=sys.stdout,
+        stderr=subprocess.STDOUT,
     )
 
-    # 適用直後の状態と比較し、変更されたファイル一覧を書き出す(対象ファイル以外への
+    # 適用直後の状態と比較し、変更されたファイル一覧を送出する(対象ファイル以外への
     # 副作用の有無をホスト側run_benchmark.pyが判定できるようにする)。
     after_snapshot = _snapshot_files(WORKSPACE)
     changed_files = _diff_snapshots(before_snapshot, after_snapshot)
-    (output_dir / "blast_radius.json").write_text(
-        json.dumps({"changed_files": changed_files}, ensure_ascii=False, indent=2),
-        encoding="utf-8",
+    _emit({"event": "blast_radius", "changed_files": changed_files})
+    _emit(
+        {
+            "event": "apply_result",
+            "returncode": apply_result.returncode,
+            "task_used": task,
+        }
     )
 
-    (output_dir / "apply_meta.json").write_text(
-        json.dumps(
-            {
-                "returncode": apply_result.returncode,
-                "stdout": apply_result.stdout,
-                "stderr": apply_result.stderr,
-                "task_used": task,
-            },
-            ensure_ascii=False,
-            indent=2,
-        ),
-        encoding="utf-8",
-    )
-
-    postfix = _run_pytest(output_dir / "postfix.xml")
-    (output_dir / "postfix_stdout.txt").write_text(
-        postfix["stdout"] + "\n" + postfix["stderr"], encoding="utf-8"
-    )
+    postfix = _run_pytest("postfix")
+    _emit({"event": "postfix_result", **postfix})
 
     return 0
 
