@@ -317,6 +317,12 @@ def run_fixture(name: str) -> dict:
         # Epic 2 5次元評価ゲート: 推論効率(リトライ回数)は成否に関わらず常に記録する。
         "efficiency": {"retry_count": final_state.get("retry_count", 0)},
         "blast_radius": None,
+        # 第6次元「時間対品質パリティ」用: validate_nodeが計算するrequires_cto_escalation
+        # (Qwen自身の低確信度自己申告)を「本番グラフであればCTOエスカレーションが
+        # 発生していたはずか」の代理指標として使う。このベンチマークハーネス自身は
+        # コスト・決定性のためcto_node(実際のClaude呼び出し)を配線していない
+        # (build_inference_only_graph()参照)。
+        "cto_escalated": bool(final_state.get("requires_cto_escalation", False)),
     }
 
     if final_state.get("last_validation_error"):
@@ -503,16 +509,61 @@ def _require_docker_or_die() -> None:
     sys.exit(125)
 
 
-def evaluate_5d_quality_gate(report: dict) -> dict:
-    """Epic 2: Nazo-Agentの本番稼働(権限委譲)を客観的に判定する5次元定量評価ゲート。
+def _evaluate_time_to_quality_parity(report: dict) -> dict:
+    """第6次元「時間対品質パリティ」(instructions/145)。
 
-    以下の5次元をすべて評価し、1つでも閾値を満たさなければ不合格とする(いずれの
-    次元も、対応する値が測定不能(None)の場合は安全側に倒して不合格とする):
-      1. Success Rate      >= quality_gate_success_rate_min
-      2. Regression Rate   <= quality_gate_regression_rate_max (厳密に0を要求)
-      3. Code Complexity   <= quality_gate_complexity_max (増加率)
-      4. Efficiency        <= quality_gate_max_retries (リトライ回数の最大値)
-      5. Blast Radius      <= quality_gate_allowed_blast_radius (厳密に0を要求)
+    CTOエスカレーションが発生したfixture(result["cto_escalated"]がTrue)に限り、
+    そのlatency_msがQwenのみで解決したfixture群の平均latency_ms
+    (report["aggregate"]["qwen_only_avg_latency_ms"])の何倍かを計算し、
+    quality_gate_time_to_quality_parity_max以内であること、かつそのfixture自体が
+    success(品質面で合格)であることの両方を要求する。
+
+    CTOエスカレーションが1件も発生していない場合は、この次元自体が対象外(N/A)
+    となり合否には影響させない(passed=Trueだが applicable=False で区別する)。
+    エスカレーションは発生したがQwenのみのベースラインが無く比較不能な場合は、
+    他の次元と同様に安全側に倒して不合格とする。
+    """
+    threshold = settings.quality_gate_time_to_quality_parity_max
+    results = report.get("results", [])
+    escalated = [
+        r for r in results if r.get("cto_escalated") and r.get("latency_ms") is not None
+    ]
+    if not escalated:
+        return {"value": None, "threshold": threshold, "passed": True, "applicable": False}
+
+    qwen_only_avg_latency_ms = report.get("aggregate", {}).get("qwen_only_avg_latency_ms")
+    if not qwen_only_avg_latency_ms:
+        return {"value": None, "threshold": threshold, "passed": False, "applicable": True}
+
+    violations = []
+    max_ratio = 0.0
+    for r in escalated:
+        ratio = r["latency_ms"] / qwen_only_avg_latency_ms
+        max_ratio = max(max_ratio, ratio)
+        if not (r.get("success") is True and ratio <= threshold):
+            violations.append({"fixture": r.get("fixture"), "ratio": ratio, "success": r.get("success")})
+
+    return {
+        "value": max_ratio,
+        "threshold": threshold,
+        "passed": not violations,
+        "applicable": True,
+        "violations": violations,
+    }
+
+
+def evaluate_6d_quality_gate(report: dict) -> dict:
+    """Epic 2: Nazo-Agentの本番稼働(権限委譲)を客観的に判定する6次元定量評価ゲート。
+
+    以下の6次元をすべて評価し、1つでも閾値を満たさなければ不合格とする(次元1〜5は
+    対応する値が測定不能(None)の場合は安全側に倒して不合格とする。次元6は
+    CTOエスカレーションが1件も無ければ対象外(N/A)として合否に影響させない):
+      1. Success Rate            >= quality_gate_success_rate_min
+      2. Regression Rate         <= quality_gate_regression_rate_max (厳密に0を要求)
+      3. Code Complexity         <= quality_gate_complexity_max (増加率)
+      4. Efficiency               <= quality_gate_max_retries (リトライ回数の最大値)
+      5. Blast Radius             <= quality_gate_allowed_blast_radius (厳密に0を要求)
+      6. Time-to-Quality Parity  <= quality_gate_time_to_quality_parity_max (instructions/145)
 
     戻り値はレポートJSONへそのまま埋め込む{"passed": bool, "dimensions": {...}}形式。
     """
@@ -544,6 +595,7 @@ def evaluate_5d_quality_gate(report: dict) -> dict:
             settings.quality_gate_allowed_blast_radius,
             le=True,
         ),
+        "time_to_quality_parity": _evaluate_time_to_quality_parity(report),
     }
     return {"passed": all(d["passed"] for d in dimensions.values()), "dimensions": dimensions}
 
@@ -593,6 +645,7 @@ def main() -> int:
                 "task": None,
                 "efficiency": None,
                 "blast_radius": None,
+                "cto_escalated": None,
                 "error": repr(e),
             }
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
@@ -616,6 +669,13 @@ def main() -> int:
         for r in results
         if r.get("blast_radius") and r["blast_radius"].get("blast_radius_count") is not None
     ]
+    # 第6次元「時間対品質パリティ」のベースライン: CTOエスカレーションが発生
+    # しなかった(=Qwenのみで解決した)fixtureのみのlatency_ms平均。
+    qwen_only_latencies = [
+        r["latency_ms"]
+        for r in results
+        if not r.get("cto_escalated") and r.get("latency_ms") is not None
+    ]
 
     report = {
         "run_id": uuid.uuid4().hex,
@@ -636,9 +696,14 @@ def main() -> int:
             "avg_complexity_growth_rate": complexity_growth_rate,
             "max_retry_count": max(retry_counts) if retry_counts else None,
             "max_blast_radius": max(blast_radius_counts) if blast_radius_counts else None,
+            "qwen_only_avg_latency_ms": (
+                sum(qwen_only_latencies) / len(qwen_only_latencies)
+                if qwen_only_latencies
+                else None
+            ),
         },
     }
-    report["quality_gate_5d"] = evaluate_5d_quality_gate(report)
+    report["quality_gate_6d"] = evaluate_6d_quality_gate(report)
 
     if args.target_worktree:
         print(f"=== 対象ファイル固有のPytest検証: {args.target_worktree} ===")

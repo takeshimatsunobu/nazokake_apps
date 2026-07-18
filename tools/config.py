@@ -121,13 +121,20 @@ class ToolsSettings(BaseSettings):
     mlops_trigger_nazo_threshold: int = 500
     mlops_trigger_agent_threshold: int = 50
 
-    # Epic 2: Nazo-Agentの本番稼働(権限委譲)を客観的に判定する5次元定量評価ゲート
-    # (tools/benchmark/run_benchmark.py の evaluate_5d_quality_gate())の各次元の閾値。
+    # Epic 2: Nazo-Agentの本番稼働(権限委譲)を客観的に判定する6次元定量評価ゲート
+    # (tools/benchmark/run_benchmark.py の evaluate_6d_quality_gate())の各次元の閾値。
     # quality_gate_complexity_max は既存フィールドを共用する。
     quality_gate_success_rate_min: float = 0.90
     quality_gate_regression_rate_max: float = 0.0
     quality_gate_max_retries: int = 3
     quality_gate_allowed_blast_radius: int = 0
+
+    # 第6の指標「時間対品質パリティ」(instructions/145)。CTOエスカレーション
+    # (Claude、高コスト・低速)が発生したfixtureについて、そのlatency_msが
+    # Qwenのみで解決したfixture群の平均latency_msの何倍まで許容するかの上限。
+    # CTOエスカレーションが1件も発生していない場合はこの次元自体が対象外(N/A)となり
+    # 合否には影響しない(tools/benchmark/run_benchmark.py.evaluate_6d_quality_gate())。
+    quality_gate_time_to_quality_parity_max: float = 3.0
 
 
 def load_settings() -> ToolsSettings:
