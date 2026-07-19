@@ -187,6 +187,26 @@ class AuditLogORM(Base):
     created_at: Mapped[str] = mapped_column(String)
 
 
+class TriggerStateORM(Base):
+    """tools/mlops_trigger.pyのマルチ起動トリガーのクールダウン・多重起動防止状態
+    (instructions/174)。
+
+    以前はfilelockのmtime(ローカルファイルへの状態依存というアンチパターン)で
+    代替していたが、SREの絶対要件に基づきこのDBへ完全移行した。pipeline_id
+    ("nazo"/"agent")ごとに「直前に成功裏にキックした時刻」と「そのときのステータス」
+    のみを保持する単純な状態レコードであり、AuditLogORMとは異なりAppend-onlyでは
+    なく1レコードを継続的にUpsertする。
+    """
+
+    __tablename__ = "trigger_state"
+
+    pipeline_id: Mapped[str] = mapped_column(String, primary_key=True)
+    # 他の日時系カラム(created_at/updated_at等)と同じ規約でISO8601文字列として
+    # 保存する(このコードベース全体でdatetime型カラムは一切使用していない)。
+    last_triggered_at: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String)
+
+
 async def init_db() -> None:
     """テーブルが存在しない場合のみ作成する(既存データは保持される、CREATE TABLE IF NOT EXISTS相当)。"""
     async with _engine.begin() as conn:
@@ -736,3 +756,40 @@ async def async_mark_trained(doc_ids: list[str]) -> None:
                 .where(NazokakeItemORM.doc_id.in_(doc_ids))
                 .values(trained_at=now)
             )
+
+
+async def async_get_trigger_state(pipeline_id: str) -> dict[str, Any] | None:
+    """trigger_stateレコードを1件取得する(instructions/174)。
+
+    レコードが存在しない場合はNoneを返す(=このpipeline_idは一度もキックされて
+    いない。呼び出し元はクールダウン対象外・多重起動の懸念無しとして扱ってよい)。
+    """
+    async with get_session() as session:
+        row = await session.get(TriggerStateORM, pipeline_id)
+        if row is None:
+            return None
+        return {
+            "pipeline_id": row.pipeline_id,
+            "last_triggered_at": row.last_triggered_at,
+            "status": row.status,
+        }
+
+
+async def async_record_trigger_kick(pipeline_id: str, status: str = "triggered") -> None:
+    """パイプラインを正常にキックした直後、trigger_stateレコードを現在時刻と
+    ステータスでアトミックにUpsertする(instructions/174、upsert_item()と同じ
+    get→分岐→session.begin()による単一トランザクションのパターン)。
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    async with get_session() as session:
+        async with session.begin():
+            existing = await session.get(TriggerStateORM, pipeline_id)
+            if existing is None:
+                session.add(
+                    TriggerStateORM(
+                        pipeline_id=pipeline_id, last_triggered_at=now, status=status
+                    )
+                )
+            else:
+                existing.last_triggered_at = now
+                existing.status = status
