@@ -47,9 +47,9 @@ services:
       - ../..:/workspace
     command: ["python", "tools/compile_knowledge.py"]
 
-  # 【instructions/161】MLOps自動起動トリガー(tools/mlops_trigger.py)のサイドカー化
-  # (完全コンテナネイティブ設計への全面是正版。instructions/160の設計はSREレビューで
-  # Rejectされ、以下の4点を修正した)。
+  # 【instructions/162】MLOps自動起動トリガー(tools/mlops_trigger.py)のサイドカー化
+  # (完全コンテナネイティブ設計への全面是正版。instructions/160/161の設計はSRE監査で
+  # Rejectされ、以下を修正した)。
   mlops-scheduler:
     build:
       context: ../..
@@ -60,7 +60,24 @@ services:
     # infra/verification_env/mlops_scheduler.Dockerfileがビルド時に
     # requirements_orchestrator.txt/packages/shared_coreから決定論的に .venv へ
     # インストール・COPYする(イミュータブルなイメージ)。
+    #
+    # 【Step 2: 最小特権の局所マウント(パラレルワールドの回避)】プロジェクトルート
+    # 全体のマウントは行わない。永続層(SQLite DB)と揮発層(VRAMロック)は関心の分離
+    # のため意図的に別々のディレクトリ・別々のボリュームとして局所マウントする
+    # (同一ディレクトリに混在させると、片方の局所マウント範囲がもう片方の
+    # ライフサイクル・所有権と衝突し、デッドロックの温床になるため却下)。
     volumes:
+      # 【永続層】SQLite(WALモード)はコミット時に-wal/-shmサイドカーファイルを
+      # 本体と同一ディレクトリへ作成するため、単一ファイルではなく
+      # 「DBファイルが存在するディレクトリそのもの」を rw でマウントする
+      # (単一ファイルのみのマウントでは、サイドカーファイルがコンテナの
+      # 使い捨てレイヤー側にしか作られずホストへ永続化されない)。過去に発生した
+      # 「no such table」エラー(パスのズレによる空DBの新規作成)を、下のenvironment
+      # でのNAZOKAKE_DB_PATH明示的上書きと組み合わせて再発防止する。
+      - ../../data:/workspace/data
+      # 【揮発層】VRAM_LOCK_PATH(ランタイムのみ存在するファイルロック本体)は、
+      # 永続データベースとは独立した別ボリュームとして隔離する。
+      - ../../run:/workspace/run
       # 【Rootless Dockerソケットのマウント】tools/mlops_trigger.py起動先のMLOpsパイプ
       # ライン(tools/mlops_pipeline_agent.py等)が定量評価ゲートとしてサブプロセスで
       # tools/benchmark/run_benchmark.pyを実行し、そこから`docker run`でベンチマーク
@@ -72,11 +89,24 @@ services:
     environment:
       # マウント先が既定パスと一致していても、明示することで挙動を自己文書化する。
       - DOCKER_HOST=unix:///var/run/docker.sock
-      # 【Step 2に伴う修正】network_mode: hostの撤回により、コンテナ内の127.0.0.1は
+      # 【Step 3: パスの明示的な上書き】上のvolumesで局所マウントしたコンテナ内の
+      # 絶対パスへ明示的に上書きする。tools/config.pyの既定値(または.envの値)への
+      # 暗黙の依存を断ち切り、「パスがズレて存在しないファイルをsqlite3が黎明に
+      # 新規作成してしまい、テーブルが無い('no such table')」事故を構造的に防ぐ。
+      - NAZOKAKE_DB_PATH=/workspace/data/nazokake_local.db
+      - VRAM_LOCK_PATH=/workspace/run/.vram.lock
+      # 【Step 4に伴う修正】network_mode: hostの撤回により、コンテナ内の127.0.0.1は
       # もはやホストを指さない(コンテナ自身を指す)。tools/config.pyの既定値
       # (http://127.0.0.1:11434)を、下のextra_hostsで定義するゲートウェイ経由の
       # ホスト名へ明示的に上書きする。
       - OLLAMA_HOST=http://host.docker.internal:11434
+    # env_file: 秘密情報(.env、ANTHROPIC_API_KEY等)はイメージへCOPYせず、bindマウント
+    # もしない(イメージレイヤーやマウント経由でホストのファイルシステムパスとして
+    # 露出させない)。docker composeのenv_file機能はホスト側でファイルを読み、値のみを
+    # プロセスのメモリ上の環境変数としてコンテナへ注入する(ファイル自体はコンテナの
+    # ファイルシステムには一切現れない)。
+    env_file:
+      - ../../.env
     # 【Step 2: ネットワーク隔離の復元】network_mode: "host"(コンテナのネットワーク
     # 名前空間をホストと完全に共有する特権エスケープ)を撤回し、既定のブリッジ
     # ネットワークのまま、ホストOSへのアクセスだけを最低限のゲートウェイ経由に限定する。
