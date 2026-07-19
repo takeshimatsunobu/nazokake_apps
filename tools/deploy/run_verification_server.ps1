@@ -182,8 +182,15 @@ try {
     Pop-Location
 }
 
+# 【instructions/167】Windows環境のgcloud compute scp(内部でpscp.exeを使用)は、
+# 宛先パスの`~/`をリモートシェル展開に委ねられず、そのまま解釈しようとしてパス解決
+# エラーでクラッシュする(pscp.exe自体はPuTTYのSCP実装であり、bashの`~`展開を行わない)。
+# 「宛先ディレクトリを省略してデフォルトのホームディレクトリに依存する」設計はIaCの
+# 決定論的原則に反するため、リモートのホームディレクトリを明示的な絶対パスで固定する。
+$RemoteSourceZipPath = "/home/takes/source.zip"
+
 Invoke-GcloudWithRetry -Description "gcloud compute scp" -ScriptBlock {
-    gcloud compute scp $ArchivePath "${InstanceName}:~/source.zip" `
+    gcloud compute scp $ArchivePath "${InstanceName}:${RemoteSourceZipPath}" `
         --project=$ProjectId --zone=$Zone --tunnel-through-iap
 }
 
@@ -191,7 +198,9 @@ Invoke-GcloudWithRetry -Description "gcloud compute scp" -ScriptBlock {
 Write-Host "🛠️  [4/4] リモートでの展開・セットアップ・mlops-scheduler起動を実行します..." -ForegroundColor Cyan
 
 # シングルクォートのhere-string(@'...'@)でPowerShell側の$展開・バックティック展開を
-# 一切発生させず、bashスクリプトの`$`をそのままリモートへ渡す。
+# 一切発生させず、bashスクリプトの`$`をそのままリモートへ渡す(このため、下の
+# /home/takes/source.zip は$RemoteSourceZipPathを直接埋め込めず、同じ値をリテラルで
+# 手書きしている。変更する場合は上の$RemoteSourceZipPathと必ず一致させること)。
 # unzip -o は展開元アーカイブに含まれるファイルのみを上書きするため、data/・run/配下の
 # 既存の永続層(SQLite DB)・揮発層(VRAMロック)には一切触れない(instructions/162)。
 #
@@ -211,7 +220,7 @@ if ! command -v unzip >/dev/null 2>&1; then
     sudo apt-get install -y unzip
 fi
 mkdir -p ~/nazokake_apps
-unzip -o -q ~/source.zip -d ~/nazokake_apps
+unzip -o -q /home/takes/source.zip -d ~/nazokake_apps
 cd ~/nazokake_apps
 
 PROVISION_MARKER=~/.nazokake_verification_env_provisioned
