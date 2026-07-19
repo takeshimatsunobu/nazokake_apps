@@ -60,6 +60,17 @@ nazokake_core.database.async_try_claim_trigger_slot() は、以下2つの関心�
 タイムアウトに頼らず即座にclaimを解放する。両条件が同時に成立していても、
 キック自体は順次実行する(A→B、意図が明確でログも追いやすいため)。
 
+【Gitリソースの自動ガベージコレクション(instructions/175)】Nazo-Agentの自律
+エスカレーション(tools/agent_graph.py)が生成するescalation/*ブランチは、メイン
+ブランチへマージされた後もローカルGitに残り続けストレージを圧迫する。人手の
+介入なしにパージするため、このトリガーの定期サイクル(scheduler_daemon.pyから
+1時間ごとに起動される)に便乗してtools/cleanup_git_resources.pyの
+cleanup_merged_git_resources()を毎回呼び出す。削除基準は経過時間ではなく
+「メインブランチへのマージ済み」という決定論的な事実のみであり、失敗しても
+このトリガー自身の本来の責務(閾値判定・パイプラインキック)を止めない
+(dry-run実行時は診断目的の手動実行が意図せずリソースを削除しないよう、
+クリーンアップ自体もスキップする)。
+
 使い方:
     uv run python tools/mlops_trigger.py             # スキャンし、条件を満たせばキック
     uv run python tools/mlops_trigger.py --dry-run    # キックせず判定結果のみ表示
@@ -83,6 +94,7 @@ from nazokake_core.database import (  # noqa: E402
     async_release_trigger_slot,
     async_try_claim_trigger_slot,
 )
+from tools.cleanup_git_resources import cleanup_merged_git_resources  # noqa: E402
 from tools.config import settings  # noqa: E402
 from tools.extract_dataset import _fetch_candidates  # noqa: E402
 
@@ -217,6 +229,16 @@ def main() -> int:
         help="実際にキックせず、判定結果のみ表示する",
     )
     args = parser.parse_args()
+
+    # 【instructions/175】マージ済みのescalation/*・draft/*ブランチ/worktreeの
+    # ガベージコレクションをこのトリガーの定期サイクルに便乗させる。診断目的の
+    # dry-run実行時は意図せずリソースを削除しないようスキップし、失敗しても
+    # このトリガー自身の本来の責務(閾値判定)は継続する。
+    if not args.dry_run:
+        try:
+            cleanup_merged_git_resources()
+        except Exception as e:  # noqa: BLE001 - クリーンアップ失敗で本来のトリガー評価を止めない
+            print(f"⚠️  [Trigger] Gitリソースクリーンアップに失敗しました: {e}")
 
     # 【ステートレスな条件評価】前回トリガー時点からの差分ではなく、現在の生カウントを
     # 直接閾値と比較するだけ(instructions/173)。
