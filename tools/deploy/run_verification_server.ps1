@@ -52,11 +52,21 @@
     Step 3(scp)・Step 4(ssh)は`Invoke-GcloudWithRetry`により指数バックオフ付きで
     最大5回まで自動リトライする(1回目失敗時5秒待機、以後倍々に増加)。
 
-    【SSH引数エスケープバグの根本解決】Step 4の複数行リモートスクリプトを
-    `--command=$remoteScript`として直接渡す設計は、PowerShell→gcloud CLI→SSH→
-    リモートbashの多段エスケープが破綻しExit Code 2でクラッシュする実害があった。
-    `--command="bash"`のみを渡し、スクリプト本体は標準入力(パイプ)経由でリモートの
-    bashへ流し込む設計へ変更した(引数パーサーを経由しないため構造的に安全)。
+    【SSH引数エスケープバグの根本解決(第1次修正、廃止済み)】Step 4の複数行
+    リモートスクリプトを`--command=$remoteScript`として直接渡す設計は、
+    PowerShell→gcloud CLI→SSH→リモートbashの多段エスケープが破綻しExit Code 2で
+    クラッシュしたため、一旦`--command="bash"`+標準入力パイプ渡しへ変更した。
+
+    【決定論的なファイル渡しアーキテクチャ(第2次修正、現行)】上記のパイプ渡しは
+    別の実害を生んだ: PowerShellの文字列パイプラインがストリームへCRLFを付与し、
+    Linuxのbashが`\r: command not found`(Exit 127)でクラッシュした。パイプという
+    「途中で何が起こるか制御しにくい」経路自体を完全に廃止し、決定論的な
+    ファイル渡しへ置き換えた: ①$remoteScriptの改行コードを明示的にLF(`\n`)へ
+    正規化し、BOM無しUTF-8のローカル一時ファイル(remote_setup.sh)として書き出す、
+    ②そのファイルをInvoke-GcloudWithRetry経由でgcloud compute scpによりVMへ転送する、
+    ③転送後、Invoke-GcloudWithRetry経由で`gcloud compute ssh ...
+    --command="bash remote_setup.sh"`としてファイルを実行させる。ストリーム経由の
+    暗黙の文字コード変換が一切発生しない、決定論的な経路。
 
 .EXAMPLE
     .\tools\deploy\run_verification_server.ps1
@@ -240,18 +250,35 @@ fi
 docker compose -f infra/verification_env/docker-compose.yml up -d --build mlops-scheduler
 '@
 
-# 【SRE差し戻し対応: SSH引数エスケープバグの根本解決】複数行の$remoteScriptを
-# そのまま`--command=$remoteScript`へ渡す設計は、PowerShell→gcloud CLIの引数
-# パース→SSH→リモートbashという複数層を経由する間にエスケープが破綻し、
-# Exit Code 2でクラッシュする実害が確認された。`--command`には単純な固定文字列
-# "bash"のみを渡し、複数行スクリプトの本体は標準入力(パイプ)経由でリモートの
-# bashへ直接流し込む(`ssh host bash < script.sh`と同じフェイルセーフな構造。
-# stdin経由であればPowerShell/gcloud CLI側の引数パーサーを一切経由しないため、
-# 複数行・特殊文字によるエスケープ破綻が構造的に発生しない)。
-Invoke-GcloudWithRetry -Description "gcloud compute ssh" -ScriptBlock {
-    $remoteScript | gcloud compute ssh $InstanceName `
+# 【SRE差し戻し対応: パイプ渡しの完全廃止と決定論的なファイル渡しへのリファクタリング】
+# `$remoteScript | gcloud compute ssh ... --command="bash"`(標準入力パイプ渡し)は、
+# PowerShellの文字列パイプラインがストリームへCRLFを付与してしまい、Linuxのbashが
+# `\r: command not found`(Exit 127)でクラッシュする実害が確認された。ストリーム
+# 経由の暗黙の改行コード変換に依存しない、決定論的なファイル渡しへ置き換える。
+#
+# ①改行コードを明示的にLF(`\n`)へ正規化し、BOM無しUTF-8のローカル一時ファイルへ
+# 書き出す([System.Text.UTF8Encoding]::new($false)でBOM付与を明示的に抑止する。
+# PowerShellのバージョンによって`-Encoding utf8`の既定BOM付与挙動が異なるため、
+# .NETのエンコーダーを直接指定してホスト環境に依存しない決定論性を確保する)。
+$RemoteSetupScriptLocalPath = Join-Path $env:TEMP "nazokake_remote_setup.sh"
+$remoteScriptLf = $remoteScript.Replace("`r`n", "`n").Replace("`r", "`n")
+$Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+[System.IO.File]::WriteAllText($RemoteSetupScriptLocalPath, $remoteScriptLf, $Utf8NoBom)
+
+# ②ローカル一時ファイルをgcloud compute scpでVMへ転送する(instructions/167と同じ
+# 理由で、宛先はリモートのホームディレクトリ省略に依存せず絶対パスを明示する)。
+$RemoteSetupScriptRemotePath = "/home/takes/remote_setup.sh"
+Invoke-GcloudWithRetry -Description "gcloud compute scp (remote_setup.sh)" -ScriptBlock {
+    gcloud compute scp $RemoteSetupScriptLocalPath "${InstanceName}:${RemoteSetupScriptRemotePath}" `
+        --project=$ProjectId --zone=$Zone --tunnel-through-iap
+}
+
+# ③転送済みのファイルをリモートのbashへ直接渡して実行する(ストリーム経由の
+# 暗黙の文字コード変換が発生しない)。
+Invoke-GcloudWithRetry -Description "gcloud compute ssh (remote_setup.sh実行)" -ScriptBlock {
+    gcloud compute ssh $InstanceName `
         --project=$ProjectId --zone=$Zone --tunnel-through-iap `
-        --command="bash"
+        --command="bash $RemoteSetupScriptRemotePath"
 }
 
 Write-Host "🎉 ワンタッチ・プロビジョニングが完了しました。" -ForegroundColor Green
