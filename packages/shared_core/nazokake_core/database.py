@@ -23,7 +23,7 @@ import threading
 import uuid
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any, TypeVar
 
 from sqlalchemy import (
@@ -33,12 +33,14 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    and_,
     case,
     event,
     or_,
     select,
     update,
 )
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import NullPool
@@ -188,14 +190,22 @@ class AuditLogORM(Base):
 
 
 class TriggerStateORM(Base):
-    """tools/mlops_trigger.pyのマルチ起動トリガーのクールダウン・多重起動防止状態
-    (instructions/174)。
+    """tools/mlops_trigger.pyのマルチ起動トリガーの状態(instructions/174、および
+    「排他制御(Mutex)」と「実行間隔制御(Cooldown)」の分離に関する追補修正)。
 
     以前はfilelockのmtime(ローカルファイルへの状態依存というアンチパターン)で
     代替していたが、SREの絶対要件に基づきこのDBへ完全移行した。pipeline_id
-    ("nazo"/"agent")ごとに「直前に成功裏にキックした時刻」と「そのときのステータス」
-    のみを保持する単純な状態レコードであり、AuditLogORMとは異なりAppend-onlyでは
-    なく1レコードを継続的にUpsertする。
+    ("nazo"/"agent")ごとに1レコードを継続的にUpsertする(AuditLogORMとは異なり
+    Append-onlyではない)。
+
+    【排他制御(Mutex)とクールダウンの分離】完了時に単に「解放(idle)」するだけでは
+    クールダウンそのものが破壊され、次回のトリガー評価が即座に再起動してしまう
+    (無限ループのデグレード)。このため、2つの時刻カラムの役割を明確に分離する:
+      - last_triggered_at: 直前にclaim(起動権を奪取)した時刻。排他制御・
+        ハードクラッシュ(OOM Killer/SIGKILL)からのゾンビ回収(stale_after_hours
+        経過による自動パージ)の判定にのみ使う。
+      - last_completed_at: 直前に正常完了(success=True)した時刻。クールダウン
+        (cooldown_hours)の起点はここのみで、statusの遷移からは独立している。
     """
 
     __tablename__ = "trigger_state"
@@ -204,6 +214,7 @@ class TriggerStateORM(Base):
     # 他の日時系カラム(created_at/updated_at等)と同じ規約でISO8601文字列として
     # 保存する(このコードベース全体でdatetime型カラムは一切使用していない)。
     last_triggered_at: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    last_completed_at: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     status: Mapped[str] = mapped_column(String)
 
 
@@ -758,38 +769,83 @@ async def async_mark_trained(doc_ids: list[str]) -> None:
             )
 
 
-async def async_get_trigger_state(pipeline_id: str) -> dict[str, Any] | None:
-    """trigger_stateレコードを1件取得する(instructions/174)。
+async def async_try_claim_trigger_slot(
+    pipeline_id: str, cooldown_hours: float, stale_after_hours: float
+) -> bool:
+    """トリガーのクールダウン判定・ゾンビ回収・排他制御(Mutex)のclaim奪取を、
+    単一のUPSERT文でアトミックに行う(instructions/174追補: CASパターン)。
 
-    レコードが存在しない場合はNoneを返す(=このpipeline_idは一度もキックされて
-    いない。呼び出し元はクールダウン対象外・多重起動の懸念無しとして扱ってよい)。
+    Pythonコード上での`if status == 'running':`という判定は、SELECTと後続のUPDATEの
+    間に他プロセスが介入できるレースコンディションを誘発するため採用しない。
+    「排他制御(Mutex、多重起動防止+ハードクラッシュからの自己修復)」と
+    「実行間隔制御(Cooldown、前回の正常完了からの経過時間)」を明確に分離して
+    評価する:
+
+      条件A(排他&ゾンビ回収): status != "running" である、または
+        status == "running" のままだが last_triggered_at(直前にclaimした時刻)
+        から stale_after_hours 以上経過している(=OOM Killer/SIGKILL等で正常
+        終了処理が一切走らなかったと決定論的にみなし、claimを自動的に回収する)。
+      条件B(クールダウン): last_completed_at(直前に正常完了した時刻)が
+        未設定、または cooldown_hours 以上経過している。
+
+    両方を満たした場合のみ status="running" へ遷移させ(claim成功)、
+    影響行数1を返す(=呼び出し元はキックしてよい)。それ以外は影響行数0のまま
+    (claim失敗、既に実行中またはクールダウン中のため呼び出し元は見送るべき)。
     """
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    cooldown_cutoff = (now - timedelta(hours=cooldown_hours)).isoformat()
+    stale_cutoff = (now - timedelta(hours=stale_after_hours)).isoformat()
+
+    stmt = sqlite_insert(TriggerStateORM).values(
+        pipeline_id=pipeline_id,
+        status="running",
+        last_triggered_at=now_iso,
+        last_completed_at=None,
+    )
+    stmt = stmt.on_conflict_do_update(
+        index_elements=["pipeline_id"],
+        set_={"status": "running", "last_triggered_at": now_iso},
+        where=and_(
+            or_(
+                TriggerStateORM.status != "running",
+                TriggerStateORM.last_triggered_at < stale_cutoff,
+            ),
+            or_(
+                TriggerStateORM.last_completed_at.is_(None),
+                TriggerStateORM.last_completed_at < cooldown_cutoff,
+            ),
+        ),
+    )
     async with get_session() as session:
-        row = await session.get(TriggerStateORM, pipeline_id)
-        if row is None:
-            return None
-        return {
-            "pipeline_id": row.pipeline_id,
-            "last_triggered_at": row.last_triggered_at,
-            "status": row.status,
-        }
+        async with session.begin():
+            result = await session.execute(stmt)
+            return result.rowcount == 1
 
 
-async def async_record_trigger_kick(pipeline_id: str, status: str = "triggered") -> None:
-    """パイプラインを正常にキックした直後、trigger_stateレコードを現在時刻と
-    ステータスでアトミックにUpsertする(instructions/174、upsert_item()と同じ
-    get→分岐→session.begin()による単一トランザクションのパターン)。
+async def async_release_trigger_slot(pipeline_id: str, *, success: bool) -> None:
+    """パイプライン完了時、排他制御(status)とクールダウン起点(last_completed_at)を
+    明確に分離して記録する(instructions/174追補)。
+
+    単に「解放(idle)」するだけではクールダウンそのものが破壊され、次回のトリガー
+    評価が即座に再起動してしまう(無限ループのデグレード)ため、正常終了と異常終了で
+    以下のように扱いを分ける:
+      - 正常終了(success=True): status="success"、last_completed_at=NOWを記録し、
+        次回のクールダウンの起点とする。
+      - 異常終了(success=False): status="failed"のみ更新し、last_completed_atは
+        意図的に更新しない(=クールダウンを開始させず、次回トリガー時に即時
+        リトライ可能な状態のままにする)。
     """
-    now = datetime.now(timezone.utc).isoformat()
     async with get_session() as session:
         async with session.begin():
             existing = await session.get(TriggerStateORM, pipeline_id)
             if existing is None:
-                session.add(
-                    TriggerStateORM(
-                        pipeline_id=pipeline_id, last_triggered_at=now, status=status
-                    )
-                )
+                # claimがDBに残っていない状況は想定外だが、安全側に倒して
+                # 完了報告自体は必ず記録する。
+                existing = TriggerStateORM(pipeline_id=pipeline_id, status="idle")
+                session.add(existing)
+            if success:
+                existing.status = "success"
+                existing.last_completed_at = datetime.now(timezone.utc).isoformat()
             else:
-                existing.last_triggered_at = now
-                existing.status = status
+                existing.status = "failed"

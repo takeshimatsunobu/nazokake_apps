@@ -33,17 +33,32 @@ instructions/174でクールダウン状態をDBへ完全移行)。
 【永続化層への完全移行(instructions/174)】以前はこの対策としてローカルファイル
 (filelockのロックファイルのmtime)への状態依存で代替していたが、SREの絶対要件に
 基づきこのアンチパターンを排除し、nazokake_core.database の trigger_state テーブル
-(pipeline_id="nazo"/"agent"ごとに1行、last_triggered_at/statusを保持)へ完全移行した。
-パイプラインごとに独立してクールダウン(既定24時間、settings.mlops_trigger_cooldown_hours)
-を評価する(旧filelock設計は両パイプラインで1本のロックを共有していたため、この
-DB移行は同時にクールダウンの粒度をパイプライン単位へ精緻化する改善も伴う)。
+(pipeline_id="nazo"/"agent"ごとに1行)へ完全移行した。パイプラインごとに独立して
+クールダウンを評価する(旧filelock設計は両パイプラインで1本のロックを共有していた
+ため、このDB移行は同時にクールダウンの粒度をパイプライン単位へ精緻化する改善も伴う)。
 
-【非同期キック】いずれかの条件が閾値に達し、かつそのパイプラインがクールダウン期間外
-であれば、asyncio.create_subprocess_exec でパイプラインをバックグラウンドへキックし、
-その完了を一切待たずに(ステートレス稼働を厳守し)即座に終了する。キックに成功した
-直後、DBのtrigger_stateレコードを現在時刻とステータスでアトミックに更新する。
-両条件が同時に成立していても、キック自体は順次実行する(A→B、意図が明確でログも
-追いやすいため)。
+【CASパターンによるアトミックな状態遷移と、排他制御/クールダウンの分離
+(instructions/174追補)】Pythonコード上での「SELECTして判定してからUPDATEする」
+という設計は、非同期タスク間のレースコンディションを誘発する。
+nazokake_core.database.async_try_claim_trigger_slot() は、以下2つの関心事を
+明確に分離した上で、単一のUPSERT文でクールダウン判定・ゾンビ回収・claim奪取を
+アトミックに行う:
+  - 排他制御(Mutex): trigger_state.status(="running"かどうか)と、
+    last_triggered_at(直前にclaimした時刻)からのゾンビ回収
+    (settings.mlops_trigger_stale_after_hours、OOM Killer/SIGKILL等でclaimが
+    解放されずに残った場合の自動パージ)。
+  - 実行間隔制御(Cooldown): last_completed_at(直前に正常完了した時刻)からの
+    経過時間のみ(settings.mlops_trigger_cooldown_hours)。パイプライン完了時に
+    単に「解放」するだけではこのクールダウンが破壊されてしまうため、statusの
+    遷移とは独立してこのカラムだけを正常完了時にのみ更新する
+    (nazokake_core.database.async_release_trigger_slot()、
+    tools/mlops_pipeline_nazo.py/agent.py側の責務)。
+
+【非同期キック】claimを奪取できた場合のみ、asyncio.create_subprocess_exec で
+パイプラインをバックグラウンドへキックし、その完了を一切待たずに(ステートレス
+稼働を厳守し)即座に終了する。キック自体が失敗した場合は、stale_after_hoursの
+タイムアウトに頼らず即座にclaimを解放する。両条件が同時に成立していても、
+キック自体は順次実行する(A→B、意図が明確でログも追いやすいため)。
 
 使い方:
     uv run python tools/mlops_trigger.py             # スキャンし、条件を満たせばキック
@@ -57,7 +72,7 @@ import asyncio
 import json
 import os
 import sys
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -65,8 +80,8 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from nazokake_core.database import (  # noqa: E402
-    async_get_trigger_state,
-    async_record_trigger_kick,
+    async_release_trigger_slot,
+    async_try_claim_trigger_slot,
 )
 from tools.config import settings  # noqa: E402
 from tools.extract_dataset import _fetch_candidates  # noqa: E402
@@ -119,25 +134,6 @@ def count_agent_success_logs() -> int:
         return sum(1 for line in f if line.strip())
 
 
-async def _is_pipeline_in_cooldown(pipeline_id: str, cooldown_hours: float) -> bool:
-    """DBのtrigger_stateレコードから、「最終実行時刻からの経過時間(クールダウン
-    判定)」および「現在のステータス(多重起動防止)」を評価する(instructions/174)。
-
-    レコードが存在しない、またはstatusが"triggered"以外の場合はクールダウン対象外
-    としてFalseを返す(=キックしてよい)。statusが"triggered"かつ
-    last_triggered_atからcooldown_hours時間以内の場合のみTrue(=見送るべき)。
-    """
-    state = await async_get_trigger_state(pipeline_id)
-    if state is None or state.get("status") != "triggered":
-        return False
-    last_triggered_at_raw = state.get("last_triggered_at")
-    if not last_triggered_at_raw:
-        return False
-    last_triggered_at = datetime.fromisoformat(last_triggered_at_raw)
-    age = datetime.now(timezone.utc) - last_triggered_at
-    return age < timedelta(hours=cooldown_hours)
-
-
 async def _kick_pipeline_async(script_name: str) -> int:
     """パイプラインを非同期プロセスとしてバックグラウンドでキックし、その完了を
     一切待たずにPIDのみを返す(ステートレス稼働の厳守、instructions/173)。
@@ -158,35 +154,57 @@ async def _kick_pipeline_async(script_name: str) -> int:
     return process.pid
 
 
-async def _evaluate_and_kick(
-    nazo_should_trigger: bool, agent_should_trigger: bool, cooldown_hours: float
+async def _try_claim_and_kick(
+    pipeline_id: str, script_name: str, cooldown_hours: float, stale_after_hours: float
 ) -> dict:
-    """各条件について、DBのtrigger_state経由でクールダウン/多重起動防止を評価し、
-    対象と判定されたパイプラインのみを非同期にバックグラウンドキックする
-    (instructions/174)。キックに成功した直後、DBのtrigger_stateレコードを
-    アトミックに更新する。両条件が同時に成立していても、キック自体は順次実行する
-    (A→B)。パイプラインごとに{"kicked": bool, "cooldown": bool}を返す。
+    """1つのパイプラインについて、DBのCASクエリでclaim(排他制御+クールダウン
+    判定)を試み、成功した場合のみ非同期にバックグラウンドキックする
+    (instructions/174追補)。
+
+    claimの奪取自体が成功したにもかかわらずキック(プロセス生成)が失敗した場合は、
+    stale_after_hoursのタイムアウトに頼らず、判明した時点で即座にclaimを解放する
+    (status="failed")。{"kicked": bool, "claimed": bool, "launch_failed": bool}を
+    返す。
+    """
+    claimed = await async_try_claim_trigger_slot(pipeline_id, cooldown_hours, stale_after_hours)
+    if not claimed:
+        return {"kicked": False, "claimed": False, "launch_failed": False}
+
+    try:
+        await _kick_pipeline_async(script_name)
+    except OSError as e:
+        print(f"🚨 [Trigger] {script_name} の起動(プロセス生成)に失敗しました: {e}")
+        await async_release_trigger_slot(pipeline_id, success=False)
+        return {"kicked": False, "claimed": True, "launch_failed": True}
+
+    return {"kicked": True, "claimed": True, "launch_failed": False}
+
+
+async def _evaluate_and_kick(
+    nazo_should_trigger: bool,
+    agent_should_trigger: bool,
+    cooldown_hours: float,
+    stale_after_hours: float,
+) -> dict:
+    """各条件について、DBのtrigger_state経由で排他制御/クールダウンを評価し、
+    claimを奪取できたパイプラインのみを非同期にバックグラウンドキックする
+    (instructions/174)。両条件が同時に成立していても、キック自体は順次実行する
+    (A→B)。パイプラインごとの結果(_try_claim_and_kickの戻り値)を返す。
     """
     result = {
-        "nazo": {"kicked": False, "cooldown": False},
-        "agent": {"kicked": False, "cooldown": False},
+        "nazo": {"kicked": False, "claimed": False, "launch_failed": False},
+        "agent": {"kicked": False, "claimed": False, "launch_failed": False},
     }
 
     if nazo_should_trigger:
-        if await _is_pipeline_in_cooldown("nazo", cooldown_hours):
-            result["nazo"]["cooldown"] = True
-        else:
-            await _kick_pipeline_async("mlops_pipeline_nazo.py")
-            await async_record_trigger_kick("nazo")
-            result["nazo"]["kicked"] = True
+        result["nazo"] = await _try_claim_and_kick(
+            "nazo", "mlops_pipeline_nazo.py", cooldown_hours, stale_after_hours
+        )
 
     if agent_should_trigger:
-        if await _is_pipeline_in_cooldown("agent", cooldown_hours):
-            result["agent"]["cooldown"] = True
-        else:
-            await _kick_pipeline_async("mlops_pipeline_agent.py")
-            await async_record_trigger_kick("agent")
-            result["agent"]["kicked"] = True
+        result["agent"] = await _try_claim_and_kick(
+            "agent", "mlops_pipeline_agent.py", cooldown_hours, stale_after_hours
+        )
 
     return result
 
@@ -234,33 +252,39 @@ def main() -> int:
             print("🧪 [dry-run] 条件Bが成立: mlops_pipeline_agent.py をキックする想定です。")
         return 0
 
-    try:
-        result = asyncio.run(
-            _evaluate_and_kick(
-                nazo_should_trigger, agent_should_trigger, settings.mlops_trigger_cooldown_hours
-            )
+    result = asyncio.run(
+        _evaluate_and_kick(
+            nazo_should_trigger,
+            agent_should_trigger,
+            settings.mlops_trigger_cooldown_hours,
+            settings.mlops_trigger_stale_after_hours,
         )
-    except OSError as e:
-        message = f"パイプラインの起動(プロセス生成)に失敗しました: {e}"
-        print(f"\n🚨 {message}")
-        _save_last_run_status("error", message)
-        return 1
+    )
 
-    if result["nazo"]["cooldown"]:
+    if nazo_should_trigger and not result["nazo"]["claimed"]:
         print(
-            f"\nℹ️  [条件A] 直近{settings.mlops_trigger_cooldown_hours}時間以内に"
-            "キック済みのため、多重発火防止のためスキップしました。"
+            "\nℹ️  [条件A] 既に実行中、またはクールダウン期間中のため今回はスキップしました。"
         )
-    if result["agent"]["cooldown"]:
+    if agent_should_trigger and not result["agent"]["claimed"]:
         print(
-            f"\nℹ️  [条件B] 直近{settings.mlops_trigger_cooldown_hours}時間以内に"
-            "キック済みのため、多重発火防止のためスキップしました。"
+            "\nℹ️  [条件B] 既に実行中、またはクールダウン期間中のため今回はスキップしました。"
         )
 
-    if not result["nazo"]["kicked"] and not result["agent"]["kicked"]:
-        message = "対象条件はすべてクールダウン期間中のため、今回はキックをスキップしました。"
+    any_kicked = result["nazo"]["kicked"] or result["agent"]["kicked"]
+    any_launch_failed = result["nazo"]["launch_failed"] or result["agent"]["launch_failed"]
+
+    if not any_kicked and not any_launch_failed:
+        message = (
+            "対象条件はすべて既に実行中、またはクールダウン期間中のため、"
+            "今回はキックをスキップしました。"
+        )
         _save_last_run_status("skipped", message)
         return 0
+
+    if any_launch_failed and not any_kicked:
+        message = "パイプラインの起動(プロセス生成)に失敗しました。"
+        _save_last_run_status("error", message)
+        return 1
 
     _save_last_run_status(
         "triggered",

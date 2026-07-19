@@ -121,19 +121,32 @@ class ToolsSettings(BaseSettings):
     mlops_trigger_nazo_threshold: int = 500
     mlops_trigger_agent_threshold: int = 50
 
-    # 【instructions/173→174: ステートレスな条件評価への移行に伴うクールダウン】
-    # なぞかけ候補件数(count_nazo_candidates)・Nazo-Agent成功修復ログ件数
-    # (count_agent_success_logs)はいずれも学習済みでも減らない単調増加の生カウントで
-    # あり、「学習済みフラグ」が存在しない。以前は前回トリガー時点からの差分を
-    # 状態ファイルで追跡することで、閾値を一度超えた後にデータが増えなくても
-    # スケジューラの毎サイクルごとに再発火してしまう「多重発火」を防いでいた。
-    # ステートレスな生カウント比較(前回トリガー時点の記憶を持たない)へ移行した
-    # 代わりに、DB(nazokake_core.database.TriggerStateORM)のlast_triggered_at
-    # (直前に実際に起動をキックした時刻)がこの時間内であれば、閾値超過中でも
-    # 新規の起動を見送ることで多重発火を防ぐ。以前はローカルファイル
+    # 【instructions/173→174: ステートレスな条件評価への移行に伴うクールダウン
+    # (実行間隔制御)】なぞかけ候補件数(count_nazo_candidates)・Nazo-Agent成功
+    # 修復ログ件数(count_agent_success_logs)はいずれも学習済みでも減らない単調
+    # 増加の生カウントであり、「学習済みフラグ」が存在しない。ステートレスな生
+    # カウント比較(前回トリガー時点の記憶を持たない)へ移行した代わりに、DB
+    # (nazokake_core.database.TriggerStateORM)のlast_completed_at(直前に
+    # パイプラインが正常完了した時刻)がこの時間内であれば、閾値超過中でも新規の
+    # 起動を見送ることで多重発火を防ぐ。以前はローカルファイル
     # (MLOPS_PIPELINE_LOCK_PATHのmtime)への状態依存だったが、instructions/174で
     # このアンチパターンを排除し、DBへ完全移行した。
+    #
+    # 【排他制御(Mutex)とクールダウンの分離への追補修正】完了時に単に「解放」する
+    # だけではクールダウンそのものが破壊され次回評価が即座に再起動してしまうため、
+    # クールダウンの起点はstatusの遷移から独立したlast_completed_atのみに限定する
+    # (mlops_trigger_stale_after_hoursとは役割が異なる別の設定)。
     mlops_trigger_cooldown_hours: float = 24.0
+
+    # 【排他制御(Mutex)側: ハードクラッシュ前提の自己修復(ゾンビ回収)】
+    # VRAM 8GB環境でのOOM Killer/SIGKILLによる強制終了はtry/except/finallyが一切
+    # 機能しないため、trigger_stateのstatus="running"がDBに永久に残るゾンビ状態を
+    # 引き起こしうる。last_triggered_at(直前にclaimした時刻)からこの時間を超えて
+    # 経過している場合、前回のプロセスが異常死したと決定論的にみなしclaimを自動的に
+    # パージする(実際の学習所要時間より十分長く、無期限ブロックよりは遥かに短い
+    # 値を想定)。mlops_trigger_cooldown_hours(実行間隔制御)とは独立した、
+    # 排他制御(Mutex)専用の設定。
+    mlops_trigger_stale_after_hours: float = 2.0
 
     # Epic 2: Nazo-Agentの本番稼働(権限委譲)を客観的に判定する6次元定量評価ゲート
     # (tools/benchmark/run_benchmark.py の evaluate_6d_quality_gate())の各次元の閾値。

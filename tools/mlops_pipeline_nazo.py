@@ -22,6 +22,7 @@ AST自己修復ベンチマーク(tools/benchmark/run_benchmark.py)で評価す�
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 import time
@@ -35,6 +36,7 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from nazokake_core.database import async_release_trigger_slot  # noqa: E402
 from tools import export_metrics  # noqa: E402
 from tools import mlops_common  # noqa: E402
 from tools import mlops_experiments_db  # noqa: E402
@@ -95,10 +97,17 @@ def evaluate_quality_gate(report: dict) -> bool:
     return True
 
 
-def _record_experiment(report: dict | None, latency: float) -> None:
+def _record_experiment(report: dict | None, latency: float, *, pipeline_success: bool) -> None:
     """今回のパイプライン実行結果を実験管理DB(mlops_experiments.db)へ不変ログとして
     記録する。評価が完了しなかった場合(report=None)もsuccess_rate=Noneとして
     記録し、「実行したが評価不能だった」という事実自体を欠落させない。
+
+    あわせて、tools/mlops_trigger.pyが奪取したtrigger_state(pipeline_id="nazo")の
+    claimを解放する(instructions/174追補: 排他制御(Mutex)とクールダウン
+    (実行間隔制御)の分離)。pipeline_success=Trueの場合のみ
+    status="success"+last_completed_at=NOWを記録してクールダウンを開始させる。
+    Falseの場合はstatus="failed"のみを記録し、last_completed_atは更新しない
+    (=次回トリガー時に即時リトライ可能な状態のままにする)。
     """
     extraction_stats = None
     if EXTRACTION_STATS_PATH.exists():
@@ -121,6 +130,12 @@ def _record_experiment(report: dict | None, latency: float) -> None:
 
     metrics_path = export_metrics.export_metrics()
     print(f"📊 [ダッシュボード] 静的JSONをアトミックに更新しました: {metrics_path}")
+
+    asyncio.run(async_release_trigger_slot("nazo", success=pipeline_success))
+    print(
+        f"🔓 [トリガー状態] trigger_state(nazo)を"
+        f"{'success' if pipeline_success else 'failed'}へ更新しました。"
+    )
 
 
 def main() -> int:
@@ -154,7 +169,7 @@ def main() -> int:
         # 伝播する)。監視システムが区別できるよう、終了コードも125に揃える。
         latency = time.monotonic() - start_time
         print(f"🚨 [Infra-Fail] インフラエラーによりパイプラインを停止します: {e}")
-        _record_experiment(None, latency)
+        _record_experiment(None, latency, pipeline_success=False)
         return 125
     except PipelineExecutionError as e:
         # サブプロセス自体のロジック的なクラッシュ(インフラエラー以外)。以前は
@@ -163,12 +178,12 @@ def main() -> int:
         # 一切実行されないサイレントな障害だった(instructions/134で検出)。
         latency = time.monotonic() - start_time
         print(f"🚨 [Fail-Fast] ステップ異常終了によりパイプラインを停止します: {e}")
-        _record_experiment(None, latency)
+        _record_experiment(None, latency, pipeline_success=False)
         return 1
     except Exception as e:  # noqa: BLE001 - 予期しない失敗も必ず記録してから終了する
         latency = time.monotonic() - start_time
         print(f"🚨 [Fail-Fast] 予期しないエラーによりパイプラインを停止します: {e}")
-        _record_experiment(None, latency)
+        _record_experiment(None, latency, pipeline_success=False)
         return 1
 
     latency = time.monotonic() - start_time
@@ -177,12 +192,12 @@ def main() -> int:
         message = "🚨 [Fail-Fast] 評価レポートが見つかりませんでした。"
         print(message)
         mlops_common.send_alert_webhook(f"[MLOps/nazo] {message}")
-        _record_experiment(None, latency)
+        _record_experiment(None, latency, pipeline_success=False)
         return 1
 
     report = json.loads(EVALUATION_REPORT_PATH.read_text(encoding="utf-8"))
     gate_passed = evaluate_quality_gate(report)
-    _record_experiment(report, latency)
+    _record_experiment(report, latency, pipeline_success=gate_passed)
 
     if gate_passed:
         print("\n🎉 学習成功およびデプロイ承認(なぞかけ生成モデル)")
