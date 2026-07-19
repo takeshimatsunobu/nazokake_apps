@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import concurrent.futures
+import logging
 import os
 import threading
 import uuid
@@ -44,6 +45,8 @@ from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import NullPool
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = "nazokake_local.db"
 
@@ -791,6 +794,16 @@ async def async_try_claim_trigger_slot(
     両方を満たした場合のみ status="running" へ遷移させ(claim成功)、
     影響行数1を返す(=呼び出し元はキックしてよい)。それ以外は影響行数0のまま
     (claim失敗、既に実行中またはクールダウン中のため呼び出し元は見送るべき)。
+
+    【可観測性(SRE監査追補)】ゾンビ回収(OOM Killer/SIGKILL等でstatus="running"の
+    まま正常終了処理が走らずstale_after_hours以上経過したケース)は、上記のCAS
+    UPSERTだけではSQLエンジン内でサイレントに上書きされ、「前回パイプラインが
+    異常死した」というインシデントの事実がどこにも記録されない。このため、
+    UPSERT発行の直前にsession.get()で現在の状態を読み、ゾンビ回収が行われる
+    条件に該当する場合のみ明示的にlogger.warning()を発出する。この読み取りは
+    あくまでログ発出(テレメトリ)目的であり、実際の状態遷移は後続のUPSERTで
+    アトミックに担保されるため、読み取り結果に基づいて分岐する実際のロジックは
+    存在せず、レースコンディションの懸念はない。
     """
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
@@ -819,6 +832,17 @@ async def async_try_claim_trigger_slot(
     )
     async with get_session() as session:
         async with session.begin():
+            existing = await session.get(TriggerStateORM, pipeline_id)
+            if (
+                existing is not None
+                and existing.status == "running"
+                and existing.last_triggered_at is not None
+                and existing.last_triggered_at < stale_cutoff
+            ):
+                logger.warning(
+                    f"🚨 [SRE Anomaly] パイプライン {pipeline_id} のゾンビ状態"
+                    "(クラッシュ)を検知しました。強制リカバリを実行します。"
+                )
             result = await session.execute(stmt)
             return result.rowcount == 1
 
