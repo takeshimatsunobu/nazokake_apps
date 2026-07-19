@@ -234,6 +234,11 @@ def main() -> int:
     # ガベージコレクションをこのトリガーの定期サイクルに便乗させる。診断目的の
     # dry-run実行時は意図せずリソースを削除しないようスキップし、失敗しても
     # このトリガー自身の本来の責務(閾値判定)は継続する。
+    # 【instructions/176】マージ判定はgit branch --mergedの祖先関係に加え、Squash
+    # Merge等でコミットハッシュが変わったケースもgit cherryの等価パッチ検出で
+    # カバーするよう堅牢化した(cleanup_git_resources.py側)。このトリガー自身の
+    # --dry-runとは独立して、環境変数DRY_RUN=trueを設定するだけでも
+    # cleanup_merged_git_resources()単体を検証実行(実際の削除なし)できる。
     if not args.dry_run:
         try:
             cleanup_merged_git_resources()
