@@ -128,3 +128,22 @@ services:
     # mlops_scheduler.Dockerfileが定義するtools/scheduler_daemon.py(signalモジュールで
     # SIGTERM/SIGINTを直接トラップするPythonデーモン)。bashの無限sleepループ
     # (シグナルを子プロセスへ伝播できずコンテナがゾンビ化する)は完全に廃止した。
+    # 【instructions/169: GCP Cloud Loggingへのインフラログ統合】
+    # コンテナのクラッシュログ等、アプリ層(daemon_heartbeat.json)に上がらない
+    # システムログを、SSH接続無しにGCP Log Explorer(ブラウザ)で監視できるようにする。
+    # Docker純正のgcplogsログドライバーはコンテナのstdout/stderrを直接Cloud Logging
+    # APIへ送るため、追加のエージェント導入(Ops Agent等)を要さない
+    # ("No-Toil"の原則に最も合致する最小コスト案)。VM(nazokake-l4-vm)にアタッチされた
+    # サービスアカウントが、hunter_gcp_instance.ps1が要求するのと同じ
+    # `cloud-platform`スコープ(roles/logging.logWriter相当を含む)を持っている前提。
+    # 【未検証事項】Rootless Dockerとgcplogsドライバーの組み合わせはこの開発環境
+    # (Docker未導入)では実機検証できない。初回デプロイ時に1行echoしてから
+    # 1分以内にGCP Log Explorerへ到達するかのスモークテストが必要(不整合が見つかった
+    # 場合は、Rootless Docker配下のJSON-fileログ(~/.local/share/docker/containers/
+    # */*-json.log。rootful既定の/var/lib/docker/...ではない点に注意)をGoogle
+    # Cloud Ops Agent/Fluent Bitで直接テイルする方式へフォールバックする)。
+    logging:
+      driver: gcplogs
+      options:
+        gcp-project: "nazokakeapp-137e5"
+        labels: "com.docker.compose.service"

@@ -36,6 +36,13 @@ tools/benchmark/reports/
 # mlops_trigger.pyの「前回トリガー時点の件数」永続化状態(再生成可能)
 tools/mlops_trigger_state.json
 
+# mlops_trigger.pyの直前サイクルの判定結果(instructions/169、再生成可能)
+tools/mlops_trigger_last_run.json
+tools/mlops_trigger_last_run.tmp.json
+
+# scheduler_daemon.pyの最終実行時刻・終了コード(instructions/161、再生成可能)
+tools/scheduler_daemon_state.json
+
 # safe_reset_infra.pyの一時バックアップ(異常終了時の残骸を誤コミットしないためのガード)
 data/db_backup_temp.json
 

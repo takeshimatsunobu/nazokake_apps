@@ -18,6 +18,12 @@ tools/mlops_trigger.py(内部でさらにtools/mlops_pipeline_nazo.py/agent.py�
 sys.stderrへ厳格に分離して出力する。ローカルの状態記録(最終実行時刻・終了コード)は
 tools/ast_modifier.py._atomic_write_textと同じtempfile+os.replaceパターンでアトミックに
 書き込む。
+
+【instructions/169: ブラウザ完結の生存監視】SSH接続無しにこのデーモンの生存を
+確認したいというSRE要件に基づき、サイクルごとにtools/export_daemon_heartbeat.py経由で
+apps/evaluator/frontend/public/data/daemon_heartbeat.json(admin.html)を更新する。
+tools/export_metrics.pyが可視化する「パイプラインの実行結果」とは独立した関心事
+(「デーモン自体が生きているか、直前のポーリングで何を決定したか」)を担う。
 """
 
 from __future__ import annotations
@@ -42,8 +48,14 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
+from tools import export_daemon_heartbeat  # noqa: E402
+
 INTERVAL_SEC = 3600
 STATE_PATH = Path(__file__).resolve().parent / "scheduler_daemon_state.json"
+# tools/mlops_trigger.pyがサイクルごとに書き出す判定結果(閾値未達でスキップ/実際に
+# 起動を試みた)。instructions/169: このデーモン自身の生存監視タイル
+# (apps/evaluator/frontend/public/data/daemon_heartbeat.json)の材料として読む。
+TRIGGER_LAST_RUN_PATH = BASE_DIR / "tools" / "mlops_trigger_last_run.json"
 
 _shutdown_requested = False
 
@@ -87,6 +99,20 @@ def _atomic_write_json(path: Path, data: dict) -> None:
         raise
 
 
+def _read_trigger_last_run() -> dict | None:
+    """tools/mlops_trigger.pyが直前のサイクルで書き出した判定結果を読む。
+
+    ファイルが存在しない、または内容が壊れている場合はNoneを返す(呼び出し元は
+    生存監視タイルの表示を"unknown"へ安全側に倒す)。
+    """
+    if not TRIGGER_LAST_RUN_PATH.exists():
+        return None
+    try:
+        return json.loads(TRIGGER_LAST_RUN_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+
+
 def _run_trigger_cycle() -> None:
     """tools/mlops_trigger.pyを1サイクルぶんサブプロセスとして実行する。
 
@@ -119,6 +145,36 @@ def _run_trigger_cycle() -> None:
             "last_finished_at": finished_at.isoformat(),
             "last_returncode": result.returncode,
         },
+    )
+
+    # 【instructions/169】「デーモンが最後にいつポーリングし、何を決定したか」を
+    # ブラウザの管理画面(admin.html)から1クリックで確認できるようにする。
+    # tools/mlops_trigger.pyが「閾値未達で何もしなかった(正常)」のか「実際に起動を
+    # 試みて失敗した」のかを区別して記録したtools/mlops_trigger_last_run.jsonと、
+    # このサブプロセス自体のreturncodeを突き合わせて、生存監視タイルの表示状態を
+    # 決定する。
+    trigger_last_run = _read_trigger_last_run()
+    if result.returncode != 0:
+        heartbeat_status = "error"
+        heartbeat_message = (
+            f"tools/mlops_trigger.pyが異常終了しました(code={result.returncode})。"
+        )
+    elif trigger_last_run is None:
+        heartbeat_status = "unknown"
+        heartbeat_message = "tools/mlops_trigger.pyの判定結果ファイルが見つかりませんでした。"
+    else:
+        heartbeat_status = {
+            "skipped": "skipped",
+            "triggered": "ok",
+            "error": "error",
+        }.get(trigger_last_run.get("status"), "unknown")
+        heartbeat_message = trigger_last_run.get("message", "")
+
+    export_daemon_heartbeat.export_heartbeat(
+        status=heartbeat_status,
+        message=heartbeat_message,
+        last_cycle_started_at=started_at.isoformat(),
+        last_cycle_finished_at=finished_at.isoformat(),
     )
 
 

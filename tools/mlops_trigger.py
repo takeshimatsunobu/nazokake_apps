@@ -38,7 +38,9 @@ from __future__ import annotations
 import argparse
 import asyncio
 import json
+import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -56,6 +58,14 @@ if sys.platform == "win32":
 STATE_PATH = Path(__file__).resolve().parent / "mlops_trigger_state.json"
 AGENT_SFT_PATH = BASE_DIR / "tools" / "dataset" / "agent_sft.jsonl"
 
+# 【instructions/169】今回のサイクルの判定結果(スキップ/起動、起動した場合は各パイプ
+# ラインの成否)をアトミックに書き出す先。tools/scheduler_daemon.pyがこれを読み、
+# 「閾値未達で何もしなかった(正常)」と「実際に起動を試みた/失敗した」を区別した上で、
+# apps/evaluator/frontend/public/data/daemon_heartbeat.json(admin.htmlの生存監視タイル)
+# へ反映する。dry-run実行時は更新しない(診断目的の手動実行がデーモンの実際の稼働状態を
+# 上書きしないようにするため)。
+LAST_RUN_STATUS_PATH = Path(__file__).resolve().parent / "mlops_trigger_last_run.json"
+
 
 def _load_state() -> dict:
     if not STATE_PATH.exists():
@@ -67,6 +77,25 @@ def _save_state(state: dict) -> None:
     STATE_PATH.write_text(
         json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8"
     )
+
+
+def _save_last_run_status(status: str, message: str, **details) -> None:
+    """このサイクルの判定結果をアトミックに書き出す(tempfile+os.fsync+os.replace、
+    tools/ast_modifier.py._atomic_write_textと同じパターン)。書き込み途中の不完全な
+    JSONを読み取り側(scheduler_daemon.py)が掴むRace Conditionを防ぐ。
+    """
+    payload = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "status": status,
+        "message": message,
+        **details,
+    }
+    tmp_path = LAST_RUN_STATUS_PATH.with_suffix(".tmp.json")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_path, LAST_RUN_STATUS_PATH)
 
 
 def count_nazo_candidates() -> int:
@@ -136,6 +165,9 @@ def main() -> int:
 
     if not nazo_should_trigger and not agent_should_trigger:
         print("\nℹ️  いずれの条件も未達のため、パイプラインは起動しません。")
+        _save_last_run_status(
+            "skipped", "いずれの条件も未達のため、パイプラインは起動しませんでした。"
+        )
         return 0
 
     if args.dry_run:
@@ -146,16 +178,35 @@ def main() -> int:
         return 0
 
     # 両方成立していても順次実行する(VRAMロックが1本のため同時実行しても排他待ちになるだけ)。
+    nazo_launch_ok = None
     if nazo_should_trigger:
-        if _launch_pipeline("mlops_pipeline_nazo.py"):
+        nazo_launch_ok = _launch_pipeline("mlops_pipeline_nazo.py")
+        if nazo_launch_ok:
             state["nazo_last_triggered_count"] = nazo_total
             _save_state(state)
 
+    agent_launch_ok = None
     if agent_should_trigger:
-        if _launch_pipeline("mlops_pipeline_agent.py"):
+        agent_launch_ok = _launch_pipeline("mlops_pipeline_agent.py")
+        if agent_launch_ok:
             state["agent_last_triggered_count"] = agent_total
             _save_state(state)
 
+    any_launch_failed = (nazo_should_trigger and not nazo_launch_ok) or (
+        agent_should_trigger and not agent_launch_ok
+    )
+    _save_last_run_status(
+        "error" if any_launch_failed else "triggered",
+        (
+            "パイプラインの起動を試みましたが、一部が異常終了しました。"
+            if any_launch_failed
+            else "パイプラインの起動を試み、正常終了しました。"
+        ),
+        nazo_triggered=nazo_should_trigger,
+        nazo_launch_ok=nazo_launch_ok,
+        agent_triggered=agent_should_trigger,
+        agent_launch_ok=agent_launch_ok,
+    )
     return 0
 
 
