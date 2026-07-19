@@ -44,6 +44,14 @@
         Graceful Shutdown対応済み(instructions/161のtools/scheduler_daemon.py)
         のため安全)。
 
+    【自律的リトライ(instructions/166)】GCPのOS Login/IAPの権限プロビジョニングは
+    VM起動・SSH開通後も数秒〜数十秒のタイムラグを伴って反映されることがあり、その間の
+    `gcloud compute scp`/`gcloud compute ssh`は一時的な認証エラー(Exit Code 1等)で
+    失敗しうる。これを「一時的な遅延」と「本当に失敗した」の区別なくフェイルファストで
+    人間に手動再実行を求める設計は「ワンタッチ・プロビジョニング」の要件に反するため、
+    Step 3(scp)・Step 4(ssh)は`Invoke-GcloudWithRetry`により指数バックオフ付きで
+    最大5回まで自動リトライする(1回目失敗時5秒待機、以後倍々に増加)。
+
 .EXAMPLE
     .\tools\deploy\run_verification_server.ps1
     .\tools\deploy\run_verification_server.ps1 -Zone us-east1-b -InstanceName nazokake-l4-vm
@@ -55,12 +63,51 @@ param(
     [string]$InstanceName = "nazokake-l4-vm",
     [string]$Zone = "us-east1-b",
     [int]$SshWaitMaxAttempts = 30,
-    [int]$SshWaitDelaySeconds = 10
+    [int]$SshWaitDelaySeconds = 10,
+    [int]$GcloudRetryMaxAttempts = 5,
+    [int]$GcloudRetryInitialDelaySeconds = 5
 )
 
 $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $ArchivePath = Join-Path $ProjectRoot "source.zip"
+
+# 【instructions/166: 自律的リトライ(Exponential Backoff)】GCPのOS Login/IAPの
+# 権限プロビジョニングは、VM起動・SSH開通後もタイムラグを伴って反映されることがある。
+# この間に発生する一時的な認証エラー(Exit Code 1等)を「本当の失敗」と区別せず即座に
+# 異常終了させる設計は、人間へ手動再実行を要求してしまい「ワンタッチ・プロビジョニング」
+# の要件に反する。ScriptBlock内の外部コマンド(gcloud)の$LASTEXITCODEを見て、
+# 非ゼロなら指数バックオフ(初回$InitialDelaySeconds秒、以後倍々)で最大$MaxAttempts回
+# まで自動リトライし、それでも失敗した場合にのみ最終的にエラーとして異常終了する。
+function Invoke-GcloudWithRetry {
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$ScriptBlock,
+        [Parameter(Mandatory = $true)][string]$Description,
+        [int]$MaxAttempts = $GcloudRetryMaxAttempts,
+        [int]$InitialDelaySeconds = $GcloudRetryInitialDelaySeconds
+    )
+
+    $delay = $InitialDelaySeconds
+    for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
+        & $ScriptBlock
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+
+        if ($attempt -eq $MaxAttempts) {
+            Write-Error ("$Description が $MaxAttempts 回試行しても成功しませんでした" +
+                "(最終exit code: $LASTEXITCODE)。OS Login/IAPの権限伝播タイムラグ以外の" +
+                "恒久的な問題である可能性があります。")
+            exit 1
+        }
+
+        Write-Host ("⚠️  $Description が失敗しました(exit code: $LASTEXITCODE, " +
+            "試行 $attempt/$MaxAttempts)。GCPの権限プロビジョニングのタイムラグを想定し、" +
+            "${delay}秒後に自動リトライします...") -ForegroundColor Yellow
+        Start-Sleep -Seconds $delay
+        $delay = $delay * 2
+    }
+}
 
 # --- Step 1: VM起動(冪等) ---------------------------------------------------
 # 【冪等性】gcloud compute instances start自身の冪等性(既にRUNNING状態のインスタンス
@@ -135,11 +182,9 @@ try {
     Pop-Location
 }
 
-gcloud compute scp $ArchivePath "${InstanceName}:~/source.zip" `
-    --project=$ProjectId --zone=$Zone --tunnel-through-iap
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "gcloud compute scpによる転送に失敗しました。"
-    exit 1
+Invoke-GcloudWithRetry -Description "gcloud compute scp" -ScriptBlock {
+    gcloud compute scp $ArchivePath "${InstanceName}:~/source.zip" `
+        --project=$ProjectId --zone=$Zone --tunnel-through-iap
 }
 
 # --- Step 4: リモート展開・セットアップ・サイドカー起動 ------------------------
@@ -180,12 +225,10 @@ fi
 docker compose -f infra/verification_env/docker-compose.yml up -d --build mlops-scheduler
 '@
 
-gcloud compute ssh $InstanceName `
-    --project=$ProjectId --zone=$Zone --tunnel-through-iap `
-    --command=$remoteScript
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "リモートでのセットアップ/コンテナ起動に失敗しました。"
-    exit 1
+Invoke-GcloudWithRetry -Description "gcloud compute ssh" -ScriptBlock {
+    gcloud compute ssh $InstanceName `
+        --project=$ProjectId --zone=$Zone --tunnel-through-iap `
+        --command=$remoteScript
 }
 
 Write-Host "🎉 ワンタッチ・プロビジョニングが完了しました。" -ForegroundColor Green
