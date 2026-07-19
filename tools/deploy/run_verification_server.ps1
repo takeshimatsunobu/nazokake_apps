@@ -23,6 +23,27 @@
     (`unzip -o`はアーカイブに含まれるファイルのみを上書きし、それ以外の既存ファイル
     には触れない)。
 
+    【冪等性の証明(instructions/165)】VMが既に起動中、あるいはmlops-scheduler
+    コンテナが既に稼働中の状態で誤って再実行しても、エラーでクラッシュしたり
+    コンテナを破壊したりせず、安全にあるべき状態へ収束する:
+      - Step 1: gcloud compute instances startを無条件に呼ぶのではなく、事前に
+        現在のstatusを取得し、既にRUNNINGならスキップする(gcloud自身の冪等性の
+        有無を前提にせず、コードで明示的に保証する)。
+      - Step 2: SSHが既に開通していれば、リトライループの初回試行で即座に成立し
+        ブロックしない。
+      - Step 3: git archive/scpは常に冪等(同一パスへの単純な上書き、蓄積無し)。
+      - Step 4: リモート側のsetup_verification_env.sh(nvidia-ctk検出時に稼働中の
+        rootless dockerdを`systemctl --user restart docker`で再起動する処理を含む)
+        は、既に稼働中のコンテナへの実際の影響がrootless Dockerの内部仕様に依存し
+        この環境で実機検証できないため、センチナルファイル
+        (~/.nazokake_verification_env_provisioned)により初回のみ実行し、以後は
+        スキップする(VMのOSレベルプロビジョニングは1度で十分であり、繰り返し
+        dockerdを再起動するリスクそのものを構造的に無くす)。一方
+        `docker compose up -d --build`はVM状態に関係なく毎回実行する(コードの
+        再デプロイ自体は毎回反映させる必要があり、Compose自体は冪等かつ
+        Graceful Shutdown対応済み(instructions/161のtools/scheduler_daemon.py)
+        のため安全)。
+
 .EXAMPLE
     .\tools\deploy\run_verification_server.ps1
     .\tools\deploy\run_verification_server.ps1 -Zone us-east1-b -InstanceName nazokake-l4-vm
@@ -41,12 +62,27 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $ArchivePath = Join-Path $ProjectRoot "source.zip"
 
-# --- Step 1: VM起動 ---------------------------------------------------------
-Write-Host "🚀 [1/4] VMを起動します: $InstanceName (zone=$Zone) ..." -ForegroundColor Cyan
-gcloud compute instances start $InstanceName --project=$ProjectId --zone=$Zone
+# --- Step 1: VM起動(冪等) ---------------------------------------------------
+# 【冪等性】gcloud compute instances start自身の冪等性(既にRUNNING状態のインスタンス
+# に対して呼んだ場合の挙動)を前提にせず、事前にstatusを取得してコード上で明示的に
+# 判定する。既にRUNNINGならstart自体を呼ばずスキップする。
+Write-Host "🔍 [1/4] VMの現在の状態を確認します: $InstanceName (zone=$Zone) ..." -ForegroundColor Cyan
+$currentStatus = (gcloud compute instances describe $InstanceName `
+    --project=$ProjectId --zone=$Zone --format="get(status)").Trim()
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "VMの起動に失敗しました($InstanceName, zone=$Zone)。"
+    Write-Error "VMの状態取得に失敗しました($InstanceName, zone=$Zone)。"
     exit 1
+}
+
+if ($currentStatus -eq "RUNNING") {
+    Write-Host "ℹ️  VMは既にRUNNING状態です。起動処理をスキップします(冪等性)。" -ForegroundColor Yellow
+} else {
+    Write-Host "🚀 VMを起動します(現在の状態: $currentStatus)..." -ForegroundColor Cyan
+    gcloud compute instances start $InstanceName --project=$ProjectId --zone=$Zone
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "VMの起動に失敗しました($InstanceName, zone=$Zone)。"
+        exit 1
+    }
 }
 
 # --- Step 2: SSH(ポート22)開通待ち ------------------------------------------
@@ -113,6 +149,16 @@ Write-Host "🛠️  [4/4] リモートでの展開・セットアップ・mlops
 # 一切発生させず、bashスクリプトの`$`をそのままリモートへ渡す。
 # unzip -o は展開元アーカイブに含まれるファイルのみを上書きするため、data/・run/配下の
 # 既存の永続層(SQLite DB)・揮発層(VRAMロック)には一切触れない(instructions/162)。
+#
+# 【冪等性(instructions/165)】setup_verification_env.sh はnvidia-ctk検出時に
+# 既に稼働中のrootless dockerdを`systemctl --user restart docker`で再起動する処理を
+# 含む。これが既に稼働中のmlops-schedulerコンテナへ実際に影響するかはrootless Docker
+# の内部仕様(containerd-shimアーキテクチャでdockerd再起動をコンテナが生き延びるか)
+# に依存し実機検証できないため、センチナルファイルで初回のみ実行し、以後は
+# スキップする(2回目以降はこの再起動処理自体が走らないため、検証不能なリスクを
+# 構造的に無くす)。一方docker compose up -d --buildはVM状態に関わらず毎回実行する
+# (コードの再デプロイは毎回反映させる必要があり、Compose自体は冪等かつ
+# instructions/161のGraceful Shutdown対応済みのtools/scheduler_daemon.pyのため安全)。
 $remoteScript = @'
 set -euo pipefail
 if ! command -v unzip >/dev/null 2>&1; then
@@ -122,7 +168,15 @@ fi
 mkdir -p ~/nazokake_apps
 unzip -o -q ~/source.zip -d ~/nazokake_apps
 cd ~/nazokake_apps
-sudo bash infra/verification_env/setup_verification_env.sh
+
+PROVISION_MARKER=~/.nazokake_verification_env_provisioned
+if [ ! -f "$PROVISION_MARKER" ]; then
+    sudo bash infra/verification_env/setup_verification_env.sh
+    touch "$PROVISION_MARKER"
+else
+    echo "ℹ️  setup_verification_env.sh は既に適用済みのためスキップします(冪等性)。"
+fi
+
 docker compose -f infra/verification_env/docker-compose.yml up -d --build mlops-scheduler
 '@
 
