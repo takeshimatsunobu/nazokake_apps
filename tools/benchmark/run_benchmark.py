@@ -766,6 +766,59 @@ def evaluate_6d_quality_gate(report: dict) -> dict:
     return {"passed": all(d["passed"] for d in dimensions.values()), "dimensions": dimensions}
 
 
+def _compute_aggregate(results: list[dict]) -> dict:
+    """全fixtureの実行結果(results)から、レポートの"aggregate"セクションを計算する。
+
+    【instructions/164: メタ認知の是正】以前は`r["success"] is not None`でNoneを
+    分母(successes)から除外していたため、SyntaxError等でASTパースに失敗し
+    success: nullのまま終わったFixtureや、推論のリトライ枯渇(inference_outcome
+    == "retries_exhausted")・例外で中断したFixtureがsuccess_rateの計算から
+    静かに除外され、実際には失敗しているにもかかわらず「全体の成功率」を見かけ上
+    引き上げてしまう確証バイアス(ハルシネーション)を引き起こしていた。
+    Noneは「不合格」の一種として厳格にFalse扱いし、必ず分母に含める
+    (`bool(None) == False`)。
+    """
+    successes = [bool(r.get("success")) for r in results]
+    latencies = [r["latency_ms"] for r in results if r["latency_ms"] is not None]
+    regression_rates = [
+        r["regression"]["regression_rate"]
+        for r in results
+        if r.get("regression") and r["regression"]["regression_rate"] is not None
+    ]
+    complexity_growth_rate = _average_complexity_growth_rate(results)
+    retry_counts = [
+        r["efficiency"]["retry_count"]
+        for r in results
+        if r.get("efficiency") and r["efficiency"].get("retry_count") is not None
+    ]
+    blast_radius_counts = [
+        r["blast_radius"]["blast_radius_count"]
+        for r in results
+        if r.get("blast_radius") and r["blast_radius"].get("blast_radius_count") is not None
+    ]
+    # 第6次元「時間対品質パリティ」のベースライン: CTOエスカレーションが発生
+    # しなかった(=Qwenのみで解決した)fixtureのみのlatency_ms平均。
+    qwen_only_latencies = [
+        r["latency_ms"]
+        for r in results
+        if not r.get("cto_escalated") and r.get("latency_ms") is not None
+    ]
+
+    return {
+        "success_rate": (sum(successes) / len(successes)) if successes else None,
+        "avg_latency_ms": (sum(latencies) / len(latencies)) if latencies else None,
+        "avg_regression_rate": (
+            sum(regression_rates) / len(regression_rates) if regression_rates else None
+        ),
+        "avg_complexity_growth_rate": complexity_growth_rate,
+        "max_retry_count": max(retry_counts) if retry_counts else None,
+        "max_blast_radius": max(blast_radius_counts) if blast_radius_counts else None,
+        "qwen_only_avg_latency_ms": (
+            sum(qwen_only_latencies) / len(qwen_only_latencies) if qwen_only_latencies else None
+        ),
+    }
+
+
 def main() -> int:
     # 【Pre-flight Check / Hard Fail】このベンチマークはDocker隔離を必須要件とする。
     # 他の処理(fixture解決すら)より前に、対話的プロンプトを挟まず即座に確認する。
@@ -817,32 +870,6 @@ def main() -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2, default=str))
         results.append(result)
 
-    successes = [r["success"] for r in results if r["success"] is not None]
-    latencies = [r["latency_ms"] for r in results if r["latency_ms"] is not None]
-    regression_rates = [
-        r["regression"]["regression_rate"]
-        for r in results
-        if r.get("regression") and r["regression"]["regression_rate"] is not None
-    ]
-    complexity_growth_rate = _average_complexity_growth_rate(results)
-    retry_counts = [
-        r["efficiency"]["retry_count"]
-        for r in results
-        if r.get("efficiency") and r["efficiency"].get("retry_count") is not None
-    ]
-    blast_radius_counts = [
-        r["blast_radius"]["blast_radius_count"]
-        for r in results
-        if r.get("blast_radius") and r["blast_radius"].get("blast_radius_count") is not None
-    ]
-    # 第6次元「時間対品質パリティ」のベースライン: CTOエスカレーションが発生
-    # しなかった(=Qwenのみで解決した)fixtureのみのlatency_ms平均。
-    qwen_only_latencies = [
-        r["latency_ms"]
-        for r in results
-        if not r.get("cto_escalated") and r.get("latency_ms") is not None
-    ]
-
     report = {
         "run_id": uuid.uuid4().hex,
         "timestamp": datetime.now(timezone.utc).isoformat(),
@@ -851,23 +878,7 @@ def main() -> int:
         "docker_available": True,
         "fixtures_run": fixture_names,
         "results": results,
-        "aggregate": {
-            "success_rate": (sum(successes) / len(successes)) if successes else None,
-            "avg_latency_ms": (sum(latencies) / len(latencies)) if latencies else None,
-            "avg_regression_rate": (
-                sum(regression_rates) / len(regression_rates)
-                if regression_rates
-                else None
-            ),
-            "avg_complexity_growth_rate": complexity_growth_rate,
-            "max_retry_count": max(retry_counts) if retry_counts else None,
-            "max_blast_radius": max(blast_radius_counts) if blast_radius_counts else None,
-            "qwen_only_avg_latency_ms": (
-                sum(qwen_only_latencies) / len(qwen_only_latencies)
-                if qwen_only_latencies
-                else None
-            ),
-        },
+        "aggregate": _compute_aggregate(results),
     }
     report["quality_gate_6d"] = evaluate_6d_quality_gate(report)
 

@@ -60,3 +60,7 @@ __pycache__/
 # ハングアップした際の原因ファイルとして特定済み(実測89MB、Git監視下の唯一の巨大な
 # 未追跡ファイル)。以後の再追跡・再発を防ぐため、この行を明示的な根拠として維持する。
 all_source_code.txt
+
+# tools/deploy/run_verification_server.ps1(instructions/164)がgit archiveで都度
+# 再生成する、検証サーバー転送用のHEADスナップショット(再生成可能な成果物)。
+source.zip

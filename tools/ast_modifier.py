@@ -21,6 +21,7 @@ libcstはコメント・空白・インデント等の具象構文情報を保�
 import ast
 import json
 import os
+import re
 import shutil
 import sys
 import tempfile
@@ -196,6 +197,78 @@ def _parse_new_node(new_code: str) -> cst.CSTNode:
     raise ValueError("new_code内に関数またはクラス定義が見つかりません。")
 
 
+_TOP_LEVEL_DEF_RE_TEMPLATE = r"^(?:async\s+def|def|class)\s+{name}\b"
+
+
+def _string_based_fallback_replace(source: str, target_name: str, new_code: str) -> str | None:
+    """対象ファイル自体が構文エラーを含みlibcstでパースできない場合の最終手段。
+
+    ASTノード単位の置換は「元のファイル全体がまず構文的に妥当である」ことを前提と
+    するため、対象ファイル自身の構文エラーそのものが修正対象であるケース(既存の
+    syntax_error Fixture等)を原理的に扱えない。この関数は`target_name`で始まる
+    定義行を先頭が非空白文字の次の行(=次のトップレベル定義、またはEOF)まで
+    「その関数/クラスのおおよその範囲」とみなし、行単位の文字列置換で丸ごと
+    差し替える。target_nameの定義行が見つからない場合はNoneを返す(呼び出し元は
+    フォールバックそのものの失敗として安全側に倒す)。
+    """
+    lines = source.splitlines(keepends=True)
+    def_pattern = re.compile(_TOP_LEVEL_DEF_RE_TEMPLATE.format(name=re.escape(target_name)))
+
+    start_idx = None
+    for i, line in enumerate(lines):
+        if def_pattern.match(line):
+            start_idx = i
+            break
+    if start_idx is None:
+        return None
+
+    end_idx = len(lines)
+    for j in range(start_idx + 1, len(lines)):
+        stripped = lines[j].rstrip("\n")
+        if stripped and not stripped[0].isspace():
+            end_idx = j
+            break
+
+    new_code_text = new_code if new_code.endswith("\n") else new_code + "\n"
+    return "".join(lines[:start_idx]) + new_code_text + "".join(lines[end_idx:])
+
+
+def _apply_string_fallback(
+    path: Path, source: str, target_name: str, new_code: str, parse_error: Exception
+) -> str:
+    """libcstによる対象ファイルのパースが失敗した場合のString-basedフォールバック
+    (instructions/164)。
+
+    この経路は、通常経路が持つ安全網(セマンティック差分検証・大量削除/挿入
+    ヒューリスティック)のいずれも適用できない(それらは元ファイルをASTとして
+    解釈できることが前提のため)。唯一の安全網として、置換後の全文をPython標準の
+    ast.parseで検証し、それでも構文エラーが残る場合は書き込みを行わずエラーを返す
+    (フォールバック自体が失敗した場合の安全側フェイル)。
+    """
+    replaced = _string_based_fallback_replace(source, target_name, new_code)
+    if replaced is None:
+        return (
+            f"Error: 対象ファイルのパースに失敗し({parse_error})、"
+            f"String-basedフォールバックでも '{target_name}' の定義位置を"
+            "特定できませんでした。"
+        )
+
+    try:
+        ast.parse(replaced)
+    except SyntaxError as e:
+        return (
+            f"Error: 対象ファイルのパースに失敗し({parse_error})、"
+            f"String-basedフォールバック適用後も構文エラーが解消しませんでした: {e}"
+        )
+
+    _atomic_write_text(path, replaced)
+    return (
+        f"⚠️ [Fallback] '{target_name}' を '{path}' 内でString-based置換により"
+        f"強制適用しました(対象ファイル自体の構文エラーによりlibcstのASTパースが"
+        f"失敗したため: {parse_error})。"
+    )
+
+
 def apply_modification(instruction: dict) -> str:
     """1件の修正指示を適用し、結果メッセージを返す(ファイルは成功時のみ上書き)。"""
     try:
@@ -225,7 +298,11 @@ def apply_modification(instruction: dict) -> str:
     try:
         module = cst.parse_module(source)
     except Exception as e:
-        return f"Error: 対象ファイルのパースに失敗しました: {e}"
+        # 【instructions/164】対象ファイル自体に構文エラーが存在する場合、libcstは
+        # ここで例外を送出する(このケースは通常経路のASTノード置換が原理的に
+        # 適用不可能な唯一のケースであり、"クラッシュ"扱いで修正を諦めるのではなく、
+        # String-basedフォールバックで修正の適用自体を試行する)。
+        return _apply_string_fallback(path, source, target_name, new_code, e)
 
     transformer = TargetNodeReplacer(target_name, new_node)
     modified_module = module.visit(transformer)
