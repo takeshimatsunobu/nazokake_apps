@@ -68,6 +68,20 @@
     --command="bash remote_setup.sh"`としてファイルを実行させる。ストリーム経由の
     暗黙の文字コード変換が一切発生しない、決定論的な経路。
 
+    【非対話的SSHセッションの環境変数消失バグの恒久対応(instructions/171)】
+    `bash remote_setup.sh`は非ログイン・非対話シェルであり~/.bashrcを一切
+    読み込まないため、rootless Dockerインストーラが~/.bashrcへ追記するPATH拡張
+    ($HOME/bin)・DOCKER_HOSTがロードされず、末尾のdocker composeが
+    `docker: command not found`(Exit Code 127)でクラッシュしていた。
+    $remoteScript冒頭(set -euo pipefailの直後)にこの2行のexportを復元し、
+    恒久的に固定した。広範な監査の結果、infra/verification_env/
+    setup_verification_env.sh自身のdocker呼び出しは`bash -lc`のログインシェル
+    経由のため対象外(.bashrcのチェーンで既に補われている)と確認済み。あわせて、
+    完全非対話のSSHコマンド実行にはパスワード入力用のtty/stdinが存在しないため、
+    $remoteScript内のsudo呼び出しはすべて`-n`(非対話フラグ)を付与し、
+    NOPASSWD未設定時に無応答のままハングするリスクを、即座に明確なエラーで
+    失敗する形へ変更した。
+
 .EXAMPLE
     .\tools\deploy\run_verification_server.ps1
     .\tools\deploy\run_verification_server.ps1 -Zone us-east1-b -InstanceName nazokake-l4-vm
@@ -231,9 +245,28 @@ Write-Host "🛠️  [4/4] リモートでの展開・セットアップ・mlops
 # instructions/161のGraceful Shutdown対応済みのtools/scheduler_daemon.pyのため安全)。
 $remoteScript = @'
 set -euo pipefail
+
+# 【instructions/171: 非対話的SSHセッションの環境変数消失バグの恒久対応】
+# gcloud compute ssh --command=... 経由の実行は非ログイン・非対話シェル
+# (bash remote_setup.sh)であり、~/.bashrc を一切読み込まない。rootless Dockerの
+# インストーラ(dockerd-rootless-setuptool.sh install)が~/.bashrcへ追記する
+# PATH拡張・DOCKER_HOSTがロードされないため、末尾のdocker composeが
+# `docker: command not found`(Exit Code 127)でクラッシュしていた
+# (広範な監査の結果、infra/verification_env/setup_verification_env.sh自身の
+# docker呼び出しは`bash -lc`のログインシェル経由のため.bashrcのチェーンで
+# 既に補われており対象外と確認済み。このリモートスクリプト自身が唯一の欠落箇所)。
+export PATH=$HOME/bin:$PATH
+export DOCKER_HOST=unix:///run/user/$(id -u)/docker.sock
+
+# 【広範な監査で追加発見: sudoの無応答ハングの防止】完全非対話のSSHコマンド実行
+# ではパスワード入力用のtty/stdinが存在しない。NOPASSWD sudoersが未設定の場合、
+# 素の`sudo`は無応答のままハングするか不明瞭な失敗を起こしうる。`-n`
+# (非対話フラグ)により、パスワードが必要な状況では即座に明確なエラー
+# ("sudo: a password is required")で失敗させ、ハングによる無期限ブロックを防ぐ
+# (NOPASSWDが正しく設定済みの場合は挙動に変化は無い)。
 if ! command -v unzip >/dev/null 2>&1; then
-    sudo apt-get update -y
-    sudo apt-get install -y unzip
+    sudo -n apt-get update -y
+    sudo -n apt-get install -y unzip
 fi
 mkdir -p ~/nazokake_apps
 unzip -o -q /home/takes/source.zip -d ~/nazokake_apps
@@ -241,7 +274,7 @@ cd ~/nazokake_apps
 
 PROVISION_MARKER=~/.nazokake_verification_env_provisioned
 if [ ! -f "$PROVISION_MARKER" ]; then
-    sudo bash infra/verification_env/setup_verification_env.sh
+    sudo -n bash infra/verification_env/setup_verification_env.sh
     touch "$PROVISION_MARKER"
 else
     echo "ℹ️  setup_verification_env.sh は既に適用済みのためスキップします(冪等性)。"
