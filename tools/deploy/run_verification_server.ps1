@@ -52,6 +52,12 @@
     Step 3(scp)・Step 4(ssh)は`Invoke-GcloudWithRetry`により指数バックオフ付きで
     最大5回まで自動リトライする(1回目失敗時5秒待機、以後倍々に増加)。
 
+    【SSH引数エスケープバグの根本解決】Step 4の複数行リモートスクリプトを
+    `--command=$remoteScript`として直接渡す設計は、PowerShell→gcloud CLI→SSH→
+    リモートbashの多段エスケープが破綻しExit Code 2でクラッシュする実害があった。
+    `--command="bash"`のみを渡し、スクリプト本体は標準入力(パイプ)経由でリモートの
+    bashへ流し込む設計へ変更した(引数パーサーを経由しないため構造的に安全)。
+
 .EXAMPLE
     .\tools\deploy\run_verification_server.ps1
     .\tools\deploy\run_verification_server.ps1 -Zone us-east1-b -InstanceName nazokake-l4-vm
@@ -234,10 +240,18 @@ fi
 docker compose -f infra/verification_env/docker-compose.yml up -d --build mlops-scheduler
 '@
 
+# 【SRE差し戻し対応: SSH引数エスケープバグの根本解決】複数行の$remoteScriptを
+# そのまま`--command=$remoteScript`へ渡す設計は、PowerShell→gcloud CLIの引数
+# パース→SSH→リモートbashという複数層を経由する間にエスケープが破綻し、
+# Exit Code 2でクラッシュする実害が確認された。`--command`には単純な固定文字列
+# "bash"のみを渡し、複数行スクリプトの本体は標準入力(パイプ)経由でリモートの
+# bashへ直接流し込む(`ssh host bash < script.sh`と同じフェイルセーフな構造。
+# stdin経由であればPowerShell/gcloud CLI側の引数パーサーを一切経由しないため、
+# 複数行・特殊文字によるエスケープ破綻が構造的に発生しない)。
 Invoke-GcloudWithRetry -Description "gcloud compute ssh" -ScriptBlock {
-    gcloud compute ssh $InstanceName `
+    $remoteScript | gcloud compute ssh $InstanceName `
         --project=$ProjectId --zone=$Zone --tunnel-through-iap `
-        --command=$remoteScript
+        --command="bash"
 }
 
 Write-Host "🎉 ワンタッチ・プロビジョニングが完了しました。" -ForegroundColor Green

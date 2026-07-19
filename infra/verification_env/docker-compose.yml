@@ -142,8 +142,17 @@ services:
     # 場合は、Rootless Docker配下のJSON-fileログ(~/.local/share/docker/containers/
     # */*-json.log。rootful既定の/var/lib/docker/...ではない点に注意)をGoogle
     # Cloud Ops Agent/Fluent Bitで直接テイルする方式へフォールバックする)。
+    # 【SRE差し戻し対応: ノンブロッキング化(必須)】ロギングドライバーの既定
+    # (blocking)モードでは、GCP Logging APIの一時的な高レイテンシ/障害時に、
+    # ログドライバーへの書き込み自体がブロックし、コンテナ本体(このデーモンの
+    # print()呼び出し)まで連鎖的にフリーズしうる。mode: non-blockingにより、
+    # ログはまずインメモリのリングバッファ(max-buffer-size)へ書き込まれ、
+    # ドライバー側の送信が遅延・失敗してもアプリケーション本体はブロックされない
+    # (バッファが溢れた場合は古いログから破棄されるが、フリーズよりはるかに安全)。
     logging:
       driver: gcplogs
       options:
         gcp-project: "nazokakeapp-137e5"
         labels: "com.docker.compose.service"
+        mode: "non-blocking"
+        max-buffer-size: "4m"
