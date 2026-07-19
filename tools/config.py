@@ -42,6 +42,13 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # ロックのため、プロセスが異常終了してもOSが自動的に解放する)。
 VRAM_LOCK_PATH = PROJECT_ROOT / ".vram.lock"
 
+# 【instructions/173】tools/mlops_trigger.pyがマルチ起動(なぞかけ/Nazo-Agent両
+# パイプライン)を排他制御するためのファイルロック。VRAM_LOCK_PATH(パイプライン
+# 自身がGPU使用中に保持する別の関心事の排他制御)とは独立した、「トリガー自身の
+# 多重起動防止」専用のロック。run/ディレクトリ(instructions/162: 揮発層、
+# 永続層のdata/とは意図的に分離済み)配下に置く。
+MLOPS_PIPELINE_LOCK_PATH = PROJECT_ROOT / "run" / ".mlops_pipeline.lock"
+
 # クライアント接続先としては到達不能な「サーバーのbind用アドレス」。OLLAMA_HOSTに
 # これが設定されていた場合、フォーマット自体は妥当でも実質的に不正な設定とみなす。
 _WILDCARD_HOSTS = {"0.0.0.0", "::", "*", ""}
@@ -120,6 +127,17 @@ class ToolsSettings(BaseSettings):
     # 外部化する。
     mlops_trigger_nazo_threshold: int = 500
     mlops_trigger_agent_threshold: int = 50
+
+    # 【instructions/173: ステートレスな条件評価への移行に伴うクールダウン】
+    # なぞかけ候補件数(count_nazo_candidates)・Nazo-Agent成功修復ログ件数
+    # (count_agent_success_logs)はいずれも学習済みでも減らない単調増加の生カウントで
+    # あり、「学習済みフラグ」が存在しない。以前は前回トリガー時点からの差分を
+    # 状態ファイルで追跡することで、閾値を一度超えた後にデータが増えなくても
+    # スケジューラの毎サイクルごとに再発火してしまう「多重発火」を防いでいた。
+    # ステートレスな生カウント比較(前回トリガー時点の記憶を持たない)へ移行した
+    # 代わりに、MLOPS_PIPELINE_LOCK_PATHのmtime(直前に実際に起動をキックした時刻)
+    # がこの時間内であれば、閾値超過中でも新規の起動を見送ることで多重発火を防ぐ。
+    mlops_trigger_cooldown_hours: float = 24.0
 
     # Epic 2: Nazo-Agentの本番稼働(権限委譲)を客観的に判定する6次元定量評価ゲート
     # (tools/benchmark/run_benchmark.py の evaluate_6d_quality_gate())の各次元の閾値。
