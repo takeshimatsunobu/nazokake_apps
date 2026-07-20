@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <title>Tactical CIC // 司令部ダッシュボード</title>
+    <link rel="stylesheet" href="css/cic_style.css">
+</head>
+<body>
+    <div class="cic-container">
+        <header class="cic-header">
+            <h1>[ TACTICAL CIC ] // COMBAT INFORMATION CENTER</h1>
+            <div class="status-indicator">STATUS: SECURE</div>
+        </header>
+
+        <main class="cic-grid">
+            <!-- Phase 1: Target Acquisition -->
+            <section class="panel">
+                <h2>PHASE 1: TARGET ACQUISITION</h2>
+                <div class="input-group">
+                    <input type="text" id="targetUrl" placeholder="ENTER TARGET THREAD URL...">
+                    <button id="btnAcquire">ACQUIRE / 解析開始</button>
+                </div>
+                <div id="acquisitionStatus" class="sys-msg"></div>
+            </section>
+
+            <!-- Phase 2/3: COA Selection -->
+            <section class="panel" id="coaPanel" style="opacity: 0.5; pointer-events: none;">
+                <h2>PHASE 2 & 3: WARHEAD SELECTION</h2>
+                <div id="coaContainer" class="coa-list">
+                    <p class="placeholder-text">NO TARGET ACQUIRED.</p>
+                </div>
+            </section>
+
+            <!-- Phase 4: BDA -->
+            <section class="panel" id="bdaPanel">
+                <h2>PHASE 4: B.D.A (BATTLE DAMAGE ASSESSMENT)</h2>
+                <div id="bdaContainer">
+                    <div class="masking-alert" id="bdaMaskAlert" style="display:none;">
+                        [RESTRICTED] ドーパミン・デトックス実行中。射出から18時間マスキングされます。
+                    </div>
+                    <div id="bdaData"></div>
+                </div>
+            </section>
+        </main>
+        
+        <div id="toastContainer" class="toast-container"></div>
+    </div>
+    <script>
+        // 実行時のDate.now()でクエリ文字列を生成するため、HTML自体がキャッシュされて
+        // いても毎回ロード時に評価され、古いJSがブラウザキャッシュから再利用されない。
+        (function () {
+            var s = document.createElement('script');
+            s.src = 'js/cic_app.js?v=' + Date.now();
+            document.body.appendChild(s);
+        })();
+    </script>
+</body>
+</html>
