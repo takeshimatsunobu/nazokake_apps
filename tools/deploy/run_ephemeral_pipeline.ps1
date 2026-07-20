@@ -9,7 +9,7 @@
     無条件に起動しっぱなしにするためクラウド課金リスク・API暴走リスクを恒常的に抱える。
     本スクリプトは「必要な時だけ起動し、パイプライン完了後は必ず自律停止する」
     エフェメラルなライフサイクルへ置き換える:
-      1. GCP VMの起動(冪等)。
+      1. デッドマンズスイッチ(TTL)のメタデータ注入と、GCP VMの起動(冪等)。
       2. SSH(ポート22)開通待ち。
       3. git archiveによるHEADのZIP化とIAPトンネル経由の転送(既存ロジックを踏襲)。
       4. リモート展開・初回プロビジョニング・mlops-schedulerイメージのビルド
@@ -35,6 +35,19 @@
     学習を無条件に再実行してしまい、コスト・データ整合性の両面で危険なため、Step 5は
     意図的に単一実行とし、終了コードをそのまま呼び出し元へ伝播させる。
 
+    【設計上の注記: デッドマンズスイッチ(instructions/178)】このスクリプト自身が
+    ハードクラッシュ(ローカルPCのスリープ・強制終了・ネットワーク切断等)した場合、
+    finallyブロックが一切発火せずgcloud compute instances stopが呼ばれない可能性が
+    ある(ローカルプロセスの生死に依存するフェイルセーフは単一障害点=SPOFになり、
+    VMが無期限に起動し続けるクラウド破産リスクを排除できない)。これを塞ぐため、
+    VM起動の直前に必ずstartup-scriptメタデータへ「起動から-DeadmanSwitchMinutes分後の
+    自動シャットダウン」を注入する。GCEのstartup-scriptは起動(create/start)ごとに
+    実行されるため、ローカル側の生死に一切依存しないクラウド側単独のフェイルセーフ
+    として機能する。既定値(720分=12時間)は、tools/mlops_trigger.pyの
+    settings.mlops_trigger_stale_after_hours(既定12.0時間、instructions/177で同じ
+    理由により延長済み)と時間軸を揃えており、正常に稼働中の長時間学習を誤って
+    強制停止しないようにしている。
+
 .EXAMPLE
     .\tools\deploy\run_ephemeral_pipeline.ps1 -PipelineScript mlops_pipeline_nazo.py
     .\tools\deploy\run_ephemeral_pipeline.ps1 -PipelineScript mlops_pipeline_agent.py -Zone us-east1-b
@@ -53,7 +66,13 @@ param(
     [int]$SshWaitMaxAttempts = 30,
     [int]$SshWaitDelaySeconds = 10,
     [int]$GcloudRetryMaxAttempts = 5,
-    [int]$GcloudRetryInitialDelaySeconds = 5
+    [int]$GcloudRetryInitialDelaySeconds = 5,
+    # 【instructions/178】クラウドネイティブなデッドマンズスイッチ(TTL)のタイムアウト
+    # (分)。既定の720分(12時間)はtools/config.pyのmlops_trigger_stale_after_hours
+    # (既定12.0時間)と意図的に揃えている(短すぎると正常な長時間学習を強制停止し、
+    # 長すぎるとクラッシュ時のクラウド放置時間が伸びるため、既存のゾンビ回収基準と
+    # 同じ時間軸に統一する)。
+    [int]$DeadmanSwitchMinutes = 720
 )
 
 $ErrorActionPreference = "Stop"
@@ -100,8 +119,27 @@ function Invoke-GcloudWithRetry {
 # どこで失敗しても(例外・exit・ネットワーク切断)、finallyでのVM停止が必ず実行される
 # (PowerShellの`exit`はtry内で呼ばれてもfinallyを実行してからプロセスを終了する)。
 try {
-    # --- Step 1: VM起動(冪等) -----------------------------------------------
-    Write-Host "🔍 [1/5] VMの現在の状態を確認します: $InstanceName (zone=$Zone) ..." -ForegroundColor Cyan
+    # --- Step 1: デッドマンズスイッチ(TTL)のメタデータ注入 + VM起動(冪等) -------
+    # 【instructions/178】VMが実際にRUNNINGかどうかに関わらず、次にこのVMが起動する
+    # (create/start/reboot)たびにstartup-scriptが実行されるよう、起動確認より前に
+    # 必ずメタデータを設定する(既にRUNNING中の場合、このメタデータは次回の起動から
+    # 有効になる。クラッシュ後の再起動時にも確実に新しいTTLが適用されるようにする
+    # ための予防的な順序である)。
+    Write-Host ("🕐 [1/5] デッドマンズスイッチ(起動から${DeadmanSwitchMinutes}分後の" +
+        "自動シャットダウン)をメタデータへ設定します...") -ForegroundColor Cyan
+
+    $DeadmanSwitchScript = "#!/bin/bash`nsudo shutdown -h +$DeadmanSwitchMinutes`n"
+    $DeadmanSwitchLocalPath = Join-Path $env:TEMP "nazokake_deadman_switch_startup.sh"
+    $DeadmanSwitchScriptLf = $DeadmanSwitchScript.Replace("`r`n", "`n").Replace("`r", "`n")
+    $Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($DeadmanSwitchLocalPath, $DeadmanSwitchScriptLf, $Utf8NoBom)
+
+    Invoke-GcloudWithRetry -Description "gcloud compute instances add-metadata (デッドマンズスイッチ)" -ScriptBlock {
+        gcloud compute instances add-metadata $InstanceName --project=$ProjectId --zone=$Zone `
+            --metadata-from-file startup-script=$DeadmanSwitchLocalPath
+    }
+
+    Write-Host "🔍 VMの現在の状態を確認します: $InstanceName (zone=$Zone) ..." -ForegroundColor Cyan
     $currentStatus = (gcloud compute instances describe $InstanceName `
         --project=$ProjectId --zone=$Zone --format="get(status)").Trim()
     if ($LASTEXITCODE -ne 0) {

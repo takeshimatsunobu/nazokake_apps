@@ -96,6 +96,16 @@ cleanup_merged_git_resources()を毎回呼び出す。削除基準は経過時�
 (dry-run実行時は診断目的の手動実行が意図せずリソースを削除しないよう、
 クリーンアップ自体もスキップする)。
 
+【ローカル排他制御(instructions/178)】このトリガー自身が(cronの二重起動・手動と
+スケジューラの重複実行等で)同時に複数プロセスとして起動された場合、それぞれが
+独立にVMプロビジョニング(tools/deploy/run_ephemeral_pipeline.ps1)を試みてしまい、
+同一VM上での競合や不要な多重課金を招く。trigger_stateのDB CASだけでは
+「VMをキックする権利」自体の多重実行(閾値評価・Gitクリーンアップ等の重複実行も含む)
+を防げないため、run/.vm_provision.lock(filelock、timeout=0)による決定論的な
+ローカル排他制御を追加した。既にロックが取得されている場合は競合とみなし、
+エラーではなく正常系として何もせずExit 0する(他プロセスが既に処理中であり、
+このプロセスが何もしないことこそが正しい振る舞いのため)。
+
 使い方:
     uv run python tools/mlops_trigger.py             # スキャンし、条件を満たせばキック
     uv run python tools/mlops_trigger.py --dry-run    # キックせず判定結果のみ表示
@@ -111,6 +121,8 @@ import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
+import filelock
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -122,6 +134,11 @@ from nazokake_core.database import (  # noqa: E402
 from tools.cleanup_git_resources import cleanup_merged_git_resources  # noqa: E402
 from tools.config import settings  # noqa: E402
 from tools.extract_dataset import _fetch_candidates  # noqa: E402
+
+# 【instructions/178】このトリガー自身の多重実行を防ぐローカル排他ロック。run/は
+# tools/mlops_common.pyのVRAM_LOCK_PATHと同じ揮発層の慣習に合わせた既存ディレクトリ
+# (.gitkeep付き)であり、新規作成は不要。
+VM_PROVISION_LOCK_PATH = BASE_DIR / "run" / ".vm_provision.lock"
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -280,15 +297,11 @@ async def _evaluate_and_kick(
     return result
 
 
-def main() -> int:
-    parser = argparse.ArgumentParser(description="MLOpsイベント駆動起動トリガー")
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="実際にキックせず、判定結果のみ表示する",
-    )
-    args = parser.parse_args()
-
+def _run_trigger_cycle(args: argparse.Namespace) -> int:
+    """このトリガーの1サイクル分の本体(閾値評価・Gitクリーンアップ・エフェメラルVM
+    キック)。main()がrun/.vm_provision.lock(instructions/178)を取得した状態でのみ
+    呼び出す(このプロセス単体では多重実行を想定しない前提のロジック)。
+    """
     # 【instructions/175】マージ済みのescalation/*・draft/*ブランチ/worktreeの
     # ガベージコレクションをこのトリガーの定期サイクルに便乗させる。診断目的の
     # dry-run実行時は意図せずリソースを削除しないようスキップし、失敗しても
@@ -383,6 +396,31 @@ def main() -> int:
         agent_triggered=result["agent"]["kicked"],
     )
     return 0
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="MLOpsイベント駆動起動トリガー")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="実際にキックせず、判定結果のみ表示する",
+    )
+    args = parser.parse_args()
+
+    # 【instructions/178】run/.vm_provision.lock(timeout=0)で、このトリガー自身の
+    # 多重実行を排除する。他プロセスが既にロックを保持している場合は競合とみなし、
+    # エラーではなく正常系として何もせずExit 0する(tools/run_migrations.pyの
+    # filelock.Timeout捕捉パターンを踏襲)。
+    lock = filelock.FileLock(str(VM_PROVISION_LOCK_PATH), timeout=0)
+    try:
+        with lock:
+            return _run_trigger_cycle(args)
+    except filelock.Timeout:
+        print(
+            "ℹ️  [Trigger] 他のtools/mlops_trigger.pyが既にロックを保持しているため、"
+            "多重プロビジョニングを避けて何もせず終了します(instructions/178)。"
+        )
+        return 0
 
 
 if __name__ == "__main__":
