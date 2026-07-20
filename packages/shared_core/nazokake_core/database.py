@@ -221,6 +221,32 @@ class TriggerStateORM(Base):
     status: Mapped[str] = mapped_column(String)
 
 
+class QualityCircuitBreakerStateORM(Base):
+    """Agent自身の推論出力品質のサイレント・デグレード検知状態(instructions/182)。
+
+    TriggerStateORMと同じ規約(pipeline_idごとに1行を継続的にUpsertする、
+    Append-onlyではない)。2つの独立した軸を同一行で追跡する:
+      - 評価スコアの極端値連続(consecutive_extreme_*): なぞかけ評価スコアが
+        N回連続でスケールの最高/最低に偏っている場合のサイレント・デグレード。
+      - エラー・パース失敗の連続(consecutive_error_*): 同一のエラー・パース失敗が
+        N回連続で発生している場合のサイレント・デグレード。
+    いずれかの連続回数がconsecutive_thresholdに達した時点で
+    QualityCircuitBreakerErrorが送出される(quality_circuit_breaker.py側の責務)。
+    """
+
+    __tablename__ = "quality_circuit_breaker_state"
+
+    pipeline_id: Mapped[str] = mapped_column(String, primary_key=True)
+    consecutive_extreme_count: Mapped[int] = mapped_column(Integer, default=0)
+    # "high"(スケール最高値付近に偏り続けている) / "low"(最低値付近) のいずれか。
+    # 方向が反転した場合は連続回数を1へリセットする(「高得点が続いた直後に
+    # 低得点が1回連続しただけ」は異なる異常であり合算しない)。
+    last_extreme_direction: Mapped[str | None] = mapped_column(String, nullable=True)
+    consecutive_error_count: Mapped[int] = mapped_column(Integer, default=0)
+    last_error_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
+    tripped_at: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
 async def init_db() -> None:
     """テーブルが存在しない場合のみ作成する(既存データは保持される、CREATE TABLE IF NOT EXISTS相当)。"""
     async with _engine.begin() as conn:
@@ -873,3 +899,124 @@ async def async_release_trigger_slot(pipeline_id: str, *, success: bool) -> None
                 existing.last_completed_at = datetime.now(timezone.utc).isoformat()
             else:
                 existing.status = "failed"
+
+
+# ------------------------------------------------------------------
+# 品質のサーキットブレーカー(instructions/182): Agent自身の推論出力(なぞかけ評価
+# スコア/エラー・パース失敗)のサイレント・デグレード検知に使う状態更新DAO。
+# 評価スコア系(consecutive_extreme_*)とエラー系(consecutive_error_*)は呼び出し
+# タイミングが異なる独立した軸であり、片方の呼び出しがもう片方の連続回数を意図せず
+# リセットしてしまわないよう、更新対象カラムそのものを2つの関数へ分離する
+# (是否を判定・例外を送出する責務はnazokake_core.quality_circuit_breaker側)。
+# ------------------------------------------------------------------
+
+
+async def _record_evaluation_score_event(
+    pipeline_id: str, *, is_extreme: bool, direction: str | None, threshold: int
+) -> dict[str, Any]:
+    """QualityCircuitBreakerStateORMの評価スコア系カラム(consecutive_extreme_count/
+    last_extreme_direction)のみを更新する。方向(direction)が前回と異なる場合は
+    連続回数を1へリセットする(「高得点が続いた直後に低得点が1回連続しただけ」を
+    合算しないため)。
+    """
+    async with get_session() as session:
+        async with session.begin():
+            existing = await session.get(QualityCircuitBreakerStateORM, pipeline_id)
+            if existing is None:
+                existing = QualityCircuitBreakerStateORM(pipeline_id=pipeline_id)
+                session.add(existing)
+
+            if is_extreme and existing.last_extreme_direction == direction:
+                existing.consecutive_extreme_count += 1
+            elif is_extreme:
+                existing.consecutive_extreme_count = 1
+                existing.last_extreme_direction = direction
+            else:
+                existing.consecutive_extreme_count = 0
+                existing.last_extreme_direction = None
+
+            tripped = existing.consecutive_extreme_count >= threshold
+            if tripped:
+                existing.tripped_at = datetime.now(timezone.utc).isoformat()
+
+            return {
+                "tripped": tripped,
+                "consecutive_count": existing.consecutive_extreme_count,
+            }
+
+
+async def _record_pipeline_outcome_event(
+    pipeline_id: str, *, error_signature: str | None, threshold: int
+) -> dict[str, Any]:
+    """QualityCircuitBreakerStateORMのエラー系カラム(consecutive_error_count/
+    last_error_signature)のみを更新する。error_signature=Noneは「今回の試行は成功した」
+    を意味し、連続回数を0へリセットする。
+    """
+    async with get_session() as session:
+        async with session.begin():
+            existing = await session.get(QualityCircuitBreakerStateORM, pipeline_id)
+            if existing is None:
+                existing = QualityCircuitBreakerStateORM(pipeline_id=pipeline_id)
+                session.add(existing)
+
+            if error_signature is None:
+                existing.consecutive_error_count = 0
+                existing.last_error_signature = None
+            elif existing.last_error_signature == error_signature:
+                existing.consecutive_error_count += 1
+            else:
+                existing.consecutive_error_count = 1
+                existing.last_error_signature = error_signature
+
+            tripped = existing.consecutive_error_count >= threshold
+            if tripped:
+                existing.tripped_at = datetime.now(timezone.utc).isoformat()
+
+            return {
+                "tripped": tripped,
+                "consecutive_count": existing.consecutive_error_count,
+            }
+
+
+def sync_record_evaluation_score_event(
+    pipeline_id: str, *, is_extreme: bool, direction: str | None, threshold: int
+) -> dict[str, Any]:
+    """_record_evaluation_score_event()のSerialized Writer経由・同期版(apps/batch_factory向け)。"""
+    return _serialized_writer.submit(
+        lambda: _record_evaluation_score_event(
+            pipeline_id, is_extreme=is_extreme, direction=direction, threshold=threshold
+        )
+    )
+
+
+async def async_record_evaluation_score_event(
+    pipeline_id: str, *, is_extreme: bool, direction: str | None, threshold: int
+) -> dict[str, Any]:
+    """_record_evaluation_score_event()のSerialized Writer経由・非ブロッキング版(apps/evaluator向け)。"""
+    return await _serialized_writer.submit_async(
+        lambda: _record_evaluation_score_event(
+            pipeline_id, is_extreme=is_extreme, direction=direction, threshold=threshold
+        )
+    )
+
+
+def sync_record_pipeline_outcome_event(
+    pipeline_id: str, *, error_signature: str | None, threshold: int
+) -> dict[str, Any]:
+    """_record_pipeline_outcome_event()のSerialized Writer経由・同期版(apps/batch_factory向け)。"""
+    return _serialized_writer.submit(
+        lambda: _record_pipeline_outcome_event(
+            pipeline_id, error_signature=error_signature, threshold=threshold
+        )
+    )
+
+
+async def async_record_pipeline_outcome_event(
+    pipeline_id: str, *, error_signature: str | None, threshold: int
+) -> dict[str, Any]:
+    """_record_pipeline_outcome_event()のSerialized Writer経由・非ブロッキング版(apps/evaluator向け)。"""
+    return await _serialized_writer.submit_async(
+        lambda: _record_pipeline_outcome_event(
+            pipeline_id, error_signature=error_signature, threshold=threshold
+        )
+    )

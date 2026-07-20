@@ -76,6 +76,9 @@ if not logger.handlers:
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from tools import shadow_mode  # noqa: E402
+from tools.config import settings  # noqa: E402
+
 # フロントエンドのバックグラウンド起動タスク(fire-and-forget)を GC から守るための保持先。
 _bg_tasks: set = set()
 # 領域B(アプリ本体)がデフォルト。_route_target_domain() により main_flow 実行時に動的に切り替わる。
@@ -1811,6 +1814,33 @@ def _has_staged_changes(cwd: Path, files: list[str]) -> bool:
     return False
 
 
+def _commit_or_shadow(target_dir: Path, files: list[str], commit_message: str) -> bool:
+    """settings.shadow_mode(instructions/182)が有効な場合、実際のgit add/commitを
+    一切行わず(インデックスへのステージすら行わない)、コミットされたはずの内容を
+    tools/shadow_mode_log.jsonlへ記録するのみに留める。無効な場合は従来通り一括
+    コミットを行う。戻り値は「実際にコミットが行われたか」(False=シャドウ抑止/
+    ステージ済み変更なしのいずれか)。呼び出し元は、この戻り値でコミット後の
+    後続処理(学習データ抽出フック等)を実行すべきかどうかを判断できる。
+    """
+    if settings.shadow_mode:
+        shadow_mode.log_shadow_event(
+            "nazo_agent",
+            "git_commit_suppressed",
+            {"target_dir": str(target_dir), "files": files, "commit_message": commit_message},
+        )
+        print(f"🌑 [Shadow Mode] {len(files)}件のコミットを抑止しました(commit_message={commit_message!r})。")
+        return False
+
+    subprocess.run(["git", "add", "--"] + files, cwd=str(target_dir), check=True)
+    if not _has_staged_changes(target_dir, files):
+        print("✅ 変更がなかったため一括コミットをスキップしました")
+        return False
+
+    subprocess.run(["git", "commit", "-m", commit_message, "--"] + files, cwd=str(target_dir), check=True)
+    print("✅ 一括コミット完了。")
+    return True
+
+
 async def _escalate_test_update_tasks_to_sandbox(tasks: list[dict]) -> None:
     """テストの陳腐化(triage_type == "test_update")と判定された各タスクを、
     tools/agent_graph.py の sandbox_verify_node による隔離ワークツリー(git worktree)+
@@ -1943,20 +1973,7 @@ async def _run_claude_pipeline_and_commit(
             f"\n📦 {success_count}件の成功ファイルを一括コミット(Bulk Commit)します..."
         )
         try:
-            subprocess.run(
-                ["git", "add", "--"] + successful_files,
-                cwd=str(TARGET_APP_DIR),
-                check=True,
-            )
-            if not _has_staged_changes(TARGET_APP_DIR, successful_files):
-                print("✅ 変更がなかったため一括コミットをスキップしました")
-            else:
-                subprocess.run(
-                    ["git", "commit", "-m", commit_message, "--"] + successful_files,
-                    cwd=str(TARGET_APP_DIR),
-                    check=True,
-                )
-                print("✅ 一括コミット完了。")
+            _commit_or_shadow(TARGET_APP_DIR, successful_files, commit_message)
         except Exception as e:
             print(f"⚠️ コミット失敗: {e}")
 
@@ -2035,31 +2052,17 @@ async def _process_target(user_instruction: str, engine: str, log_path: Path) ->
                             "\n📦 自律修復ループによる変更を一括コミット(Bulk Commit)します..."
                         )
                         try:
-                            subprocess.run(
-                                ["git", "add", "--", rel_path],
-                                cwd=str(TARGET_APP_DIR),
-                                check=True,
+                            committed = _commit_or_shadow(
+                                TARGET_APP_DIR,
+                                [rel_path],
+                                "fix: LangGraph自律修復ループによる自動修正",
                             )
-                            if not _has_staged_changes(TARGET_APP_DIR, [rel_path]):
-                                print(
-                                    "✅ 変更がなかったため一括コミットをスキップしました"
-                                )
-                            else:
-                                subprocess.run(
-                                    [
-                                        "git",
-                                        "commit",
-                                        "-m",
-                                        "fix: LangGraph自律修復ループによる自動修正",
-                                        "--",
-                                        rel_path,
-                                    ],
-                                    cwd=str(TARGET_APP_DIR),
-                                    check=True,
-                                )
-                                print("✅ 一括コミット完了。")
 
-                                # --- 推論軌跡SFTデータ自動抽出フック(フライホイール化) ---
+                            # --- 推論軌跡SFTデータ自動抽出フック(フライホイール化) ---
+                            # 【instructions/182】シャドウモードで実コミットが抑止された
+                            # 場合(committed=False)、抽出対象となる実際のコミットが
+                            # 存在しないため、このフック自体もスキップする。
+                            if committed:
                                 print(
                                     "\n🌀 [Flywheel] 今回の修復軌跡を学習データとして抽出します..."
                                 )

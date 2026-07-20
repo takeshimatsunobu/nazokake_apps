@@ -49,6 +49,7 @@ from langchain_ollama import ChatOllama
 from langgraph.graph import END, StateGraph
 from pydantic import ValidationError
 
+from tools import shadow_mode
 from tools.ast_modifier import AstModificationInstruction
 from tools.compile_knowledge import extract_keywords
 from tools.config import settings
@@ -759,19 +760,31 @@ def sandbox_verify_node(state: AuditState) -> dict:
                     "audit_history": [f"[サンドボックス検証] {message}"],
                 }
 
-            subprocess.run(
-                ["git", "add", "--", str(relative_path)], cwd=str(worktree_path), check=True
-            )
-            subprocess.run(
-                [
-                    "git",
-                    "commit",
-                    "-m",
-                    f"fix: CTOエスカレーションによる自動修正 ({branch_name})",
-                ],
-                cwd=str(worktree_path),
-                check=True,
-            )
+            commit_message = f"fix: CTOエスカレーションによる自動修正 ({branch_name})"
+            if settings.shadow_mode:
+                # 【instructions/182】このコミットは既にmanaged_git_worktree()で隔離
+                # された使い捨てブランチへのものであり、メインブランチへの自動反映
+                # (automerge)は元々存在しない。それでもシャドウモードが有効な間は、
+                # 実際のGitコミット(適用)を一切行わず検証用ログへ記録するのみに留める
+                # (フライホイールの段階的始動)。
+                shadow_mode.log_shadow_event(
+                    "agent_graph",
+                    "git_commit_suppressed",
+                    {
+                        "worktree_path": str(worktree_path),
+                        "files": [str(relative_path)],
+                        "commit_message": commit_message,
+                    },
+                )
+            else:
+                subprocess.run(
+                    ["git", "add", "--", str(relative_path)], cwd=str(worktree_path), check=True
+                )
+                subprocess.run(
+                    ["git", "commit", "-m", commit_message],
+                    cwd=str(worktree_path),
+                    check=True,
+                )
 
             benchmark_summary = _run_benchmark_summary(worktree_path)
             pr_draft_path = _write_pr_draft(

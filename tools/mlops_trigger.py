@@ -106,9 +106,16 @@ cleanup_merged_git_resources()を毎回呼び出す。削除基準は経過時�
 エラーではなく正常系として何もせずExit 0する(他プロセスが既に処理中であり、
 このプロセスが何もしないことこそが正しい振る舞いのため)。
 
+【instructions/182: シャドウモード】settings.shadow_mode(既定True)が有効な間は、
+条件が成立してもDBのトリガー状態claim・エフェメラルVMキックを一切行わず、判定結果を
+tools/shadow_mode_log.jsonlへ記録するのみに留める(--dry-runとは独立した、既定で
+有効な安全弁)。--shadow-mode/--no-shadow-modeでこのプロセス単体の実行時に上書きできる。
+
 使い方:
-    uv run python tools/mlops_trigger.py             # スキャンし、条件を満たせばキック
-    uv run python tools/mlops_trigger.py --dry-run    # キックせず判定結果のみ表示
+    uv run python tools/mlops_trigger.py                # スキャンし、条件を満たせばキック
+                                                          # (既定ではシャドウモードのため実際には抑止される)
+    uv run python tools/mlops_trigger.py --dry-run       # キックせず判定結果のみ表示
+    uv run python tools/mlops_trigger.py --no-shadow-mode  # シャドウモードを無効化して実際にキックする
 """
 
 from __future__ import annotations
@@ -131,6 +138,7 @@ from nazokake_core.database import (  # noqa: E402
     async_release_trigger_slot,
     async_try_claim_trigger_slot,
 )
+from tools import shadow_mode  # noqa: E402
 from tools.cleanup_git_resources import cleanup_merged_git_resources  # noqa: E402
 from tools.config import settings  # noqa: E402
 from tools.extract_dataset import _fetch_candidates  # noqa: E402
@@ -351,6 +359,37 @@ def _run_trigger_cycle(args: argparse.Namespace) -> int:
             print("🧪 [dry-run] 条件Bが成立: mlops_pipeline_agent.py をキックする想定です。")
         return 0
 
+    # 【instructions/182: シャドウモード】--dry-runとは独立した、既定で有効な安全弁
+    # (settings.shadow_mode)。--dry-runは診断目的で明示的にオプトインする手動フラグ
+    # (既定オフ)だが、シャドウモードは自律スケジューラー(tools/scheduler_daemon.py)
+    # 経由の定期実行でも既定で効く安全側のデフォルトであり、意味が異なるため統合しない。
+    # DBのトリガー状態claimもエフェメラルVMキックも一切行わず、判定結果のみを
+    # 検証用ログ(tools/shadow_mode_log.jsonl)へ記録する。
+    effective_shadow_mode = (
+        settings.shadow_mode if args.shadow_mode is None else args.shadow_mode
+    )
+    if effective_shadow_mode:
+        shadow_mode.log_shadow_event(
+            "mlops_trigger",
+            "vm_kick_suppressed",
+            {
+                "nazo_total": nazo_total,
+                "nazo_threshold": settings.mlops_trigger_nazo_threshold,
+                "nazo_should_trigger": nazo_should_trigger,
+                "agent_total": agent_total,
+                "agent_threshold": settings.mlops_trigger_agent_threshold,
+                "agent_should_trigger": agent_should_trigger,
+            },
+        )
+        _save_last_run_status(
+            "shadow_skipped",
+            "シャドウモードが有効なため、DBのトリガー状態claim・エフェメラルVMキックを"
+            "抑止しました(判定結果はtools/shadow_mode_log.jsonlへ記録済み)。",
+            nazo_should_trigger=nazo_should_trigger,
+            agent_should_trigger=agent_should_trigger,
+        )
+        return 0
+
     result = asyncio.run(
         _evaluate_and_kick(
             nazo_should_trigger,
@@ -404,6 +443,21 @@ def main() -> int:
         "--dry-run",
         action="store_true",
         help="実際にキックせず、判定結果のみ表示する",
+    )
+    shadow_mode_group = parser.add_mutually_exclusive_group()
+    shadow_mode_group.add_argument(
+        "--shadow-mode",
+        dest="shadow_mode",
+        action="store_true",
+        default=None,
+        help="DBのトリガー状態claim・エフェメラルVMキックを抑止する(instructions/182、"
+        "未指定時はsettings.shadow_mode(既定True)に従う)",
+    )
+    shadow_mode_group.add_argument(
+        "--no-shadow-mode",
+        dest="shadow_mode",
+        action="store_false",
+        help="シャドウモードを無効化し、実際にDB claim・エフェメラルVMキックを行う",
     )
     args = parser.parse_args()
 

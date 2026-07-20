@@ -173,6 +173,17 @@ class ToolsSettings(BaseSettings):
     # 合否には影響しない(tools/benchmark/run_benchmark.py.evaluate_6d_quality_gate())。
     quality_gate_time_to_quality_parity_max: float = 3.0
 
+    # 【instructions/182: フライホイールの防弾化(シャドウモード)】データフライホイール
+    # (tools/mlops_trigger.py・tools/nazo_agent.py・tools/agent_graph.pyの自己修復/
+    # 学習ループ)を完全無人で回すにあたり、Agentの出力品質監視
+    # (nazokake_core.quality_circuit_breaker)が実戦で十分に検証されるまでの段階的
+    # 始動措置。有効な間は、これらのモジュールの実際のDB更新(トリガー状態のclaim・
+    # エフェメラルVMキック)・Gitコミット(適用)を一切行わず、実行されたはずの内容を
+    # tools/shadow_mode.py経由でログ/検証用ファイル(tools/shadow_mode_log.jsonl)へ
+    # 出力するのみに留める。当面はこれを既定で有効(True)とし、無効化する場合のみ
+    # 環境変数SHADOW_MODE=falseで明示的に上書きする。
+    shadow_mode: bool = True
+
 
 def load_settings() -> ToolsSettings:
     """設定を読み込み検証する。失敗時は意味のあるメッセージを出してFail-Fastする。"""
