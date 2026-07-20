@@ -1,0 +1,13 @@
+【ミッション: フロントエンドの技術的負債一掃 (admin.jsのリファクタリング)】
+アーキテクチャのLocal-First化およびDDD再編に伴い、バックエンドから廃止された旧APIを呼び出し続けているフロントエンドのデッドコードを完全にパージしてください。
+
+Step 1: バックエンドの現行エンドポイント確認
+apps/evaluator/backend/api/routers/admin.py などの関連ルーターを確認し、現在管理画面向けに有効なエンドポイント（例: POST /api/admin/action 等）を正確に特定してください。
+
+Step 2: フロントエンドのデッドコードパージ
+apps/evaluator/frontend/public/admin.js を開き、Step 1で確認した有効なエンドポイント「以外」の旧API（過去の分析で判明している /admin/pending, /admin/config, /admin/metrics, /admin/model_feedback, /admin/reset/{docId}, /admin/item/{docId}/human/delete 等）を呼び出している fetch ロジックや、それらのみに依存している不要なJavaScript関数を安全に削除してください。
+※ 現行APIと接続されている必要な機能（modelActionなど）や、UIの基本構造に関わる部分は絶対に破壊しないこと。
+
+Step 3: 静的解析とコミット
+修正後、フロントエンド側の構文エラーがないこと（node --check admin.js 等）を確認してください。
+不要なコードが削除されたことを確認した後、Gitへコミットしてください。推測による git add . は厳禁です。必ず変更した apps/evaluator/frontend/public/admin.js を明示してコミット（例: "refactor(frontend): admin.jsから廃止された旧APIの呼び出しコードを一括パージ"）してください。

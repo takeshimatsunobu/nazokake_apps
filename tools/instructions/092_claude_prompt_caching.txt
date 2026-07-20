@@ -1,0 +1,17 @@
+【ミッション: FinOps - Anthropic Prompt Cachingの導入によるAPIコスト最適化】
+Nazo-AgentのAPI利用コストを劇的に圧縮するため、tools/nazo_agent.py 内のClaude API呼び出し（client.messages.create）において、長大なコンテキストにPrompt Cachingを適用してください。
+
+Step 1: 対象フェーズの特定
+tools/nazo_agent.py を開き、Claude APIを呼び出している関数（例: phase2_claude_tool_augmented 等）を特定してください。
+
+Step 2: Cache Controlの適用
+Anthropic APIの仕様に基づき、不変かつ長大なテキストブロックに cache_control: {"type": "ephemeral"} を付与してください。
+・システムプロンプトのキャッシュ: system 引数に渡すデータを単なる文字列からリスト形式に変更し、SSoT（project_context 等）を含むテキストブロックに cache_control を設定してください。
+（例: system=[{"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}]）
+・ユーザーメッセージのキャッシュ（任意）: エラーログやAST圧縮マップ（compact_context）など、最もトークンを消費する長大な User メッセージの最後のテキストブロックにも cache_control を設定してください。
+※ キャッシュポイントは1リクエストにつき最大4つまでです。最も効果の高い箇所に絞って適用してください。
+
+Step 3: 静的解析と動作確認
+修正後、uv run ruff check --fix tools/nazo_agent.py を実行して構文をクリーンに保ってください。
+その後、適当なエラーログ（ダミーで構いません）を用いて nazo_agent.py の推論フェーズをドライラン（またはテスト実行）し、API通信がエラー（BadRequest等）にならず正常にレスポンスが返ることを確認してください。
+確認後、変更した tools/nazo_agent.py のみを明示的に指定してGitコミット（例: "perf(tools): Claude API呼び出しにPrompt Cachingを導入しコストを最適化"）を行ってください。

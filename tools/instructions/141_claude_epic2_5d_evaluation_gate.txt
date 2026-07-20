@@ -1,0 +1,35 @@
+【ミッション: Epic 2 - 5次元ベンチマーク定量評価ゲート（閾値）の実装】
+Nazo-Agentの本番稼働（権限委譲）を客観的に判定するため、既存の run_benchmark.py および関連する評価ロジックに、5次元の厳格なメトリクス評価ゲートを実装してください。
+
+Step 1: 評価閾値の外部化 (tools/config.py)
+tools/config.py の ToolsSettings に以下の評価ゲート閾値を定義してください。
+・quality_gate_success_rate_min: float = 0.90
+・quality_gate_regression_rate_max: float = 0.0
+・quality_gate_complexity_max: float = 0.10
+・quality_gate_max_retries: int = 3
+・quality_gate_allowed_blast_radius: int = 0
+
+Step 2: メトリクス計測ロジックの拡張 (tools/benchmark/run_benchmark.py 等)
+ランナーおよびコンテナ実行側のロジックを拡張し、以下の2つの新規メトリクスを計測・収集してください。
+・推論効率 (Efficiency): タスク解決に要したリトライ回数（またはAPIコール数）を取得する。
+・副作用 (Blast Radius): サンドボックス環境内で、事前に指定された「修正対象ファイル」以外に変更が加えられていないか、Gitの差分等を用いて変更されたファイル数をカウントする。
+
+Step 3: 5次元ゲート判定ロジックの実装
+テスト完了後、以下の5つの次元をすべて評価する evaluate_5d_quality_gate() のような関数を実装してください。
+
+Success Rate >= quality_gate_success_rate_min
+
+Regression Rate <= quality_gate_regression_rate_max (厳密に0を要求)
+
+Code Complexity <= quality_gate_complexity_max
+
+Efficiency (リトライ回数) <= quality_gate_max_retries
+
+Blast Radius (対象外変更数) <= quality_gate_allowed_blast_radius (厳密に0を要求)
+これら1つでも要件を満たさない場合は、ベンチマーク結果を「不合格」とし、生成されるレポートJSONにその合否ステータスと内訳を記録してください。
+
+Step 4: 静的解析とコミット
+実装後、uv run ruff check tools/ を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル群を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(benchmark): 権限委譲判定のための5次元定量評価ゲートの実装"
+※絶対制約: git add . は厳禁です。必ず変更対象ファイルパスを個別に指定すること。

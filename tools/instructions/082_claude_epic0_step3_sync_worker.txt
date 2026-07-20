@@ -1,0 +1,22 @@
+【ミッション: Firestore非同期Push同期ワーカーの構築 (Epic 0 / ステップ3)】
+ローカルDB（SQLite）を絶対の正（SSoT）とし、その変更を安全網（バックアップ）としてクラウドのFirestoreへ一方向同期する非同期ワーカーを構築してください。
+
+Step 1: 同期ワーカーロジックの実装
+apps/batch_factory/batch/ (または shared_core) 配下に、ローカルDBの未同期データをFirestoreへPushするワーカー（例: firestore_sync_worker.py）を新設してください。
+・データベースから sync_status = "pending" (未同期) のレコードを拾い上げ、firebase_admin を用いてFirestoreの対象ドキュメントへ書き込むこと。
+・同期が成功した場合は、ローカルDBの sync_status を "synced" 等に更新すること。
+・通信エラー等で失敗した場合は、エラーログ（デッドレター）を残しつつ、sync_status = "error" または "pending" のままにして次回のリトライに回す（DLQ・リトライ機構）こと。
+
+Step 2: 冪等性と順序逆転の防止（SRE絶対要件）
+非同期処理の順序入れ替わりによる「古いデータでの上書き」を防ぐため、以下の冪等性制御を必ず組み込んでください。
+・ローカルDBのレコードに updated_at (更新日時タイムスタンプ) を持たせること。
+・FirestoreへPushする際、Firestore上の既存ドキュメントの updated_at を確認し、「ローカルの updated_at がクラウド側よりも新しい場合のみ上書きする」トランザクション（またはPrecondition）ロジックを実装すること。
+
+Step 3: 静的解析とスモークテストの実行
+修正後、uv run ruff check --fix を実行して構文をクリーンに保ってください。
+ダミーの「未同期（pending）」レコードをローカルDBに作成し、同期ワーカーをドライラン（またはテスト用コレクションに向けて）実行させてください。
+
+Firestoreに正しくデータがPushされ、ローカルのステータスが更新されること。
+
+古い updated_at を持つデータを後からPushしようとした際、Firestore側が上書きされずスキップ（冪等性が担保）されること。
+の2点を確認し、実行結果を報告してください。

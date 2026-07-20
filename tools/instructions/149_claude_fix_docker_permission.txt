@@ -1,0 +1,13 @@
+【ミッション: Dockerマウントディレクトリの権限エラー（PermissionError）解消】
+ベンチマーク実行時、コンテナ内の非rootユーザーがホスト側のマウントディレクトリ（/output）へ結果を書き込めずにクラッシュする事象を、ホストのUID/GIDをコンテナへ引き継ぐことで解決してください。
+
+Step 1: run_benchmark.py へのUIDマッピング追加
+tools/benchmark/run_benchmark.py を開き、docker run コマンドを組み立てている箇所（または _docker_security_args 等の共通引数生成部）を改修してください。
+・--user オプションを追加し、値としてホストのUIDとGID（例: f"{os.getuid()}:{os.getgid()}"）を指定すること。
+・【必須制約】Windows環境等、os.getuid が存在しない環境でのスクリプトのクラッシュを防ぐため、hasattr(os, "getuid") で判定を行い、存在する場合のみ --user オプションを付与する安全な実装とすること。
+
+Step 2: 静的解析とコミット
+実装後、uv run ruff check tools/benchmark/run_benchmark.py を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（tools/benchmark/run_benchmark.py）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "fix(benchmark): DockerマウントディレクトリへのPermissionErrorをUIDマッピングで解消"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを個別に指定すること。

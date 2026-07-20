@@ -1,0 +1,99 @@
+【ミッション: 検証サーバーへのセキュア基盤移行と第6指標(時間対品質パリティ)の統合】
+Nazo-Agentの5次元定量評価ゲート(instructions/141)・軽量ローカルRAG(instructions/143)・
+アトミックI/O+CQRS静的JSONダンプ(instructions/127/133/140/142/144)を、Rootless Docker上の
+専用検証サーバーへ決定論的に移行し、「第6の指標(時間対品質パリティ)」を評価ゲートへ
+統合してください。Linter等の静的解析のパスのみを完了条件とすることは禁止し、Pytestに
+よる動的な振る舞い検証で全要件の実効性を客観的に証明してください。
+
+【設計方針: 第6の指標「時間対品質パリティ」の定義】
+CTOエスカレーション(Claude、高コスト・低速)がQwenのみでの解決(低コスト・高速)と比べて
+「時間コストに対して十分な品質向上を得ているか」を測る比率指標。
+  time_to_quality_parity_ratio = このfixtureのlatency_ms / (Qwenのみで解決した
+  fixture群のlatency_msの平均、無ければNoneで測定不能=不合格扱い)
+判定: CTOエスカレーションが発生したfixtureに限り、
+  time_to_quality_parity_ratio <= quality_gate_time_to_quality_parity_max
+  かつ そのfixture自体がsuccess(品質面で合格)であること
+の両方を要求する(時間を掛けても品質が伴わない、または品質が出ても許容を超えて
+時間を掛けすぎているケースの両方を不合格とする)。CTOエスカレーションが発生していない
+fixtureはこの次元の対象外(N/A、ゲート全体の合否には影響させない)とする。
+
+Step 1: 第6指標の閾値外部化とゲート拡張 (tools/config.py, tools/benchmark/run_benchmark.py)
+・tools/config.py の ToolsSettings に quality_gate_time_to_quality_parity_max: float = 3.0
+  を追加する(CTO経由のfixtureはQwenのみの平均latencyの3倍以内に収まることを既定要求とする)。
+・tools/benchmark/run_benchmark.py の run_fixture() を拡張し、各fixtureの結果に
+  "cto_escalated": bool (このfixtureでCTOエスカレーションが発生したか)を記録する。
+・report["aggregate"] に qwen_only_avg_latency_ms(cto_escalated=Falseのfixtureのみの
+  平均latency_ms)を追加する。
+・evaluate_5d_quality_gate() を evaluate_6d_quality_gate() へ拡張(または新規関数として
+  追加し既存呼び出し元を差し替え)し、上記定義に従った "time_to_quality_parity" 次元を
+  6番目の次元として dimensions に追加する。既存の5次元の判定ロジックは変更しないこと。
+
+Step 2: Rootless Docker検証環境のセットアップスクリプト (infra/verification_env/setup_verification_env.sh)
+新設する setup_verification_env.sh に、以下を「抽象論ではなく実際に実行されるコード」として
+物理的に組み込むこと。
+・systemdによるcgroup委譲(Rootless dockerdがcgroup v2でメモリ/CPU/pids制限を適用するための
+  前提条件):
+    sudo mkdir -p /etc/systemd/system/user@.service.d
+    sudo tee /etc/systemd/system/user@.service.d/delegate.conf > /dev/null <<'EOF'
+    [Service]
+    Delegate=yes
+    EOF
+    sudo systemctl daemon-reload
+・NVIDIA Container ToolkitのRootless dockerd向けフック設定(Rootless環境ではcgroupデバイス
+  制御を直接操作できないため no-cgroups=true が必須):
+    sudo nvidia-ctk config --set nvidia-container-cli.no-cgroups=true \
+        --in-place --config=/etc/nvidia-container-runtime/config.toml
+    nvidia-ctk runtime configure --runtime=docker --config="$HOME/.config/docker/daemon.json"
+    systemctl --user restart docker
+・VRAMの決定論的排他制御: DockerネイティブにはコンテナごとのハードVRAM量子化機構が無い
+  (vGPU/MPSライセンスが別途必要)ため、"--gpus device=0"によるGPU単一専有 + 既存の
+  tools/config.py:VRAM_LOCK_PATH(filelock)による直列化を検証サーバー側でも同一の絶対パス
+  規約で再現し、複数の検証ジョブが同時にGPUへ殴りかからないことをプロセス間ロックで保証する
+  (run_api.ps1が$env:VRAM_LOCK_PATH/$env:NAZOKAKE_DB_PATHを絶対パス固定している既存パターンを
+  Linux/.env.verification向けに再現する)。
+
+Step 3: セキュア基盤(アトミックI/O・CQRS)の移行設計 (infra/verification_env/README.md)
+・アトミックI/O(tools/export_metrics.py・tools/ast_modifier.py._atomic_write_text)と
+  CQRS静的JSONダンプ方式は、検証サーバー側で再実装(フォーク)しないこと。検証サーバーは
+  このリポジトリを直接クローンして既存モジュールをそのまま実行するのみとし、実装の二重化
+  によるドリフトを構造的に禁止する設計であることをREADME.mdに明記する。
+・.env.verification のテンプレートを追加し、NAZOKAKE_DB_PATH/VRAM_LOCK_PATH/ALERT_WEBHOOK_URL
+  等を検証サーバー上の絶対パス・値で明示的に固定する運用を定義する。
+・tools/compile_knowledge.py の実行を検証サーバーのプロビジョニング手順(setup_verification_env.sh
+  末尾、またはREADME.mdのセットアップ手順)に明記し、tools/ai_knowledge_base.json が
+  検証サーバー上でも必ず事前ビルドされることを保証する。
+
+Step 4: 動的振る舞い検証 (tests/verification_env/test_infra_behavior.py)
+以下のシナリオをPytestとして実装し、静的解析のパスではなく実際の動作結果で客観的に
+証明すること(Docker/systemd/NVIDIA Container Toolkitが利用できない環境ではpytest.skipで
+明示的にスキップし、「検証不能」と「検証して合格」を区別すること。tools/benchmark/
+run_benchmark.py._require_docker_or_die()と同じ「測定不能はNone=安全側で不合格」の思想を
+テスト設計にも適用する)。
+・test_cgroup_delegation_is_active: `systemctl show user@$(id -u).service -p Delegate` を
+  実際に実行し、出力が "Delegate=yes" であることを動的に確認する(ファイルの存在確認のみで
+  完了としない)。
+・test_nvidia_toolkit_hook_and_gpu_visible: config.tomlの no-cgroups=true を読み取り確認した
+  上で、実際に `docker run --rm --gpus all <image> nvidia-smi` を実行し、exit code 0かつ
+  GPU情報が標準出力に含まれることを確認する。
+・test_vram_lock_serializes_concurrent_pipelines: mlops_common.acquire_vram_lock_with_backoff()
+  を2プロセスから同時に呼び、2番目の呼び出しが1番目の解放まで実際に待機する(タイミングを
+  計測して直列化されていることを確認する)ことを動的に検証する。
+・test_atomic_dashboard_write_survives_concurrent_reads: export_metrics.export_metrics()を
+  短い間隔でループ実行するライター側と、同時にmetrics.jsonを繰り返しfetch/parseするリーダー
+  側を並行実行し、リーダーが一度も不完全なJSON(パース失敗またはschema_version欠落)を
+  観測しないことを確認する。
+・test_6d_quality_gate_time_to_quality_parity: CTOエスカレーションが発生した合成レポートに
+  対しevaluate_6d_quality_gate()を直接呼び、time_to_quality_parity次元の値・合否が
+  quality_gate_time_to_quality_parity_max通りに計算されることを確認する。
+・test_experience_replay_available_after_provisioning: tools/ai_knowledge_base.jsonが
+  存在し、retrieve_experiences()が既知のクエリに対して空でない結果を返すことを検証サーバー
+  上で実際に確認する。
+
+Step 5: 静的解析とコミット
+実装後、uv run ruff check tools/ を実行して構文エラーがないことを確認してください
+（--fixは使用しないこと）。加えて、tests/verification_env/test_infra_behavior.pyについても
+Docker/systemd/NVIDIA Container Toolkitが利用できないこの開発環境ではpytest.skipで
+安全にスキップされることを実際に実行して確認してください（無条件の成功で済ませないこと）。
+検証完了後、追加・変更したファイル群を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(infra): 検証サーバーへのセキュア基盤移行と第6指標(時間対品質パリティ)の統合"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを個別に指定すること。

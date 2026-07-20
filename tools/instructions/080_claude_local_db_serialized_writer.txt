@@ -1,0 +1,15 @@
+【ミッション: Local-First実装 - SQLiteのWALモード有効化とSerialized Writerの構築】
+現在のローカルDB実装（database.py等）は、複数ワーカーからの同時アクセス時に SQLITE_BUSY エラーを引き起こす脆弱性があります。これを物理的に回避するため、書き込みを単一プロセスに直列化する堅牢なデータアクセス層へとリファクタリングしてください。
+
+Step 1: DBスキーマとWALモードの強制 (packages/shared_core)
+packages/shared_core/nazokake_core/database.py を改修してください。
+・SQLiteエンジン作成時、イベントリスナー等を用いて PRAGMA journal_mode=WAL; および PRAGMA synchronous=NORMAL; を強制実行させ、読み書きの並行性を確保すること。
+
+Step 2: シングルトン Serialized Writer パターンの実装
+書き込み競合を物理的に防ぐため、各ワーカーが直接 UPDATE や INSERT を実行する既存のフローをリファクタリングしてください。
+・DB更新リクエストを非同期キュー（asyncio.Queue 等）で受け付け、システム全体で単一の専用タスク（Serialized Writer）だけがキューを消費して直列でDBへ書き込むアーキテクチャを実装すること。
+・local_db_writer.py や main.py 等の各ワーカーは、直接DBに書き込まず、このキューへタスクをPushするインターフェースのみを使用するように書き換えること。
+
+Step 3: 静的解析とスモークテスト
+修正後、uv run ruff check --fix を実行して構文をクリーンに保ってください。
+複数プロセス（または非同期タスク）から同時にPushを行っても、Serialized Writerによって競合（SQLITE_BUSY）なく直列に書き込まれることを確認するスモークテスト（Dry-Run等）を実行し、その結果を報告してください。

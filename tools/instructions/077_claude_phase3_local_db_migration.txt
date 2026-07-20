@@ -1,0 +1,17 @@
+【ミッション: Local-First実装 - ローカルDB（SQLite）への移行とFirestore依存の剥がし】
+システムアーキテクチャ方針が「完全ローカル稼働（Local-First）」に変更されました。これに伴い、バッチ工場等のデータアクセス層をFirestoreからローカルのSQLiteへ移行する基盤を構築してください。
+
+Step 1: 依存関係の追加
+必要なORMライブラリ（例: sqlalchemy, aiosqlite 等）を requirements_orchestrator.txt または shared_core の依存関係に追加してください。
+
+Step 2: DBスキーマとセッション管理の実装 (packages/shared_core)
+packages/shared_core/nazokake_core/ 内に、SQLiteデータベースの設定と非同期セッション管理を行うモジュール（例: database.py）を新設してください。
+既存の NazokakeItem スキーマ（Pydantic）にマッピングされるSQLAlchemyのテーブルモデルを定義してください（複数軸フラグ status, eval_status 等をカラムとして網羅すること）。
+
+Step 3: Firestore依存の剥がしとローカルDBへの移行 (apps/batch_factory)
+apps/batch_factory/batch/ 配下にある firestore_writer.py や main.py 等を確認してください。
+これらのファイルから firestore のインポートと呼び出しを完全にパージし、Step 2 で作成したローカルDB（SQLite）のセッションを使用して NazokakeItem を読み書き（排他制御のロックを含む）するようにDAOを書き換えてください。
+
+Step 4: 静的解析とマイグレーションの確認
+修正後、uv run ruff check --fix を実行して構文をクリーンに保ってください。
+SQLiteのDBファイルがローカルで正常に生成され、ダミーデータが書き込めることを確認するスモークテスト（Dry-Run等）を実行し、その結果を報告してください。

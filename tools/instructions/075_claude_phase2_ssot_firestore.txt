@@ -1,0 +1,13 @@
+【ミッション: DBアーキテクチャの矛盾解消 (アーキテクチャ統合 - フェーズ2)】
+ギャップ分析で判明したSSoTと実装コード間の設計上の矛盾を解消するため、SSoT_architecture.md の内容を現在のFirestore仕様に合わせて更新してください。
+
+Step 1: ストレージ仕様の修正
+SSoT_architecture.md を開き、データベースの要件が「SQLite/WALモード」と記載されている箇所を検索してください。
+これを、現在の実際の稼働環境である「Firestore (firebase_admin)」ベースのアーキテクチャ仕様に書き換えてください。
+
+Step 2: ステータスライフサイクルの実態合わせ
+SSoT_architecture.md 内に記載されている「6状態ステータス（生成済み/評価完了/赤ペン待ち/学習データ完成/ボツ/システムエラー）」の記述箇所を検索してください。
+この記述を廃止し、実際のコード（packages/shared_core/nazokake_core/schemas.py にある status/eval_status 等のステータス軸、およびバッチキューの pending/processing/completed）の実態に沿った状態管理の仕組みへとドキュメントを更新してください。
+
+Step 3: 差分の確認
+修正後、コードの書き換えは行わず SSoT_architecture.md のみ変更されていることを確認し、どのような記述にアップデートしたかのサマリーを報告してください。
