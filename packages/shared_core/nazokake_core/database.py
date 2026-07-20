@@ -222,27 +222,39 @@ class TriggerStateORM(Base):
 
 
 class QualityCircuitBreakerStateORM(Base):
-    """Agent自身の推論出力品質のサイレント・デグレード検知状態(instructions/182)。
+    """Agent自身の推論出力品質のサイレント・デグレード検知状態(instructions/182、
+    スライディングウィンドウ方式への是正はinstructions/183)。
 
     TriggerStateORMと同じ規約(pipeline_idごとに1行を継続的にUpsertする、
     Append-onlyではない)。2つの独立した軸を同一行で追跡する:
-      - 評価スコアの極端値連続(consecutive_extreme_*): なぞかけ評価スコアが
-        N回連続でスケールの最高/最低に偏っている場合のサイレント・デグレード。
-      - エラー・パース失敗の連続(consecutive_error_*): 同一のエラー・パース失敗が
-        N回連続で発生している場合のサイレント・デグレード。
-    いずれかの連続回数がconsecutive_thresholdに達した時点で
-    QualityCircuitBreakerErrorが送出される(quality_circuit_breaker.py側の責務)。
+      - 評価スコアの極端値(extreme_window): なぞかけ評価スコアがスケールの
+        最高/最低に偏っているかどうかのサイレント・デグレード。
+      - エラー・パース失敗(error_window): 生成/評価の試行が失敗したかどうかの
+        サイレント・デグレード。
+
+    【instructions/183是正: 連続カウント方式(consecutive_*)からスライディング
+    ウィンドウ方式への変更】連続カウント方式は、確率的モデルのノイズ(まぐれ当たり
+    1回)だけで連続回数が0へリセットされてしまい、実際には劣化が続いているのに
+    Tripしない(検知漏れ、Flapping脆弱性)という欠陥があった。各軸を「直近
+    window_size件のうち何件が異常だったか」を保持するブール値のFIFOキュー
+    (extreme_window/error_window)として持たせ、異常件数がanomaly_threshold以上に
+    達した時点でTripとみなす方式へ変更する。個々の判定・しきい値の適用は
+    quality_circuit_breaker.py側の責務であり、この層は生のウィンドウ状態のみを
+    保持する。
     """
 
     __tablename__ = "quality_circuit_breaker_state"
 
     pipeline_id: Mapped[str] = mapped_column(String, primary_key=True)
-    consecutive_extreme_count: Mapped[int] = mapped_column(Integer, default=0)
-    # "high"(スケール最高値付近に偏り続けている) / "low"(最低値付近) のいずれか。
-    # 方向が反転した場合は連続回数を1へリセットする(「高得点が続いた直後に
-    # 低得点が1回連続しただけ」は異なる異常であり合算しない)。
+    # 直近window_size件の評価スコア極端値判定(True=極端値)を古い順に保持する
+    # FIFOキュー。window_sizeを超えた古い要素は先頭から切り詰める。
+    extreme_window: Mapped[list[bool] | None] = mapped_column(JSON, nullable=True)
+    # 直近に記録された極端値の方向("high"/"low")。診断・アラート文言表示専用であり、
+    # Trip判定そのものには使わない(方向が高低で入れ替わるFlapping自体も、
+    # extreme_windowの異常件数として正しく積算されるため)。
     last_extreme_direction: Mapped[str | None] = mapped_column(String, nullable=True)
-    consecutive_error_count: Mapped[int] = mapped_column(Integer, default=0)
+    # 直近window_size件のパイプライン試行結果(True=失敗)を古い順に保持するFIFOキュー。
+    error_window: Mapped[list[bool] | None] = mapped_column(JSON, nullable=True)
     last_error_signature: Mapped[str | None] = mapped_column(Text, nullable=True)
     tripped_at: Mapped[str | None] = mapped_column(String, nullable=True)
 
@@ -911,13 +923,31 @@ async def async_release_trigger_slot(pipeline_id: str, *, success: bool) -> None
 # ------------------------------------------------------------------
 
 
+def _push_sliding_window(
+    window: list[bool] | None, is_anomalous: bool, window_size: int
+) -> list[bool]:
+    """スライディングウィンドウ(FIFO)へ今回の判定(True=異常)を1件追加し、
+    window_sizeを超えた古い要素を先頭から切り詰める(instructions/183)。
+    """
+    updated = list(window or [])
+    updated.append(is_anomalous)
+    if len(updated) > window_size:
+        updated = updated[-window_size:]
+    return updated
+
+
 async def _record_evaluation_score_event(
-    pipeline_id: str, *, is_extreme: bool, direction: str | None, threshold: int
+    pipeline_id: str,
+    *,
+    is_extreme: bool,
+    direction: str | None,
+    window_size: int,
+    anomaly_threshold: int,
 ) -> dict[str, Any]:
-    """QualityCircuitBreakerStateORMの評価スコア系カラム(consecutive_extreme_count/
-    last_extreme_direction)のみを更新する。方向(direction)が前回と異なる場合は
-    連続回数を1へリセットする(「高得点が続いた直後に低得点が1回連続しただけ」を
-    合算しないため)。
+    """QualityCircuitBreakerStateORMの評価スコア系カラム(extreme_window/
+    last_extreme_direction)のみを更新する。直近window_size件のうちanomaly_threshold件
+    以上が極端値であればTripとみなす(instructions/183: 連続カウント方式は
+    まぐれ当たり1回でリセットされ検知漏れを起こすため廃止)。
     """
     async with get_session() as session:
         async with session.begin():
@@ -926,31 +956,36 @@ async def _record_evaluation_score_event(
                 existing = QualityCircuitBreakerStateORM(pipeline_id=pipeline_id)
                 session.add(existing)
 
-            if is_extreme and existing.last_extreme_direction == direction:
-                existing.consecutive_extreme_count += 1
-            elif is_extreme:
-                existing.consecutive_extreme_count = 1
+            existing.extreme_window = _push_sliding_window(
+                existing.extreme_window, is_extreme, window_size
+            )
+            if is_extreme:
                 existing.last_extreme_direction = direction
-            else:
-                existing.consecutive_extreme_count = 0
-                existing.last_extreme_direction = None
 
-            tripped = existing.consecutive_extreme_count >= threshold
+            anomaly_count = sum(existing.extreme_window)
+            tripped = anomaly_count >= anomaly_threshold
             if tripped:
                 existing.tripped_at = datetime.now(timezone.utc).isoformat()
 
             return {
                 "tripped": tripped,
-                "consecutive_count": existing.consecutive_extreme_count,
+                "anomaly_count": anomaly_count,
+                "window_size": len(existing.extreme_window),
             }
 
 
 async def _record_pipeline_outcome_event(
-    pipeline_id: str, *, error_signature: str | None, threshold: int
+    pipeline_id: str,
+    *,
+    error_signature: str | None,
+    window_size: int,
+    anomaly_threshold: int,
 ) -> dict[str, Any]:
-    """QualityCircuitBreakerStateORMのエラー系カラム(consecutive_error_count/
+    """QualityCircuitBreakerStateORMのエラー系カラム(error_window/
     last_error_signature)のみを更新する。error_signature=Noneは「今回の試行は成功した」
-    を意味し、連続回数を0へリセットする。
+    ことを意味し、ウィンドウには"正常"(False)を積む。同一シグネチャの一致を要求しない
+    ため、エラー内容が毎回変わるFlapping(instructions/183が指摘した検知漏れの一種)も、
+    直近window_size件のうちanomaly_threshold件以上が「何らかの失敗」であれば検知できる。
     """
     async with get_session() as session:
         async with session.begin():
@@ -959,64 +994,97 @@ async def _record_pipeline_outcome_event(
                 existing = QualityCircuitBreakerStateORM(pipeline_id=pipeline_id)
                 session.add(existing)
 
-            if error_signature is None:
-                existing.consecutive_error_count = 0
-                existing.last_error_signature = None
-            elif existing.last_error_signature == error_signature:
-                existing.consecutive_error_count += 1
-            else:
-                existing.consecutive_error_count = 1
-                existing.last_error_signature = error_signature
+            is_error = error_signature is not None
+            existing.error_window = _push_sliding_window(
+                existing.error_window, is_error, window_size
+            )
+            existing.last_error_signature = error_signature
 
-            tripped = existing.consecutive_error_count >= threshold
+            anomaly_count = sum(existing.error_window)
+            tripped = anomaly_count >= anomaly_threshold
             if tripped:
                 existing.tripped_at = datetime.now(timezone.utc).isoformat()
 
             return {
                 "tripped": tripped,
-                "consecutive_count": existing.consecutive_error_count,
+                "anomaly_count": anomaly_count,
+                "window_size": len(existing.error_window),
             }
 
 
+async def async_get_circuit_breaker_tripped_at(pipeline_id: str) -> str | None:
+    """指定pipeline_idのQualityCircuitBreakerStateORM.tripped_atを読み取る
+    (読み取り専用、instructions/183のトリガー側Pre-flight Gateから利用する)。
+    行が存在しない、またはまだTripしていない場合はNoneを返す。
+    """
+    async with get_session() as session:
+        existing = await session.get(QualityCircuitBreakerStateORM, pipeline_id)
+        return existing.tripped_at if existing is not None else None
+
+
 def sync_record_evaluation_score_event(
-    pipeline_id: str, *, is_extreme: bool, direction: str | None, threshold: int
+    pipeline_id: str,
+    *,
+    is_extreme: bool,
+    direction: str | None,
+    window_size: int,
+    anomaly_threshold: int,
 ) -> dict[str, Any]:
     """_record_evaluation_score_event()のSerialized Writer経由・同期版(apps/batch_factory向け)。"""
     return _serialized_writer.submit(
         lambda: _record_evaluation_score_event(
-            pipeline_id, is_extreme=is_extreme, direction=direction, threshold=threshold
+            pipeline_id,
+            is_extreme=is_extreme,
+            direction=direction,
+            window_size=window_size,
+            anomaly_threshold=anomaly_threshold,
         )
     )
 
 
 async def async_record_evaluation_score_event(
-    pipeline_id: str, *, is_extreme: bool, direction: str | None, threshold: int
+    pipeline_id: str,
+    *,
+    is_extreme: bool,
+    direction: str | None,
+    window_size: int,
+    anomaly_threshold: int,
 ) -> dict[str, Any]:
     """_record_evaluation_score_event()のSerialized Writer経由・非ブロッキング版(apps/evaluator向け)。"""
     return await _serialized_writer.submit_async(
         lambda: _record_evaluation_score_event(
-            pipeline_id, is_extreme=is_extreme, direction=direction, threshold=threshold
+            pipeline_id,
+            is_extreme=is_extreme,
+            direction=direction,
+            window_size=window_size,
+            anomaly_threshold=anomaly_threshold,
         )
     )
 
 
 def sync_record_pipeline_outcome_event(
-    pipeline_id: str, *, error_signature: str | None, threshold: int
+    pipeline_id: str, *, error_signature: str | None, window_size: int, anomaly_threshold: int
 ) -> dict[str, Any]:
     """_record_pipeline_outcome_event()のSerialized Writer経由・同期版(apps/batch_factory向け)。"""
     return _serialized_writer.submit(
         lambda: _record_pipeline_outcome_event(
-            pipeline_id, error_signature=error_signature, threshold=threshold
+            pipeline_id,
+            error_signature=error_signature,
+            window_size=window_size,
+            anomaly_threshold=anomaly_threshold,
         )
     )
 
 
 async def async_record_pipeline_outcome_event(
-    pipeline_id: str, *, error_signature: str | None, threshold: int
+    pipeline_id: str, *, error_signature: str | None, window_size: int, anomaly_threshold: int
 ) -> dict[str, Any]:
     """_record_pipeline_outcome_event()のSerialized Writer経由・非ブロッキング版(apps/evaluator向け)。"""
     return await _serialized_writer.submit_async(
         lambda: _record_pipeline_outcome_event(
-            pipeline_id, error_signature=error_signature, threshold=threshold
+            pipeline_id,
+            error_signature=error_signature,
+            window_size=window_size,
+            anomaly_threshold=anomaly_threshold,
         )
     )

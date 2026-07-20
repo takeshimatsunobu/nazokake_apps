@@ -135,6 +135,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from nazokake_core.database import (  # noqa: E402
+    async_get_circuit_breaker_tripped_at,
     async_release_trigger_slot,
     async_try_claim_trigger_slot,
 )
@@ -233,6 +234,34 @@ async def _run_ephemeral_pipeline_async(script_name: str) -> int:
     return returncode
 
 
+# 【instructions/183: 事前遮断ゲート(Pre-flight Gate)】各トリガーpipeline_id("nazo"/
+# "agent")の学習データは、apps/batch_factory(なぞかけ生成)が追跡する品質サーキット
+# ブレーカー(instructions/182、pipeline_id="batch_factory_generation:{model_name}")の
+# 健全性に依存する。ブレーカーがTrip中(サイレント・デグレード検知済み)のまま
+# エフェメラルVMをキックすると、劣化したモデルの出力を再学習し続けるクラッシュループ
+# 的なクラウドコスト暴走を招くため、キック前に必ずTrip状態を確認する。"nazo"は
+# Gemini/LocalUnslothの両生成系列が学習データの源泉であり、いずれかがTrip中でも
+# 遮断する。"agent"(tools/nazo_agent.py)は現時点でこのサーキットブレーカーへの
+# 配線が存在しないため、対象は空(将来配線されればこのマッピングを更新するだけで
+# 自然にゲートが効くようになる)。
+_CIRCUIT_BREAKER_SOURCE_PIPELINE_IDS: dict[str, tuple[str, ...]] = {
+    "nazo": ("batch_factory_generation:Gemini", "batch_factory_generation:LocalUnsloth"),
+    "agent": (),
+}
+
+
+async def _find_tripped_circuit_breaker(pipeline_id: str) -> str | None:
+    """pipeline_id(トリガー側の"nazo"/"agent")に対応する品質サーキットブレーカーの
+    いずれかがTrip済み(tripped_at != None)であれば、そのtripped_atを返す。
+    どれもTripしていない(または対象が存在しない)場合はNoneを返す。
+    """
+    for source_id in _CIRCUIT_BREAKER_SOURCE_PIPELINE_IDS.get(pipeline_id, ()):
+        tripped_at = await async_get_circuit_breaker_tripped_at(source_id)
+        if tripped_at is not None:
+            return tripped_at
+    return None
+
+
 async def _try_claim_and_kick(
     pipeline_id: str, script_name: str, cooldown_hours: float, stale_after_hours: float
 ) -> dict:
@@ -255,7 +284,28 @@ async def _try_claim_and_kick(
     {"kicked": bool, "claimed": bool, "launch_failed": bool}を返す。claimed=Trueの
     場合、kickedとlaunch_failedは排他的(kicked=Trueは「VM起動からパイプライン正常
     終了まで完全に成功した」場合のみ)。
+
+    【instructions/183: 事前遮断ゲート】claimを試みる前に、対象パイプラインに
+    対応する品質サーキットブレーカーがTrip中かどうかを確認する。Trip中の場合は
+    claim自体も試みず(=クールダウンを無駄に消費させず、次回の正常評価に備える)、
+    即座に{"circuit_breaker_tripped": True}を含む未キック状態を返す。呼び出し元の
+    _run_trigger_cycleはこれを「何もキックしなかった」通常系として扱い、最終的に
+    Exit 0で終了する。
     """
+    tripped_at = await _find_tripped_circuit_breaker(pipeline_id)
+    if tripped_at is not None:
+        print(
+            f"🚨 [Pre-flight Gate] pipeline_id={pipeline_id!r} は品質サーキットブレーカーが"
+            f"Trip済み(tripped_at={tripped_at})のため、エフェメラルVMのキックをスキップし"
+            "ます(instructions/183: クラッシュループによるクラウドコスト暴走の防止)。"
+        )
+        return {
+            "kicked": False,
+            "claimed": False,
+            "launch_failed": False,
+            "circuit_breaker_tripped": True,
+        }
+
     claimed = await async_try_claim_trigger_slot(pipeline_id, cooldown_hours, stale_after_hours)
     if not claimed:
         return {"kicked": False, "claimed": False, "launch_failed": False}
