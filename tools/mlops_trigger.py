@@ -51,14 +51,39 @@ nazokake_core.database.async_try_claim_trigger_slot() は、以下2つの関心�
     経過時間のみ(settings.mlops_trigger_cooldown_hours)。パイプライン完了時に
     単に「解放」するだけではこのクールダウンが破壊されてしまうため、statusの
     遷移とは独立してこのカラムだけを正常完了時にのみ更新する
-    (nazokake_core.database.async_release_trigger_slot()、
-    tools/mlops_pipeline_nazo.py/agent.py側の責務)。
+    (nazokake_core.database.async_release_trigger_slot()。instructions/177以前は
+    tools/mlops_pipeline_nazo.py/agent.py側の責務だったが、下記【エフェメラルVMへの
+    同期キック】の通りこのトリガー自身の責務へ移管した)。
 
-【非同期キック】claimを奪取できた場合のみ、asyncio.create_subprocess_exec で
-パイプラインをバックグラウンドへキックし、その完了を一切待たずに(ステートレス
-稼働を厳守し)即座に終了する。キック自体が失敗した場合は、stale_after_hoursの
-タイムアウトに頼らず即座にclaimを解放する。両条件が同時に成立していても、
-キック自体は順次実行する(A→B、意図が明確でログも追いやすいため)。
+【エフェメラルVMへの同期キック(instructions/177で全面改訂)】以前はこのトリガー
+自身がGCP VM上のmlops-schedulerサイドカーに常駐し、claimを奪取した場合に
+`uv run python tools/{script}.py`をローカルの非同期サブプロセスとしてバック
+グラウンドへキックし、その完了を一切待たずに即座に終了していた。しかしこの設計は
+「VMが1時間ごとのポーリングのためだけに常時起動し続ける」というFinOps上の課金
+リスク・API暴走リスクを常に抱える。instructions/177に基づき、このトリガー自身の
+動作環境を「ローカルPC」と再定義し、キック方式を根本的に変更した:
+  - claimを奪取した場合のみ、tools/deploy/run_ephemeral_pipeline.ps1を
+    サブプロセスとして呼び出す。同スクリプトはGCP VMの起動(冪等)→SSH開通待ち→
+    コード転送→対象パイプラインのフォアグラウンド同期実行(完了まで待機)→
+    try/finallyによるVMの自律停止(FinOpsフェイルセーフ)を一括して行い、
+    パイプライン自身の終了コードをそのまま返す。
+  - このトリガー(ローカルPC上のプロセス)は、上記スクリプトの完了(VM起動から
+    停止までの全ライフサイクル、実際の学習内容次第で数十分〜数時間規模)を
+    そのままawaitで待機する。旧来の「即座に返るfire-and-forgetキック」から
+    「VMライフサイクル全体の完了を待機する同期キック」への意図的な設計変更である
+    (run_ephemeral_pipeline.ps1のパイプライン実行ステップ自体が意図的に単一実行・
+    リトライなしのため、正当な学習失敗を誤って再実行することもない)。
+  - 【release責務の移動】claimはこのトリガー(ローカルPC、ローカルの
+    nazokake_local.db)が奪取する一方、パイプライン自身はエフェメラルVMのDocker
+    コンテナ内(NAZOKAKE_DB_PATH=/workspace/data/nazokake_local.db、ローカルPCとは
+    物理的に別のDBファイル)で実行される。パイプライン側が従来通り自分自身の
+    trigger_stateを解放しても、それはローカルPC側のclaimが記録された行とは
+    別ファイルへの書き込みにしかならず、ローカルPC側のclaimが永久に"running"の
+    まま残ってしまう(次回以降のトリガー評価がstale_after_hoursのゾンビ回収に
+    頼るまで無期限にブロックされる)。この不整合を避けるため、releaseの責務を
+    このトリガー自身(_try_claim_and_kick、claimと同じローカルDBへ書き込む)に
+    移した。両条件が同時に成立していても、キック自体は順次実行する
+    (A→B、意図が明確でログも追いやすいため)。
 
 【Gitリソースの自動ガベージコレクション(instructions/175)】Nazo-Agentの自律
 エスカレーション(tools/agent_graph.py)が生成するescalation/*ブランチは、メイン
@@ -146,47 +171,80 @@ def count_agent_success_logs() -> int:
         return sum(1 for line in f if line.strip())
 
 
-async def _kick_pipeline_async(script_name: str) -> int:
-    """パイプラインを非同期プロセスとしてバックグラウンドでキックし、その完了を
-    一切待たずにPIDのみを返す(ステートレス稼働の厳守、instructions/173)。
+EPHEMERAL_DEPLOY_SCRIPT_PATH = BASE_DIR / "tools" / "deploy" / "run_ephemeral_pipeline.ps1"
+
+
+async def _run_ephemeral_pipeline_async(script_name: str) -> int:
+    """指定のMLOpsパイプラインを、tools/deploy/run_ephemeral_pipeline.ps1経由で
+    エフェメラルGCP VM上でフォアグラウンド同期実行し、その完了(VM起動→SSH開通待ち→
+    コード転送→パイプライン実行→VM自律停止の全ライフサイクル)を待機してから
+    パイプライン自身の終了コードを返す(instructions/177)。
+
+    VM起動・SSH開通・転送のいずれかで失敗した場合(Step 5に到達できなかった場合)は
+    run_ephemeral_pipeline.ps1の仕様により終了コード1が返る。この関数自体は
+    powershell.exeの起動(プロセス生成)にOSError相当の失敗が無い限り例外を送出しない
+    (プロセス生成自体の失敗は呼び出し元の_try_claim_and_kickがOSErrorとして捕捉する)。
     """
-    print(f"🚀 [Trigger] {script_name} を非同期にバックグラウンドキックします...")
-    kwargs: dict = {}
-    if sys.platform != "win32":
-        # 親(このトリガープロセス)のセッションから明示的に切り離し、トリガー自身の
-        # 終了後もパイプラインが影響を受けず生き続けるようにする(POSIX限定の機能。
-        # 本番の実行環境(mlops-schedulerサイドカーコンテナ)は常にLinuxである)。
-        kwargs["start_new_session"] = True
-    process = await asyncio.create_subprocess_exec(
-        "uv", "run", "python", f"tools/{script_name}",
-        cwd=str(BASE_DIR),
-        **kwargs,
+    print(
+        f"🚀 [Trigger] {script_name} をエフェメラルVM上で起動します"
+        "(VM起動→同期実行→自律停止、完了まで待機します)..."
     )
-    print(f"✅ [Trigger] {script_name} をPID={process.pid}でバックグラウンドキックしました。")
-    return process.pid
+    process = await asyncio.create_subprocess_exec(
+        "powershell.exe",
+        "-NoProfile",
+        "-ExecutionPolicy", "Bypass",
+        "-File", str(EPHEMERAL_DEPLOY_SCRIPT_PATH),
+        "-PipelineScript", script_name,
+        cwd=str(BASE_DIR),
+    )
+    returncode = await process.wait()
+    if returncode == 0:
+        print(f"✅ [Trigger] {script_name} がエフェメラルVM上で正常終了しました。")
+    else:
+        print(
+            f"🚨 [Trigger] {script_name} がエフェメラルVM上で異常終了しました"
+            f"(exit={returncode})。"
+        )
+    return returncode
 
 
 async def _try_claim_and_kick(
     pipeline_id: str, script_name: str, cooldown_hours: float, stale_after_hours: float
 ) -> dict:
     """1つのパイプラインについて、DBのCASクエリでclaim(排他制御+クールダウン
-    判定)を試み、成功した場合のみ非同期にバックグラウンドキックする
-    (instructions/174追補)。
+    判定)を試み、成功した場合のみエフェメラルVM上で同期実行する
+    (instructions/174追補、VMキックへの改訂はinstructions/177)。
 
-    claimの奪取自体が成功したにもかかわらずキック(プロセス生成)が失敗した場合は、
-    stale_after_hoursのタイムアウトに頼らず、判明した時点で即座にclaimを解放する
-    (status="failed")。{"kicked": bool, "claimed": bool, "launch_failed": bool}を
-    返す。
+    claimの奪取自体が成功したにもかかわらずキック(powershell.exeのプロセス生成)
+    自体が失敗した場合、またはVM上でのパイプライン実行自体が非ゼロ終了した場合は、
+    いずれもstale_after_hoursのタイムアウトに頼らず、判明した時点で即座にclaimを
+    解放する(status="failed")。
+
+    【release責務(instructions/177)】claim(async_try_claim_trigger_slot)は
+    ローカルPC上のこのプロセスがローカルのnazokake_local.dbに対して行うが、
+    パイプライン自身はエフェメラルVMのDockerコンテナ内(物理的に別のDBファイル)で
+    実行される。パイプライン側の自己releaseに委ねるとclaimと異なるDBへの書き込みに
+    なってしまうため、claimと対称なreleaseはこのトリガー自身(=claimと同じDBに
+    書き込める場所)の責務とする。
+
+    {"kicked": bool, "claimed": bool, "launch_failed": bool}を返す。claimed=Trueの
+    場合、kickedとlaunch_failedは排他的(kicked=Trueは「VM起動からパイプライン正常
+    終了まで完全に成功した」場合のみ)。
     """
     claimed = await async_try_claim_trigger_slot(pipeline_id, cooldown_hours, stale_after_hours)
     if not claimed:
         return {"kicked": False, "claimed": False, "launch_failed": False}
 
     try:
-        await _kick_pipeline_async(script_name)
+        returncode = await _run_ephemeral_pipeline_async(script_name)
     except OSError as e:
         print(f"🚨 [Trigger] {script_name} の起動(プロセス生成)に失敗しました: {e}")
         await async_release_trigger_slot(pipeline_id, success=False)
+        return {"kicked": False, "claimed": True, "launch_failed": True}
+
+    success = returncode == 0
+    await async_release_trigger_slot(pipeline_id, success=success)
+    if not success:
         return {"kicked": False, "claimed": True, "launch_failed": True}
 
     return {"kicked": True, "claimed": True, "launch_failed": False}
@@ -199,9 +257,10 @@ async def _evaluate_and_kick(
     stale_after_hours: float,
 ) -> dict:
     """各条件について、DBのtrigger_state経由で排他制御/クールダウンを評価し、
-    claimを奪取できたパイプラインのみを非同期にバックグラウンドキックする
-    (instructions/174)。両条件が同時に成立していても、キック自体は順次実行する
-    (A→B)。パイプラインごとの結果(_try_claim_and_kickの戻り値)を返す。
+    claimを奪取できたパイプラインのみをエフェメラルVM上で同期実行する
+    (instructions/174、VMキックへの改訂はinstructions/177)。両条件が同時に
+    成立していても、キック自体は順次実行する(A→B)。パイプラインごとの結果
+    (_try_claim_and_kickの戻り値)を返す。
     """
     result = {
         "nazo": {"kicked": False, "claimed": False, "launch_failed": False},
@@ -309,13 +368,17 @@ def main() -> int:
         return 0
 
     if any_launch_failed and not any_kicked:
-        message = "パイプラインの起動(プロセス生成)に失敗しました。"
+        message = (
+            "パイプラインの起動に失敗しました(VM/SSH/転送等の前段でのプロセス生成"
+            "失敗、またはエフェメラルVM上でのパイプライン自体の異常終了)。"
+        )
         _save_last_run_status("error", message)
         return 1
 
     _save_last_run_status(
         "triggered",
-        "パイプラインの起動をバックグラウンドでキックしました(完了は待ちません)。",
+        "エフェメラルVM上でのパイプライン実行が完了しました"
+        "(instructions/177: VM起動→同期実行→自律停止まで待機済み)。",
         nazo_triggered=result["nazo"]["kicked"],
         agent_triggered=result["agent"]["kicked"],
     )

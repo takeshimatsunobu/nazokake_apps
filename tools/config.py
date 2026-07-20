@@ -146,7 +146,17 @@ class ToolsSettings(BaseSettings):
     # パージする(実際の学習所要時間より十分長く、無期限ブロックよりは遥かに短い
     # 値を想定)。mlops_trigger_cooldown_hours(実行間隔制御)とは独立した、
     # 排他制御(Mutex)専用の設定。
-    mlops_trigger_stale_after_hours: float = 2.0
+    #
+    # 【instructions/177: エフェメラルVM化に伴う見直し】以前はtools/mlops_trigger.py
+    # 自身がローカルプロセスをfire-and-forgetでキックし即座に終了する設計だったため、
+    # 2.0時間で十分「実際の学習所要時間より十分長い」値だった。エフェメラルVM化後は
+    # このトリガー自身がtools/deploy/run_ephemeral_pipeline.ps1(VM起動→SSH開通待ち→
+    # 転送→パイプライン同期実行→VM停止)の完了を丸ごとawaitで待機する設計に変わり、
+    # 現実的な所要時間(VM起動+実際の学習+VM停止)は2時間を容易に超え得る。この値が
+    # 短すぎると、1回目の実行が正当にまだ稼働中であるにもかかわらず2回目の評価が
+    # ゾンビ回収と誤判定してclaimを再奪取し、同一VM上で学習が二重に走ってしまう
+    # (無期限ブロックのリスクより実害が大きい)ため、安全側に倒して延長する。
+    mlops_trigger_stale_after_hours: float = 12.0
 
     # Epic 2: Nazo-Agentの本番稼働(権限委譲)を客観的に判定する6次元定量評価ゲート
     # (tools/benchmark/run_benchmark.py の evaluate_6d_quality_gate())の各次元の閾値。
