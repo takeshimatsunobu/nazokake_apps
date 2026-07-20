@@ -1,0 +1,14 @@
+【ミッション: Rootless Docker仕様への準拠と権限エスカレーションの完全撤回】
+SREの観点から、以前の提案（chmod 777の追加および --user の指定）をアーキテクチャに対する致命的な退行（Regression）として明確に差し戻し（Reject）します。Rootless DockerのUser Namespace Remappingのネイティブな振る舞いに依存する決定論的アプローチへ回帰してください。
+
+Step 1: 実行ユーザー指定（--user）の完全パージ
+tools/benchmark/run_benchmark.py を開き、docker run コマンドの引数組み立て部分（_docker_security_args 等）に追加されている、--user オプションを付与するロジック（hasattr(os, "getuid") による判定ブロック全体）を完全に削除してください。コンテナはDockerエンジンのデフォルトの実行コンテキストに委ねます。
+
+Step 2: 権限エスカレーションの禁止
+Dockerfile における /workspace 等への chmod -R 777 の追加は、セキュリティガードレールを破壊する最大のアンチパターンであるため、絶対に実装しないでください。
+
+Step 3: 静的解析とコミット
+実装後、uv run ruff check tools/benchmark/run_benchmark.py を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（tools/benchmark/run_benchmark.py）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "fix(benchmark): Rootless Docker仕様に準拠するため不要な--userマッピングを完全撤回"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

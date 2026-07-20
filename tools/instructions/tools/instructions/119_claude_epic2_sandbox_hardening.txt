@@ -1,0 +1,23 @@
+【ミッション: Epic 2 - ベンチマーク環境のDockerサンドボックス必須化とセキュリティ厳格化】
+ホスト環境を非決定的なコード実行から完全に保護するため、Docker隔離をハード要件（Hard Fail）とし、コンテナ起動時のセキュリティ境界を強化してください。
+
+Step 1: Docker稼働のPre-flight CheckとHard Fail化
+tools/benchmark/run_benchmark.py などの初期化フェーズを改修し、dockerコマンド（docker info等）による稼働確認を追加してください。利用不可の場合は対話的プロンプトを一切挟まず、sys.stderrにエラーを出力して直ちに sys.exit(1) （Hard Fail）を発行してください。
+また、その際出力するメトリクスレポートJSONのstatusフィールドには "Infrastructure Error" と記録してください。
+
+Step 2: ホスト実行フォールバックの完全パージ
+docker_available: false時などにコンテナを経由せず、ホストOS上でast_modifier.pyの適用やpytestを直接実行しているレガシーなフォールバックコードを静的解析で特定し、すべてパージ（削除）してください。
+
+Step 3: Dockerfileの非特権ユーザー化
+tools/benchmark/Dockerfileを修正し、useradd等を用いて非特権ユーザー（例: sandbox_user）を作成し、以降の処理を USER sandbox_user で実行するよう権限を最小化してください。
+
+Step 4: コンテナ起動時のセキュリティ境界設定
+run_benchmark.py や container_runner.py からコンテナを起動する処理において、以下のセキュリティオプションを強制的に付与してください。
+・--network none （またはDocker SDKの network_mode="none"）による外部通信の遮断
+・--memory="2g" --cpus="1.0" --pids-limit=100 等のハードリミット付与によるホストリソースの枯渇防止
+
+Step 5: 静的解析とコミット
+実装後、uv run ruff check --fix tools/benchmark/ を実行し構文エラーがないことを確認してください。
+検証完了後、作成および変更したファイル群を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(benchmark): Dockerサンドボックス隔離の必須化とセキュリティ境界の厳格化"
+※注意: git add . は絶対に使用しないでください。変更対象ファイルを明示的に指定すること。

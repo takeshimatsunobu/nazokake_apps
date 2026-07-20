@@ -1,0 +1,27 @@
+【ミッション: AIの注意力に依存しないGit運用ガードレールの構築 (運用・インフラ)】
+過去の誤コミット事故の再発を防ぎ、かつAgent UX（AIの自律稼働）を阻害しないよう、.gitignoreの厳格化とRead-onlyなpre-commitフックの導入を行ってください。
+
+Step 1: .gitignore の厳格化
+プロジェクトルートの .gitignore を確認し、以下の要素が確実に除外されるよう追記・修正してください。
+・すべての仮想環境: .venv, .venv_ai, .venv_train
+・SQLite関連ファイル: *.db, *.db-wal, *.db-shm, *-wal, -shm
+・Nazo-Agentの出力物: tools/audit_reports/ 配下すべて（デッドレター等）
+・一時ファイル: _tmp など、スモークテストで生成される残骸
+・その他: .env, pycache/, *.pyc, *.log 等の標準的な除外対象
+
+Step 2: pre-commit の導入
+プロジェクトの requirements_orchestrator.txt （存在しない場合はルートの適切なrequirementsファイル）に pre-commit を追加してください。
+
+Step 3: Read-only な .pre-commit-config.yaml の作成
+プロジェクトルートに .pre-commit-config.yaml を新規作成し、以下のフックを設定してください。
+※重要: Agent UX保護のため、ファイルの自動修正は絶対に行わない設定にすること。
+・trailing-whitespace, end-of-file-fixer, check-yaml
+・check-added-large-files (args: [--maxkb=5000] など適度な制限)
+・ruff (args: [--no-fix] を必ず指定し、フォーマット書き換えを禁止)
+
+Step 4: フックのインストールと静的検証
+uv run pre-commit install を実行してフックを物理バインドしてください。その後、uv run pre-commit run --all-files を実行して現在のファイル群がフックを通過することを確認してください。
+
+Step 5: コミット
+検査完了後、.gitignore, requirements_orchestrator.txt, .pre-commit-config.yaml のみを明示的に指定してGitコミット（例: "build: Agent UXを保護したRead-only pre-commitフックの導入と.gitignoreの厳格化"）を行ってください。
+※推測による git add . は厳禁です。必ず対象ファイルパスを指定してください。

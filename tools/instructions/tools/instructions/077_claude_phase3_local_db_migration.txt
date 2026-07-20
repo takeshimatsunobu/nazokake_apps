@@ -1,0 +1,19 @@
+【ミッション: Local-First実装 - ローカルDB（SQLite）のWALモード有効化とSerialized Writerの構築】
+システムアーキテクチャ方針が「完全ローカル稼働（Local-First）」に変更されました。SQLiteの並行処理制約（SQLITE_BUSY）を回避するため、書き込みを単一プロセスに直列化する堅牢なデータアクセス層を構築してください。
+
+Step 1: 依存関係の追加
+必要なORMライブラリ（例: sqlalchemy, aiosqlite 等）を requirements_orchestrator.txt または shared_core の依存関係に追加してください。
+
+Step 2: DBスキーマとWALモードの強制 (packages/shared_core)
+packages/shared_core/nazokake_core/database.py を新設し、以下の要件を満たしてください。
+・既存の NazokakeItem スキーマにマッピングされるSQLAlchemyのテーブルモデルを定義すること。
+・SQLiteエンジン作成時、イベントリスナー等を用いて PRAGMA journal_mode=WAL; および PRAGMA synchronous=NORMAL; を強制実行させ、読み書きの並行性を確保すること。
+
+Step 3: シングルトン Serialized Writer パターンの実装
+書き込み競合を物理的に防ぐため、各ワーカー（バッチ工場やアプリ）が直接UPDATEをかけるDAOを廃止してください。
+・代わりに、DB更新リクエストを非同期キュー（asyncio.Queue 等）に受け付け、システム全体で単一の専用タスク（Serialized Writer）だけがキューを消費して直列でDBへ書き込む（INSERT/UPDATE）アーキテクチャを実装してください。
+・各ワーカーは直接書き込まず、このキューへタスクをPushするインターフェースのみを使用するように firestore_writer.py などの依存を剥がし、書き換えてください。
+
+Step 4: 静的解析とスモークテスト
+修正後、uv run ruff check --fix を実行して構文をクリーンに保ってください。
+SQLiteのDBファイルがローカルで正常に生成され、複数プロセス（または非同期タスク）から同時にPushを行っても、Serialized Writerによって競合なく直列に書き込まれることを確認するスモークテスト（Dry-Run等）を実行し、その結果を報告してください。

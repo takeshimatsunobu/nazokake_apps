@@ -1,0 +1,26 @@
+【ミッション: Epic 0 - ポイズンピル管理の監査証跡（Audit Trail）記録機構の実装】
+システムの可観測性を担保するため、ポイズンピル（DLQ）に対する操作（破棄・再試行）が行われた際に、既存データを一切破壊せず、独立した監査ログテーブルへ追記（Append-only）する機構を実装してください。
+
+Step 1: 監査ログスキーマの新設 (database.py)
+packages/shared_core/nazokake_core/database.py に、新しいORMクラス AuditLogORM を定義してください。以下のカラムを必須とします。
+・id: String (Primary Key, UUID等を格納)
+・target_item_id: String (操作対象のdoc_id, index=True)
+・actor: String (操作者識別子。現状は "admin" 等の固定文字列でも可)
+・action: String (実行アクション。例: "DISCARD_DLQ", "RETRY_DLQ")
+・reason: JSON (レイアウト破壊を防ぐため、リクエスト内容や詳細なペイロードをJSONにシリアライズして格納する)
+・created_at: String (ISO 8601形式の操作日時)
+
+Step 2: 監査ログ書き込みDAOの実装
+同ファイルに、監査ログを追記するための関数 async_append_audit_log(target_item_id, actor, action, reason_dict) を実装してください。既存の async_upsert_item 等と同様に、必ず _serialized_writer を経由させて書き込み直列化（排他制御）の制約を遵守してください。
+
+Step 3: DLQアクションとの連動 (admin.py)
+apps/evaluator/backend/api/routers/admin.py の apply_dlq_action エンドポイントを修正してください。
+async_discard_dlq_item または async_retry_dlq_item が成功した場合、直後に async_append_audit_log を呼び出し、証跡を記録してください。reasonには {"requested_action": req.action} などのペイロードを含めてください。
+
+Step 4: データ保護と安全なテーブル追加（絶対制約）
+既存のデータを保護するため、tools/init_local_db.py（既存DBの削除・再作成）は「絶対に実行しない」でください。
+代わりに、ローカル環境の SQLite ファイルに対して Base.metadata.create_all(bind=engine) を実行する一時スクリプトを作成・実行し、既存データを完全に維持したまま新設した audit_logs テーブルのみを安全に追加してください。
+
+Step 5: 静的解析とコミット
+修正後、uv run ruff check --fix tools/ apps/ packages/ を実行して構文をクリーンに保ってください。
+エンドポイントへのテストリクエスト等で監査ログが正常に記録されることを確認した後、変更したソースコード群を明示的に指定してGitコミット（例: "feat(backend): DLQ操作時の不変な監査証跡(Audit Trail)記録機構の実装"）を行ってください。git add . は絶対に使用しないでください。

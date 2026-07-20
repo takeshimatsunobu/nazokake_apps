@@ -1,0 +1,25 @@
+【ミッション: CTOエスカレーション機構とサンドボックス検証付き自動PRドラフトの実装】
+ローカルモデル（Qwen）の不確実性を検知し、クラウド上位モデル（Claude/Gemini）へ安全にエスカレーションする LangGraph ノードと、自動検証付きのPRドラフト生成機構を構築してください。
+
+Step 1: 不確実性推定と閾値の外部化
+tools/agent_graph.py およびスキーマ定義を修正してください。
+・Qwenの出力スキーマに confidence_score (float) と requires_escalation (bool) を追加してください。
+・エスカレーションを判定する閾値（例: ESCALATION_CONFIDENCE_THRESHOLD = 0.8）はハードコードせず、tools/config.py 経由で環境変数（.env）から読み込む設計としてください。
+・logprobs によるエントロピー計算ロジックを実装する場合は、必ずフィーチャートグル（ENABLE_LOGPROBS_ENTROPY=False）で初期無効化してください。
+
+Step 2: CTOノードの構築と Prompt Caching
+LangGraph に cto_node を新設し、Qwenからのエスカレーション時に遷移させてください。
+・API呼び出し時、システムプロンプトと SSoT_architecture.md を結合した「静的ブロック」の末尾に cache_control を付与し、その後に動的なエラーログやコードを配置するプロンプト設計を厳守してください。
+
+Step 3: 隔離ブランチでのサンドボックス検証とPRドラフト生成
+cto_node が修正案を生成した後、以下のフローを自動実行してください。
+
+一時ブランチ（例: escalation/issue-{timestamp}）を作成してコードをコミットする。
+
+そのブランチ上で tools/benchmark/run_benchmark.py をサブプロセスとして実行し、Dockerサンドボックス内で安全にテスト（Pytest等）を回す。
+
+ベンチマークの実行結果（メトリクスと成否）を含めた「PRドラフト（またはレビュー用レポート）」を生成し、メインプロセスを一時停止（Suspend / Exit 0）させる。
+
+Step 4: 静的解析とコミット
+実装後、uv run ruff check --fix tools/ を実行して構文エラーがないことを確認してください。
+確認完了後、追加および変更したファイル群を明示的に指定してGitコミット（例: "feat(tools): CTOエスカレーション機構とサンドボックス検証付きPRドラフトの実装"）を行ってください。推測による git add . は厳禁です。

@@ -1,0 +1,18 @@
+【ミッション: Epic 4 - データ抽出パイプラインのスケーラビリティ向上 (MinHash/LSHの導入)】
+tools/extract_dataset.py における重複排除ロジックが、O(N^2) の計算爆発を引き起こす時限爆弾（difflib）となっているため、datasketchライブラリを用いたスケーラブルな MinHash/LSH ベースの類似度判定へリファクタリングしてください。
+
+Step 1: 依存関係の追加
+requirements_orchestrator.txt に datasketch を追加してください。
+
+Step 2: 軽量なN-gram前処理とMinHash/LSHの導入
+tools/extract_dataset.py を開き、以下のロジックを実装してください。
+・テキストから空白や記号を正規表現等で除去し、文字ベースの3-gram（N=3）の集合（Set）を生成する軽量なトークナイザー関数を作成する。
+・datasketchの MinHash オブジェクトを生成し、トークンを追加してシグネチャを計算する。
+・datasketchの MinHashLSH（閾値 0.85〜0.90 等）を初期化し、抽出されたレコードを順次LSHにクエリする。類似（衝突）するものがなければLSHインデックスに追加し、出力対象とする。
+・既存の difflib.SequenceMatcher を用いた比較ロジックは完全にパージすること。
+
+Step 3: 静的解析とスモークテスト
+修正後、uv run ruff check --fix tools/extract_dataset.py を実行して構文をクリーンに保ってください。その後、一時的なテストスクリプト（または既存のスモークテスト）を用いて、類似データが正しく排除され、計算爆発なく高速に処理されることを実機確認してください。
+
+Step 4: コミット
+検証完了後、変更したファイルを明示的に指定してGitコミット（例: "perf(tools): SFT/DPOデータ抽出における重複排除をMinHash/LSHへ移行しO(N^2)の計算爆発を回避"）を行ってください。git add . は絶対に使用しないでください。

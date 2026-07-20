@@ -1,0 +1,23 @@
+【ミッション: tenacityを用いた指数的バックオフによるリトライ機構の実装 (Epic 1 防弾化)】
+複数ワーカーからの同時書き込みによる一過性の filelock.Timeout 競合を、即座のフェイルファストから「待機と再試行（指数的バックオフ）」へ変更し、AST置換の成功率を極大化してください。
+
+Step 1: 依存関係の追加
+requirements_orchestrator.txt に tenacity を追加（すでに存在する場合はスキップ）し、プロジェクトの仮想環境にインストールしてください。
+
+Step 2: ast_modifier.py の改修
+tools/ast_modifier.py の _atomic_write_text 関数に対して、tenacity を用いたリトライ機構を適用してください。
+・ 追加インポート: tenacity から retry, retry_if_exception_type, wait_exponential, stop_after_attempt をインポート。
+・ デコレータの設定:
+@retry(
+retry=retry_if_exception_type(filelock.Timeout),
+wait=wait_exponential(multiplier=1, min=1, max=10),
+stop=stop_after_attempt(5),
+reraise=True
+)
+・ 上記を _atomic_write_text 関数自体に適用してください。
+
+Step 3: 静的解析とスモークテスト
+修正後、uv run ruff check --fix tools/ast_modifier.py を実行して構文をクリーンに保ってください。
+その後、別プロセス（または別スレッド）で対象ファイルの .lock を15秒間意図的に占有するダミースクリプトを作成し、その間に _atomic_write_text が複数回待機・リトライし、最終的に Timeout 例外を正しく投げること（またはロック解放後に書き込みが成功すること）を実証するスモークテストを実行してください。
+テスト完了後、ダミースクリプトは完全に削除してください。
+また、Gitへのコミットを行う場合は、推測による git add . は厳禁です。必ず変更したファイルのみを指定してコミットしてください。

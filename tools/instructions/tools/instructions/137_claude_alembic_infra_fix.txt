@@ -1,0 +1,17 @@
+【ミッション: Alembicインフラ負債の解消（競合リスク排除とUTF-8強制）】
+アプリケーション起動時のDBマイグレーション実行において、複数プロセス起動時の競合（Race Condition）を防ぎ、Windows環境特有のエンコーディング問題をプログラムレベルで解消するラッパースクリプトを構築してください。
+
+Step 1: マイグレーションラッパーの構築 (tools/run_migrations.py)
+tools/run_migrations.py を新設し、以下の要件を満たすPythonスクリプトを実装してください。
+・エンコーディング強制: alembic.config.Config をインスタンス化し、alembic.ini を読み込む際、ConfigParserの挙動をフック（または自前で読み込んで file_config に設定）して、確実に encoding="utf-8" で処理されるようにしてください。
+・排他制御（FileLock）: filelock.FileLock を用いて、マイグレーション実行中のみ専用のロックファイル（例: migration.lock）を掴むようにしてください。ロックを獲得できたプロセスのみが alembic.command.upgrade(config, "head") を実行し、他のプロセスは待機（ウェイト）する調停ロジックを実装してください。
+・パス解決のカプセル化: 環境変数 $env:NAZOKAKE_DB_PATH に過度に依存せず、Path(file).parent 等を利用してプロジェクトルートから alembic.ini やDBのパスを動的かつ確実に解決できるように設計してください。
+
+Step 2: 起動スクリプトの修正 (run_api.ps1)
+run_api.ps1 等の起動スクリプトを開き、uv run alembic upgrade head と直接記述されている箇所を、uv run python tools/run_migrations.py の呼び出しに書き換えてください。
+
+Step 3: 静的解析とコミット
+実装後、uv run ruff check tools/ を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（tools/run_migrations.py, run_api.ps1 等）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "fix(infra): Alembicマイグレーションの物理競合回避（FileLock）とUTF-8強制を実装"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

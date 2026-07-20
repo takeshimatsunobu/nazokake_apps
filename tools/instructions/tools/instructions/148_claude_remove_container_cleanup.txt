@@ -1,0 +1,12 @@
+【ミッション: サンドボックスコンテナ内のパーミッションエラー解消（不要なクリーンアップのパージ）】
+Dockerコンテナ内で実行される tools/benchmark/container_runner.py において、権限のないディレクトリ削除によるクラッシュを防ぐため、不要なクリーンアップロジックを完全に削除してください。
+
+Step 1: クリーンアップロジックの削除
+tools/benchmark/container_runner.py を開き、main() 関数内（または終了処理）に記述されている shutil.rmtree(WORKSPACE) およびそれに関連するワークスペース削除ロジックを完全に削除（パージ）してください。
+※コンテナは --rm オプションにより実行終了時にOSによって自動破棄されるため、スクリプト内での明示的なクリーンアップは不要です。
+
+Step 2: 静的解析とコミット
+実装後、uv run ruff check tools/benchmark/container_runner.py を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（tools/benchmark/container_runner.py）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "fix(benchmark): コンテナ内のPermissionErrorを防ぐため不要なワークスペース削除ロジックをパージ"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

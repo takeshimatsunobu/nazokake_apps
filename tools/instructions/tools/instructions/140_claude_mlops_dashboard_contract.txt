@@ -1,0 +1,23 @@
+【ミッション: データコントラクトとアトミックI/Oを統合したMLOpsダッシュボードの実装】
+メインAPIを隔離した静的JSONダンプ方式（CQRS）によるダッシュボードを実装してください。その際、SREの厳格な要件（アトミック書き込み、出力前バリデーション、フロントエンドの縮退運転）を必ず満たしてください。
+
+Step 1: Pydanticスキーマ定義とアトミックジェネレーターの実装 (tools/export_metrics.py)
+tools/export_metrics.py を新規作成し、以下の要件を満たすエクスポート処理を実装してください。
+・Pydanticを用いて、出力するJSONのスキーマモデル（例: DashboardMetricsSchema）を定義し、必ず schema_version (Literal["1.0"] 等) を含めること。
+・mlops_experiments.db から直近の履歴を取得し、上記モデルに通して実行時バリデーション（Validation before Dump）をクリアしたデータのみをJSON文字列化すること。
+・出力先は apps/evaluator/frontend/public/data/metrics.json とする。
+・【絶対制約】: 必ず一時ファイル（metrics.tmp.json）へ書き出して os.fsync() でフラッシュした後、os.replace() で metrics.json へアトミックにリネームすること。
+
+Step 2: MLOpsパイプラインへの結合
+tools/mlops_pipeline_nazo.py および tools/mlops_pipeline_agent.py の実験完了時（_record_experiment呼び出し直後など）に、Step 1で作成した export_metrics() 処理を呼び出すよう配線してください。
+
+Step 3: フロントエンドのGraceful Degradation実装 (admin.html, admin.js)
+・admin.html に、MLOps推移グラフ（Chart.js等）を描画するためのキャンバス領域と、エラー表示用コンテナを追加してください。
+・admin.js に、/data/metrics.json を直接フェッチしグラフを描画する処理を追加してください。
+・【絶対制約】: fetchしたJSONの schema_version を最初に検証し、"1.0"（または対応バージョン）でない場合はパース・描画を直ちに中止し、DOMの textContent を用いて「システムの更新が必要です」というメッセージをエラー表示用コンテナへ安全に出力（XSS防御）すること。
+
+Step 4: 静的解析と厳密なコミット
+実装後、Python側は uv run ruff check tools/ を（--fixなしで）、フロントエンド側は npm run type-check（jsconfig.jsonがある場合）を実行し、エラーがないことを確認してください。
+確認後、追加・変更したファイル群を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(mlops): データコントラクトとアトミックI/Oを統合した静的JSONダッシュボードの実装"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

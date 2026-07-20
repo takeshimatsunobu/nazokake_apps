@@ -1,0 +1,18 @@
+【ミッション: サイドカーコンテナによるMLOpsスケジューラーのIaC組み込み】
+ホストOSのcron等に依存するアンチパターンを排除し、MLOpsパイプラインの自動起動トリガーを docker-compose.yml 内部のサイドカーコンテナとしてカプセル化してください。
+
+Step 1: mlops-scheduler サービスの定義
+infra/verification_env/docker-compose.yml を編集し、新規サービス mlops-scheduler を追加してください。
+・コンテナの command として、シェルスクリプトの無限ループ（例: 1時間ごとの sleep）を用いて tools/mlops_trigger.py を定期実行するロジックを記述してください。
+
+Step 2: コンテナ実行要件（リソースと権限）のバインド
+mlops_trigger.py から呼び出されるMLOpsパイプラインがコンテナ内で正常に動作するよう、以下の要件を docker-compose.yml の mlops-scheduler サービス定義に必ず含めてください。
+・ホストのソースコードおよび .venv への適切なボリュームマウント。
+・NVIDIA GPUパススルー設定（ML学習・評価のため）。
+・Rootless Dockerソケットのマウント（ベンチマークサンドボックス実行のため）。
+
+Step 3: 静的解析とコミット
+実装後、YAMLの構文が正しいことを確認してください。
+検証完了後、変更したファイル（infra/verification_env/docker-compose.yml 等）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(infra): MLOps自動起動トリガーをサイドカーコンテナとしてIaCへ統合"
+※絶対制約: git add . は厳禁です。必ず変更対象ファイルパスを個別に指定すること。

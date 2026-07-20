@@ -1,0 +1,18 @@
+【ミッション: 全コードダンプの廃止とTree-based Contextアーキテクチャの導入 (FinOps)】
+肥大化したAPIコストを根本から削減し、同時にLLMの自律解決能力を高めるため、全ソースコードの送信を廃止し、「ディレクトリツリー（地図）」と「読み取りツール（On-demand Read）」を提供するアーキテクチャへ移行してください。
+
+Step 1: ディレクトリツリー生成機能の実装
+tools/nazo_agent.py に、プロジェクトのディレクトリツリーを文字列として生成するヘルパー関数（例: generate_directory_tree）を実装してください。
+・対象: apps/, packages/, tools/ 配下。
+・除外: .venv系の仮想環境、pycache、node_modules、.git などの不要なディレクトリや、バイナリファイル（.db, .pyc等）。
+
+Step 2: プロンプトとコンテキスト注入の書き換え
+tools/nazo_agent.py の推論フェーズ（phase2_claude_tool_augmented 等）のシステムプロンプト構築部を以下のように改修してください。
+・all_source_code.txt などの全コードダンプ読み込み・注入ロジックを完全に削除してください。
+・代わりに、Step 1の generate_directory_tree() の結果を「プロジェクトのディレクトリツリー（地図）」としてプロンプトに動的注入してください。
+・システムプロンプトに「提供されたエラーログとディレクトリツリーを確認し、エラー解決に必要なソースコードは read_file_section ツール等を用いて自律的に取得せよ」という指示を明記してください。
+
+Step 3: 静的解析とスモークテスト
+修正後、uv run ruff check --fix tools/nazo_agent.py を実行して構文をクリーンに保ってください。
+その後、適当なダミーのエラーログを用いてドライラン（テスト実行）を行い、Claudeが「全コードを知らない状態」からでも自律的にファイル読み取りツールを呼び出し（Tool Use）、エラー原因の特定に進めることを確認してください。
+テスト完了後、変更した tools/nazo_agent.py を明示的に指定してGitにコミット（例: "perf(tools): 全コードダンプを廃止しTree-based Contextアーキテクチャへ移行"）してください。推測による git add . は厳禁です。

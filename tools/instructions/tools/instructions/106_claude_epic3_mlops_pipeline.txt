@@ -1,0 +1,27 @@
+【ミッション: Epic 3 - MLOps完全自動パイプラインとVRAM防弾化の実装】
+データ抽出からモデル評価までを全自動で繋ぐMLOpsパイプラインを構築してください。その際、OOM（VRAM枯渇）を完全に防ぐOSレベルのクリーンアップ機構と、モデルのデプロイを判定する定量評価ゲートを必須要件とします。
+
+Step 1: 学習スクリプトへの Child Suicide 機構の組み込み
+tools/train_unsloth.py （または学習用スクリプト）を作成・修正し、引数として --ppid を受け取るようにしてください。
+スクリプト起動時にデーモンスレッドを立ち上げ、数秒おきに psutil.pid_exists(ppid) を確認し、親プロセスが消失した場合は直ちに os._exit(1) を呼び出してVRAMを解放する自爆機構を実装してください。
+
+Step 2: MLOpsオーケストレーターの構築
+tools/mlops_pipeline.py を新規作成し、以下の順序で直列実行するパイプラインを構築してください。
+
+Pre-flight GPU Cleanup: subprocess等で nvidia-smi --query-compute-apps=pid --format=csv,noheader を実行し、現在VRAMを占有しているPIDを取得。自身以外の不要なPythonプロセスであれば、taskkill /PID  /F コマンドを発行してOSレベルで強制終了させる。
+
+データ抽出: tools/extract_dataset.py をサブプロセスで実行。
+
+学習の実行: Step 1の学習スクリプトを、現在の自身のPIDを --ppid として渡してサブプロセスで実行（※今回は実際のUnslothではなく、数秒スリープして終了するモック処理で構いません）。
+
+自動評価（定量ゲート）: tools/benchmark/run_benchmark.py を実行してメトリクスJSONを取得。以下の基準で合否を判定する。
+・Success Rate Delta >= 0 （現行ベースラインを下回らないこと）
+・Code Complexity 増加率 < 10% （ASTノード等の肥大化を許容しない）
+ゲートを通過した場合のみ、「学習成功およびデプロイ承認」として正常終了する。
+
+Step 3: 静的解析とドライラン
+実装後、ruff check --fix tools/ を実行してください。
+その後、tools/mlops_pipeline.py をドライラン実行し、Pre-flight Cleanupの動作、サブプロセスの正常完走、および定量評価ゲートによる判定が機能していることを標準出力ログで確認してください。
+
+Step 4: コミット
+検証完了後、作成・変更したスクリプトファイルのみを明示的に指定してGitコミット（例: "feat(tools): VRAMクリーンアップ機構と定量ゲートを備えたMLOps自動パイプラインの構築"）を行ってください。git add . は絶対に使用しないでください。

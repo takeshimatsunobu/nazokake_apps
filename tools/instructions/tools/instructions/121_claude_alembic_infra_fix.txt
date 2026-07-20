@@ -1,0 +1,17 @@
+【ミッション: Alembicインフラ負債の解消（競合排除とUTF-8強制）】
+Alembicのマイグレーション実行時における並行処理の競合（Race Condition）と、設定ファイルのOSロケール依存によるエンコーディングエラーを解決するラッパースクリプトを実装してください。
+
+Step 1: マイグレーション実行ラッパーの作成
+tools/run_migrations.py を新規作成してください。
+・filelock.FileLock を用いて SQLiteデータベースファイルに対する物理ロックを取得し、ロック獲得中のみマイグレーションを実行する調停ロジックを実装すること。
+・alembic.config.Config をプログラム的にインスタンス化する際、標準のConfigParserによるOSロケール（cp932等）依存を回避するため、明示的に encoding="utf-8" を指定して alembic.ini をパースする処理を構築すること。
+・マイグレーション実行コマンド（command.upgrade(config, "head")）を呼び出すこと。
+
+Step 2: 起動スクリプトの改修
+run_api.ps1 等の起動スクリプトに記述されている alembic upgrade head の直接呼び出しを削除し、代わりに uv run python tools/run_migrations.py を呼び出すように変更してください。
+
+Step 3: 静的解析とコミット
+修正後、uv run ruff check --fix tools/ を実行して構文エラーがないことを確認してください。
+検証完了後、作成および変更したファイル群（tools/run_migrations.py, run_api.ps1 等）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: fix(infra): Alembicの競合排除とUTF-8強制のプログラム的解決
+※注意: 変更ファイルのみを明示的に指定すること。git add . は絶対に使用しないでください。

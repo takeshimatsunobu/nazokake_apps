@@ -1,0 +1,17 @@
+【ミッション: Rootless Dockerのsubuidマッピングに伴うEPERM（削除不能エラー）の解消】
+コンテナ内の非rootユーザー（sandboxuser）が作成したファイルが、ホスト側で高位のsubuidとしてマッピングされ、tempfileのクリーンアップ時にPermissionError（EPERM）を引き起こす事象を、終了直前の chown リストアによって解決してください。
+
+Step 1: 権限リストア用ヘルパーの追加
+tools/benchmark/run_benchmark.py に _fix_volume_permissions(*dirs: Path) 関数を追加してください。
+・引数のディレクトリをコンテナ内の /mnt/1, /mnt/2... のようにマウントし、--entrypoint chown を指定して -R 0:0 /mnt/1 /mnt/2... を実行する使い捨てコンテナ（docker run --rm）を起動するロジックを実装してください。
+・Rootless環境ではコンテナ内root(0:0)がホストの実行ユーザーにマップされるため、これで所有権がリストアされます。
+
+Step 2: クリーンアップ直前でのリストア実行
+run_fixture() および run_target_specific_pytest() 内の with tempfile.TemporaryDirectory() ブロック内部に try...finally ブロックを新設してください。
+・finally ブロック内で、一時ディレクトリが破棄される直前に _fix_volume_permissions() を呼び出し、ディレクトリ内の全ファイルの所有権をホストへ戻してください。
+
+Step 3: 静的解析とコミット
+実装後、uv run ruff check tools/benchmark/run_benchmark.py を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（tools/benchmark/run_benchmark.py）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "fix(benchmark): Rootless Dockerのsubuid起因によるEPERMを防ぐため終了時にchown 0:0で所有権をリストア"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

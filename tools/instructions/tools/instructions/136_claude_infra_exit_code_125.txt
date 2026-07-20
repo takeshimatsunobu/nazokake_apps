@@ -1,0 +1,13 @@
+【ミッション: サンドボックスインフラエラーの終了コード分離（シグナル明確化）】
+Dockerコンテナ（インフラ）の起動不能と、AI生成コードのPytest失敗（アプリケーションエラー）を監視システムが明確に区別できるよう、インフラエラーの終了ステータスをDocker標準の規約（125）へ変更してください。
+
+Step 1: 終了コードの是正 (tools/benchmark/run_benchmark.py)
+tools/benchmark/run_benchmark.py を開き、_require_docker_or_die() 関数など、Dockerの欠如やデーモンの非稼働を検知して異常終了（Hard Fail）させている箇所の sys.exit(1) を sys.exit(125) に変更してください。
+※他の場所でも「Dockerインフラ起因による起動前の致命的エラー」で sys.exit(1) している箇所があれば、同様に 125 に統一してください。
+※ASTによる安全な置換、または正確な正規表現・手動書き換えを行ってください。
+
+Step 2: 静的解析とコミット
+実装後、uv run ruff check tools/ を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（tools/benchmark/run_benchmark.py）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "fix(benchmark): Docker不在等のインフラエラー終了コードを125へ変更し監視シグナルを明確化"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

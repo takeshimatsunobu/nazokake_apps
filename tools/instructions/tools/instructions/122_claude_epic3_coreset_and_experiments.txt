@@ -1,0 +1,31 @@
+【ミッション: Epic 3 拡張 - コアーセット・リプレイとMLOps実験管理DBの実装】
+破滅的忘却を防ぐためのデータ層化抽出（コアーセット・リプレイ）と、学習履歴を不変ログとして記録する独立した実験管理データベースを構築してください。
+
+Step 1: 実験管理DB（mlops_experiments.db）の構築
+tools/mlops_common.py または独立したモジュール内に、アプリ本体のDBとは物理的に分離した mlops_experiments.db を初期化するロジックを実装してください。
+以下のスキーマを持つ mlops_experiments テーブルを作成します（CREATE TABLE IF NOT EXISTS）。
+・id (INTEGER PRIMARY KEY)
+・timestamp (TEXT)
+・pipeline_type (TEXT: "nazo" or "agent")
+・dataset_size (INTEGER)
+・coreset_ratio (REAL)
+・git_commit_hash (TEXT)
+・base_model (TEXT)
+・success_rate (REAL)
+・latency (REAL)
+・regression_rate (REAL)
+
+Step 2: 層化抽出法（Stratified Sampling）によるコアーセットの実装
+tools/extract_dataset.py を改修し、以下のロジックを組み込んでください。
+・未学習の最新データから 85% を抽出。
+・過去の学習済みデータ（is_golden_data=True または高評価データ）から 15% のコアーセットを抽出する際、スコア分布やトピック（odai）の多様性が担保されるよう「層化抽出法」を用いてサンプリングする。
+・抽出比率（CORESET_RATIO = 0.15）は定数としてコード上部または環境変数で管理可能にする。
+
+Step 3: パイプライン完了時の不変ログ記録
+tools/mlops_pipeline_nazo.py および tools/mlops_pipeline_agent.py の評価ステップ（evaluate_model.py や run_benchmark.py）完了後、その評価メトリクスと今回の学習データ抽出パラメータ（件数、比率等）を結合し、Step 1で作成した mlops_experiments テーブルへINSERTする処理を追加してください。
+
+Step 4: 静的解析とコミット
+修正後、uv run ruff check --fix tools/ を実行して構文エラーがないことを確認してください。
+検証完了後、作成および変更したファイル群を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(mlops): 層化抽出によるコアーセット・リプレイと実験履歴DBの導入"
+※注意: git add . は絶対に使用しないでください。変更対象ファイルを明示的に指定すること。

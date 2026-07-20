@@ -1,0 +1,17 @@
+【ミッション: 外部ステートファイルと決定論的Pre-flight Checkツールの導入】
+AI自身の推論に依存したタスク管理（ハルシネーションの温床）をパージし、決定論的なステートマシンによるタスクの多重実行ブロック機構を構築してください。
+
+Step 1: 外部ステートファイルの初期化
+tools/tasks_state.json を新設し、空のJSONオブジェクト（{}）として初期化してください。このファイルは今後、各タスクの実行状態（todo, in_progress, done）と完了時のコミットハッシュを記録するSSoTとなります。
+
+Step 2: Pre-flight Checkツールの実装
+tools/preflight_check.py を新設し、以下のロジックを実装してください。
+・引数としてタスクID（例: "task_180"）を受け取る。
+・tools/tasks_state.json を読み込み、指定されたタスクのステータスが "done" になっている場合は、「すでに完了済み」と標準出力に警告を出した上で sys.exit(1) を発行し、プロセスを強制終了する。
+・未完了、またはタスクIDが存在しない場合は sys.exit(0) で正常終了する。
+
+Step 3: 静的解析と厳密なコミット
+実装完了後、uv run ruff check tools/ を実行し構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、新設した tools/tasks_state.json と tools/preflight_check.py を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(infra): タスク状態の一元管理(SSoT)とPre-flight Checkによる多重実行ブロックの導入"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを個別に指定すること。

@@ -1,0 +1,22 @@
+【ミッション: CQRSに基づく静的JSONダンプ方式とアトミックI/OによるMLOpsダッシュボードの実装】
+メインAPIサーバーを隔離し、バックグラウンドで抽出した実験履歴を静的JSONとしてフロントエンドに直接提供するダッシュボードを構築してください。UIクラッシュを防ぐため、ファイル操作は必ずアトミックに行うことが絶対要件です。
+
+Step 1: アトミックなJSONジェネレーターの作成 (tools/export_metrics.py)
+tools/export_metrics.py を新設してください。
+・mlops_experiments.db から直近（例: 30件）の実験レコードを取得し、時系列順に整形してください。
+・出力先は apps/evaluator/frontend/public/data/metrics.json とします（ディレクトリが存在しない場合は作成）。
+・【絶対制約】: ファイル書き込みは、まず metrics.tmp.json などの一時ファイルに行い、os.fsync() でディスクへの書き込みを完全に保証した直後に、os.replace() を用いて目的の metrics.json へアトミックにすげ替える設計としてください。
+
+Step 2: MLOpsパイプラインへの結合 (tools/mlops_pipeline_nazo.py, tools/mlops_pipeline_agent.py)
+両MLOpsパイプラインの完了ステップ（結果を記録した直後）において、Step 1で作成した export_metrics_to_json() 相当の処理を呼び出し、メトリクスの静的ダンプを常に最新化するようフックを配線してください。
+
+Step 3: フロントエンドUIの実装と分離 (admin.html, admin.js)
+・admin.html に、MLOps推移グラフ（Chart.js等）を描画するための canvas コンテナ（例: mlops-chart）と、データがない場合のEmptyステート要素を追加してください。
+・admin.js に、APIを経由せず直接 fetch('/data/metrics.json') を実行し、取得したデータをグラフとして描画する処理（例: loadMlopsMetrics, renderMlopsChart）を実装してください。
+・既存の initAdmin() 等の初期化フローに、このグラフ描画呼び出しを組み込んでください。
+
+Step 4: 静的解析とコミット
+実装完了後、Python側は uv run ruff check tools/ を（--fixなしで）、フロントエンド側は npm run type-check を実行し、エラーがないことを確認してください。
+検証完了後、変更および追加したファイル群を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(admin): CQRSとアトミックI/Oに基づく静的JSONダンプ方式のMLOpsダッシュボード実装"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを個別に指定すること。

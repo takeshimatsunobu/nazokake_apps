@@ -1,0 +1,20 @@
+【ミッション: Dockerサンドボックス検証の汎用化とセキュリティ・タイムアウトの厳格化】
+CTOモデルが生成した隔離ワークツリーに対して、対象ファイル固有のPytestを実行できるよう run_benchmark.py を拡張し、同時にコンテナ実行時のセキュリティ要件（リードオンリー対策とハードタイムアウト）を満たしてください。
+
+Step 1: run_benchmark.py の拡張と :ro マウント対策
+tools/benchmark/run_benchmark.py を改修し、以下の機能を追加してください。
+・--target-worktree  引数を受け取り、指定された場合はそのパスをコンテナに /workspace:ro でマウントする。
+・【絶対制約】:ro マウント時の PermissionError を防ぐため、docker run 実行時に環境変数 -e PYTHONDONTWRITEBYTECODE=1 を付与し、実行コマンドを pytest -p no:cacheprovider -v に固定すること。
+
+Step 2: ハードタイムアウト機構の導入
+docker run を呼び出すサブプロセス実行（subprocess.run）に、timeout=300 （300秒）を明示的に設定してください。
+・subprocess.TimeoutExpired をキャッチした場合、システムエラーではなく「Timeout Failure（AI生成コードのパフォーマンス異常）」としてレポートJSONに記録し、正常に処理を継続（レポート作成）させること。
+
+Step 3: agent_graph.py からの呼び出し配線
+tools/agent_graph.py の sandbox_verify_node において、_run_benchmark_summary を呼び出す際、現在隔離しているワークツリーのパス（worktree_path）を引数として渡し、--target-worktree に指定して実行するよう改修してください。
+
+Step 4: 静的解析とコミット
+実装後、uv run ruff check tools/ を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（tools/benchmark/run_benchmark.py, tools/agent_graph.py 等）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(tools): Dockerサンドボックス検証の汎用化とハードタイムアウト保護機構の導入"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

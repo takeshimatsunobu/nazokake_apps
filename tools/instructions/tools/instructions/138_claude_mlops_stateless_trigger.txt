@@ -1,0 +1,17 @@
+【ミッション: MLOps起動トリガーのステートレス化（ポーリングデーモンの廃止）】
+クラウドネイティブおよびThe Twelve-Factor Appの原則に従い、MLOpsパイプラインの起動トリガーを常駐型（デーモン）からステートレスなワンショット実行スクリプトへリファクタリングしてください。
+
+Step 1: 常駐ロジックのパージ (tools/mlops_trigger.py)
+tools/mlops_trigger.py を開き（存在しない場合は作成し）、while True や time.sleep() を用いた無限ループ（ポーリング）のロジックを完全に削除してください。
+
+Step 2: ワンショット評価とパイプラインのキック
+スクリプトが呼ばれた際に「1度だけ」以下の評価を行い、完了後に即時終了（Exit 0）する設計に書き換えてください。
+・条件A（なぞかけ進化）: 未学習のなぞかけDPO/SFTデータが閾値（例: 500件）に達しているか確認し、達していれば tools/mlops_pipeline_nazo.py を実行する。
+・条件B（Agent自己進化）: tools/audit_reports/ 配下の成功修復ログ（または対応するDBレコード）が閾値（例: 50件）に達しているか確認し、達していれば tools/mlops_pipeline_agent.py を実行する。
+・閾値は tools/config.py から読み込む設計とし、ハードコードは避けてください。
+
+Step 3: 静的解析とコミット
+実装後、uv run ruff check tools/ を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（tools/mlops_trigger.py, tools/config.py 等）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "refactor(mlops): MLOps起動トリガーを常駐型からステートレスなワンショット実行へ修正"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

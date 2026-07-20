@@ -1,0 +1,29 @@
+【ミッション: Epic 2 - Nazo-Agentベンチマーク環境とサンドボックスの構築】
+Nazo-Agentの自己修復能力を定量評価するため、ホストOS（LLM推論）と隔離されたDocker環境（コード適用・テスト実行）を分離したベンチマークテストパイプラインを構築してください。
+
+Step 1: サンドボックス環境（Docker）の定義
+tools/benchmark/ ディレクトリを新設し、その中に Dockerfile を作成してください。
+・ベースイメージは Python 3.11-slim 等を使用。
+・ホスト側の tools/, packages/, apps/ を Read-only でコンテナにマウントし、テスト対象ファイルのみをコンテナ内の一時ディレクトリ（ワークスペース）にコピーして操作・テストできる構成にしてください。
+
+Step 2: ベンチマーク実行スクリプトの作成
+tools/benchmark/run_benchmark.py を作成し、以下の要件を満たすテストランナーを実装してください。
+・意図的なバグ（SyntaxError、型エラー、ロジックエラー等）を注入したダミーファイル群（fixtures）を用意する。
+・Nazo-Agentの推論機能（tools/nazo_agent.py）をホスト側で呼び出し、修復タスク（AST置換JSON）を生成させる。
+・生成されたタスクをDockerコンテナ内で適用し、Pytestを実行する。
+
+Step 3: 拡張メトリクスの計測と記録
+テスト実行結果から以下の4指標を計算し、tools/benchmark/reports/ ディレクトリにJSONとして出力させてください。
+
+Success Rate（修復後のPytestがPassしたか）
+
+Latency（タスク開始からテスト完了までのミリ秒）
+
+Regression Rate（修正対象以外の正常なテストケースが失敗に転じていないか）
+
+Code Complexity（ASTノード数の増減、またはファイル行数の肥大化率）
+
+Step 4: 静的解析とドライラン
+実装後、ruff check --fix tools/benchmark/ を実行してください。その後、ダミーの単純なエラーファイルに対して run_benchmark.py を1件だけ実行し、コンテナ内でのPytest実行とメトリクスJSONの生成が成功することを確認してください。
+
+確認後、追加したファイル群を明示的に指定してGitコミット（例: "feat(tools): Nazo-Agentのベンチマークテスト環境とサンドボックスの構築"）を行ってください。git add . は絶対に使用しないでください。

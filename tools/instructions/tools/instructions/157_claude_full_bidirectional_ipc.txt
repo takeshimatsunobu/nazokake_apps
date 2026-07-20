@@ -1,0 +1,18 @@
+【ミッション: 双方向IPC（Stdin/Stderr）によるマウント完全廃止とアーキテクチャ回帰】
+入力側の権限エラーに対して、バインドマウントを残したままパーミッションを緩和するアプローチはセキュリティとアーキテクチャの退行です。SREの絶対要件に基づき、入力側マウントを全廃し、標準入出力を用いた完全な双方向プロセス間通信（IPC）へ移行してください。
+
+Step 1: ホスト側（run_benchmark.py）のStdinストリーム注入
+tools/benchmark/run_benchmark.py を開き、以下の設計に置き換えてください。
+・tempfileを用いた task.json のディスク書き出し処理、および docker run コマンドからの -v {task_tmp_dir}:/mnt/task:ro マウント指定を完全に削除する。
+・タスクの辞書データをJSON文字列化し、subprocess.Popen の stdin=subprocess.PIPE を通じて、コンテナプロセスの標準入力へ直接ストリーム注入（proc.stdin.write および proc.stdin.close()）するアーキテクチャに変更する。
+
+Step 2: コンテナ側（container_runner.py）のStdinからのデータ受信
+tools/benchmark/container_runner.py を開き、以下の設計に置き換えてください。
+・引数（ファイルパス）からタスクデータ（task.json）を読み込むロジックを完全に廃止する。
+・代わりに sys.stdin.read() を使用して、標準入力から直接タスクのJSONデータを受け取り、パースする構造へリファクタリングする。
+
+Step 3: 静的解析とコミット
+実装後、uv run ruff check tools/ を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（run_benchmark.py, container_runner.py）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "refactor(benchmark): 入力マウントを廃止しStdin/Stderrによる完全な双方向IPCへ移行"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

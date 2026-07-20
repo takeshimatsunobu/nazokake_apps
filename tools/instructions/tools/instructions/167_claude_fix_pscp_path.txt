@@ -1,0 +1,2 @@
+【ミッション: Windows pscp環境におけるSCP転送先のパス解決エラーの決定論的修正】Windows環境の gcloud compute scp（pscp.exe）において、宛先パスの ~/ がシェル展開されずクラッシュするバグが発生しています。tools/deploy/run_verification_server.ps1 内の gcloud compute scp コマンド（Invoke-GcloudWithRetry ブロック内）の宛先指定を修正してください。この際、「宛先ディレクトリを省略してデフォルトのホームディレクトリに依存する設計」はIaCの決定論的原則に反するため禁止します。変更前: "${InstanceName}:~/source.zip"
+変更後: "${InstanceName}:/home/takes/source.zip" （※明示的な絶対パスによる指定）修正後、PowerShellの構文エラーがないことを確認し、変更した run_verification_server.ps1 をコミットしてください。※絶対制約: git add . は厳禁です。変更したファイルのみをコミットすること。

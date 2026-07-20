@@ -1,0 +1,13 @@
+【ミッション: コンテナ内の copytree メタデータ権限エラー解消】
+コンテナ内で fixture を /workspace にコピーする際、パーミッションなどのメタデータコピーによる PermissionError を防ぐため、データ実体のみをコピーするように修正してください。
+
+Step 1: container_runner.py の copytree の修正
+tools/benchmark/container_runner.py を開き、main() 関数内の shutil.copytree 呼び出し部分を改修してください。
+・copy_function=shutil.copy 引数を追加し、メタデータのコピー（デフォルトの shutil.copy2 の挙動）を無効化する。
+例: shutil.copytree(args.fixture_dir, WORKSPACE, dirs_exist_ok=True, copy_function=shutil.copy)
+
+Step 2: 静的解析とコミット
+実装後、uv run ruff check tools/benchmark/container_runner.py を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（tools/benchmark/container_runner.py）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "fix(benchmark): copytree実行時のメタデータコピーを無効化しPermissionErrorを回避"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

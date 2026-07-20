@@ -1,0 +1,25 @@
+【ミッション: MLOps推移ダッシュボードの実装 (静的JSONアーキテクチャ)】
+メインAPIを汚染することなく、MLOpsパイプラインの実行結果（進化の軌跡）を管理画面上で可視化するため、静的JSONダンプ機構とフロントエンドでのフェッチ・描画処理を実装してください。
+
+Step 1: メトリクスダンプ関数の実装
+tools/mlops_experiments_db.py に export_metrics_to_json() を追加してください。
+・mlops_experiments テーブルから直近30件程度の履歴を抽出する。
+・抽出結果を、apps/evaluator/frontend/public/mlops_metrics.json として出力（上書き保存）する。
+・パス解決はプロジェクトルートから確実に行ってください。
+
+Step 2: MLOpsパイプラインへのフック追加
+tools/mlops_pipeline_nazo.py および tools/mlops_pipeline_agent.py を修正し、パイプラインの最終ステップ（record_experiment の直後）で Step 1 の export_metrics_to_json() を必ず呼び出すようにしてください。
+
+Step 3: フロントエンドUIの改修 (HTML)
+apps/evaluator/frontend/public/admin.html の適切なセクション（例: 既存のメトリクス表示領域付近）に、MLOpsダッシュボード用のコンテナ（div および canvas タグ、id="mlops-chart" 等）を追加してください。
+
+Step 4: フロントエンド描画ロジックの追加 (JavaScript)
+apps/evaluator/frontend/public/admin.js に以下の処理を実装してください。
+・/mlops_metrics.json を fetch して取得する。
+・取得したデータを元に、Chart.js を使用して折れ線グラフを描画する（例: 横軸に timestamp、縦軸に success_rate や code complexity 関連のメトリクス）。
+・DOMの初期化処理（initAdmin等）の際に描画関数が呼び出されるよう配線する。
+
+Step 5: 静的解析とコミット
+実装後、バックエンド側は uv run ruff check --fix tools/ を、フロントエンド側は npm run type-check（apps/evaluator/frontend内）を実行してエラーがないことを確認してください。
+確認完了後、追加・変更したファイル群を明示的に指定してGitコミット（例: "feat(admin): 静的JSONフェッチによるMLOps推移ダッシュボードの実装"）を行ってください。
+※注意: git add . は絶対に使用しないでください。変更対象ファイルを個別に指定すること。

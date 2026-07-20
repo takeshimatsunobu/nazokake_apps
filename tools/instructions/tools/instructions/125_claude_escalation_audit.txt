@@ -1,0 +1,16 @@
+【ミッション: エスカレーション機構の静的監査とSSoT記述の精緻化】
+SSoT_architecture.md の「6. Autonomous Repair & Escalation Loop」セクションをアップデートするにあたり、現在のコードベースの生の実態を調査し、より精緻なドキュメント記述案と実装ギャップのレポートを作成してください。
+※重要: 本タスクは調査・監査のみです。いかなるコードの修正・書き換えも絶対に実行しないでください。
+
+Step 1: 現在の実装状態の静的解析
+以下のファイル群を読み込み、CTOエスカレーション機構に関する現在の実装ファクトを抽出してください。
+・tools/ast_modifier.py : Pydanticスキーマ（confidence_score, requires_escalation 等の有無と型定義）。
+・tools/agent_graph.py : LangGraphのステートマシン（Hot Loopの構造、CTOノードへのルーティング条件、サーキットブレーカーの実装状況）。
+・tools/nazo_agent.py : Git Worktree を用いた隔離ブランチ（PRドラフト生成）およびサンドボックス検証の現在のコード実装状況。
+
+Step 2: SSoT記述の精緻化とギャップレポートの出力
+Step 1の解析結果に基づき、以下の2点を含むMarkdownレポートをターミナル（または一時ファイル）に出力してください。
+
+【精緻化されたSSoT記述案】: ユーザーが提示した「6. Autonomous Repair & Escalation Loop（不確実性の推定、CTO Node、PR Draft Generation & 隔離検証）」の草案を、実コードの変数名や仕様に即してより解像度高く、AIが絶対制約としてパースしやすい形にリライトしたテキスト。
+
+【アーキテクチャのギャップとTODO】: 現在の実装と理想のSSoT記述案との間に存在する不足部分（例：Git Worktreeの未実装部分、サンドボックス自動テストの欠落など）を洗い出したTODOリスト。

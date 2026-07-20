@@ -1,0 +1,21 @@
+【ミッション: CQRSに基づく静的JSONダンプ方式によるMLOps推移ダッシュボードの実装】
+本番APIサーバー（FastAPI）とMLOps分析環境の依存を完全に断ち切るため、実験データベース（mlops_experiments.db）から静的JSONをダンプし、フロントエンドが直接それを読み込むダッシュボードを実装してください。
+
+Step 1: アトミックなJSONジェネレーターの作成
+tools/export_metrics.py を新規作成し、以下の仕様で実装してください。
+・mlops_experiments.db に接続し、直近100件の実験履歴（Loss値、Success Rate、Latency、Code Complexity等）をクエリする。
+・取得したデータをJSON文字列化し、一時ファイル（例: public/data/metrics.tmp.json）へ書き出す。
+・os.fsync を用いてディスクへの書き込みを確実にした直後、os.replace を用いて目的のファイル（public/data/metrics.json）へアトミックにリネーム（すげ替え）する。※Race ConditionによるUIクラッシュ防止のため必須要件。
+
+Step 2: MLOpsパイプラインへの結合
+tools/mlops_pipeline_nazo.py および tools/mlops_pipeline_agent.py のPost-run（全処理成功後の最終ステップ）において、Step 1で作成したジェネレーター（export_metrics.py）を自動実行するようにオーケストレーションを改修してください。
+
+Step 3: フロントエンドダッシュボードの完全分離
+管理者向け画面（apps/evaluator/frontend/public/admin.html および admin.js、または既存の専用UI）を改修してください。
+・FastAPIのエンドポイント（/api/admin/metrics 等）へのリクエストを完全に廃止する。
+・Step 1でダンプされた静的ファイル（/data/metrics.json）を直接 fetch() で読み込み、Chart.js 等を用いて時系列推移グラフを描画するロジックへ置き換える。
+
+Step 4: 静的解析と厳密なコミット
+実装後、uv run ruff check --fix tools/ apps/ を実行して構文エラーを解消してください。
+検証完了後、変更・新規作成したファイルのみを明示的に指定してGitコミットを行ってください（例: "feat(mlops): CQRS原則に基づく静的JSONダンプ方式のダッシュボード実装"）。
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

@@ -1,0 +1,19 @@
+【ミッション: 監査証跡の可視化と破壊的操作のアトミック化】
+ポイズンピル（DLQ）に対する操作と監査ログの記録をアトミックなトランザクションとして統合し、フロントエンドにXSS耐性のある監査証跡ビューを実装してください。
+
+Step 1: バックエンドのトランザクション統合 (database.py)
+DLQの破棄・再試行に関する関数（async_discard_dlq_item 等）を改修し、対象レコードのステータス更新と、async_append_audit_log 相当の処理を、単一の async with session.begin(): ブロック内で実行する設計に変更してください。いずれかが失敗した場合は必ずロールバックされるようにしてください。
+
+Step 2: 監査証跡取得APIの新設 (admin.py)
+GET /api/admin/audit_logs エンドポイントを新設してください。
+データベースから audit_logs テーブルのレコードを取得し、作成日時の降順（ORDER BY created_at DESC）で最大100件（LIMIT 100）を返すように実装してください。
+
+Step 3: フロントエンドUIの実装とXSS防御 (admin.html, admin.js)
+・admin.html に、監査証跡（Audit Logs）を表示するための新しいセクション（テーブル等）を追加してください。
+・admin.js に、GET /api/admin/audit_logs からデータをフェッチし、画面に描画するロジックを実装してください。
+・【絶対制約】データのバインディング時には innerHTML や insertAdjacentHTML を絶対に使用しないでください。必ず document.createElement() を用いて要素を生成し、element.textContent を使用してデータを挿入してください。
+
+Step 4: 静的解析とコミット
+実装後、uv run ruff check tools/ apps/ packages/ を実行し、構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（database.py, admin.py, admin.html, admin.js 等）を明示的に指定してGitコミットを行ってください。
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

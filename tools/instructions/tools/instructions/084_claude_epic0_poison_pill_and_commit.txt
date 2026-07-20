@@ -1,0 +1,19 @@
+【ミッション: 既存バグの修正・コミット確定と、ポイズンピル対策の実装 (Epic 0 拡張)】
+UIのLocal-First化の成果を安全に確定させた後、同期ワーカーに「永遠に失敗し続ける不正データ（ポイズンピル）」を隔離する仕組みを構築してください。
+
+Step 1: admin.py のキー衝突バグ修正とコミット確定
+・apps/evaluator/backend/api/routers/admin.py の apply_human_action における {"status": "success", ui_updated} のキー衝突を修正してください（例: APIのステータスキーを "api_status" に変更する、またはデータを "data" キーの下にネストするなど、フロントエンドの期待する形に合わせて安全に分離する）。
+・修正および静的解析（ruff check）が通過したら、UIルーターのLocal-First化の成果を含め、現在作業ツリーにあるすべての変更を以下のコマンドでコミットしてください。
+git add .
+git commit -m "feat(evaluator): UIルーターの完全Local-First化とFirestore依存の排除"
+
+Step 2: ポイズンピル対策スキーマの追加 (packages/shared_core)
+・database.py の NazokakeItemORM に、同期失敗回数を記録する retry_count: Mapped[int] = mapped_column(Integer, default=0) カラムを追加してください（upsert_item時は 0 にリセットすること）。
+
+Step 3: 真のDLQ隔離機構の実装 (firestore_sync.py)
+・同期ワーカー（sync_once）の例外キャッチ（失敗）処理を拡張してください。
+・失敗時にローカルDBの retry_count を +1 し、その値が 3（MAX_RETRIES）に達した場合は、sync_status を "error" ではなく "fatal"（または "dead_letter"）に更新して、次回以降の get_pending_sync_batch の取得対象から完全に除外する（隔離する）ロジックを実装してください。
+
+Step 4: スモークテスト
+・修正後、uv run ruff check --fix を実行してください。
+・ダミーの未同期データを用意し、わざとFirestoreへのPushを3回連続で失敗させ、3回目に sync_status が "fatal" に遷移し、4回目のポーリングで拾われなくなること（ポイズンピル隔離）を確認するスモークテストを実行し、結果を報告してください。

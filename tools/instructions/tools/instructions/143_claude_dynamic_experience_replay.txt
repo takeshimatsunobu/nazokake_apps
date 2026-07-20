@@ -1,0 +1,24 @@
+【ミッション: 動的な経験再生（Experience Retrieval）アーキテクチャの構築】
+過去142個の指示書を構造化し、CTOノード（Claude）の推論時に現在の課題と関連性の高い過去の教訓のみを動的に検索・注入する軽量ローカルRAGを実装してください。すべての履歴をプロンプトに詰め込むアプローチは厳禁です。
+
+Step 1: 構造化エピソード記憶のコンパイル (tools/compile_knowledge.py)
+tools/compile_knowledge.py を新規作成し、以下の処理を実装してください。
+・tools/instructions/ 配下のすべてのテキストファイルを読み込む。
+・各ファイルから「ID（連番）」「概要」「キーワード（名詞やエラーコードなど）」を抽出し、{"id": "...", "summary": "...", "keywords": [...], "filepath": "..."} の形式のJSON配列として tools/ai_knowledge_base.json に出力する。
+・※このスクリプトはスタンドアロンで実行し、事前にJSONをビルドしておくこと。
+
+Step 2: 軽量ローカル検索器の実装 (tools/knowledge_retriever.py)
+tools/knowledge_retriever.py を新規作成し、以下の関数を実装してください。
+・関数名: retrieve_experiences(query: str, top_k: int = 3) -> list[dict]
+・VRAMを消費する重厚なEmbeddingモデルは使用せず、Python標準ライブラリ（TF-IDFやジャカード係数等）または軽量なアルゴリズムを用いて、入力された query（エラーログや文脈）と ai_knowledge_base.json のキーワード群を比較し、関連度スコア上位の過去のタスク（教訓）を抽出して返すこと。
+
+Step 3: CTOノードへの動的注入 (tools/agent_graph.py)
+tools/agent_graph.py の cto_node 内の処理を以下のように拡張してください。
+・Qwenが生成した questions_for_cto やエラーログを連結してクエリ文字列を作成し、retrieve_experiences(query) を呼び出す。
+・抽出された過去の教訓（該当指示書の内容要約やパス）を文字列にフォーマットし、CTOモデルへのプロンプトにおける「動的ブロック」（Prompt Cachingの静的ブロックの後）に "【過去の関連する教訓 (Experience Replay)】" として追加注入する。
+
+Step 4: 静的解析とコミット
+実装後、uv run ruff check tools/ を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、追加および変更したファイル群を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(ai): 過去の指示書履歴を用いた軽量ローカルRAGとCTOノードへの動的経験再生の統合"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

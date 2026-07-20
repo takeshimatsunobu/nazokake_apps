@@ -1,0 +1,20 @@
+【ミッション: コンテナ内最小特権原則の維持と特権降格機構（gosu）の導入】
+SREの絶対要件に基づき、ベンチマークサンドボックスにおける権限のねじれを「コンテナのroot稼働」という安易な手段で回避するのではなく、特権降格機構（ENTRYPOINTパターン）を用いてセキュアに解決してください。
+
+Step 1: entrypoint.sh の新設
+tools/benchmark/entrypoint.sh を新規作成し、以下のロジックを実装してください。
+・#!/usr/bin/env bash で開始する。
+・コンテナ起動時にマウントされる領域の権限不整合を解決するため、chown -R sandboxuser:sandboxuser /output /workspace を実行する。
+・スクリプトの最後で、exec gosu sandboxuser python /app/container_runner.py "$@" を実行し、非特権ユーザーへ権限を降格した上で引数を引き継いでメイン処理を起動する。
+
+Step 2: Dockerfile の是正
+tools/benchmark/Dockerfile を開き、以下の通り改修してください。
+・USER sandboxuser の指定を完全に削除する（デフォルトのroot起動とする）。
+・apt-get update && apt-get install -y gosu を追加して特権降格ツールをインストールする。
+・COPY tools/benchmark/entrypoint.sh /app/ を追加し、RUN chmod +x /app/entrypoint.sh で実行権限を付与する。
+・ENTRYPOINT を ["/app/entrypoint.sh"] に変更する。
+
+Step 3: 静的解析とコミット
+実装後、変更・作成したファイル（Dockerfile, entrypoint.sh）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "fix(benchmark): サンドボックスの最小特権原則を維持するためgosuを用いた特権降格機構を実装"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

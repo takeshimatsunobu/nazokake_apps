@@ -1,0 +1,17 @@
+【ミッション: パイプ渡しの完全廃止と決定論的なファイル渡しアーキテクチャへのリファクタリング】
+ファクト評価および次期アクションの設計について、SREの観点から明確に差し戻し（Reject）を通達します。
+あなたが以前実装した $remoteScript | gcloud compute ssh というPowerShellからのパイプ渡しが根本原因となり、ストリームに CRLF が付与され、Linuxのbashが \r: command not found (Exit 127) としてクラッシュしています。
+直ちに tools/deploy/run_verification_server.ps1 を以下の要件（Must Fix）で改修してください。
+
+パイプ渡しの完全廃止:
+$remoteScript | gcloud ... によるストリーム入力を撤回してください。
+
+決定論的なファイル渡しアーキテクチャへのリファクタリング:
+以下の手順で、安全にリモートでスクリプトを実行する構成へ修正すること。
+① $remoteScript の内容の改行コードを明示的に LF (\n) に置換し、BOMなしUTF-8のローカル一時ファイル（例: remote_setup.sh）として書き出す処理を実装する。
+② そのファイルを Invoke-GcloudWithRetry 経由で gcloud compute scp を用いてLinuxサーバーへ転送する。
+③ 転送後、Invoke-GcloudWithRetry 経由で gcloud compute ssh ... --command="bash remote_setup.sh" としてファイルを実行させる。
+
+静的解析とコミット:
+実装後、PowerShellの構文エラーがないことを確認し、変更した run_verification_server.ps1 をコミットしてください。
+※絶対制約: git add . は厳禁です。変更したファイルのみをコミットすること。

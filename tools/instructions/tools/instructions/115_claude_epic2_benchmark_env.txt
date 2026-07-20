@@ -1,0 +1,33 @@
+【ミッション: Epic 2 - Nazo-Agent権限委譲のためのベンチマークテスト環境構築】
+Nazo-Agentの自己修復能力を定量評価し、ホスト環境を汚染せずに安全なテストを実行するためのサンドボックス隔離環境とメトリクス計測スクリプトを tools/benchmark/ に構築してください。
+
+Step 1: Dockerサンドボックス環境の定義
+tools/benchmark/ ディレクトリを作成し、その中にテスト検証用の Dockerfile を作成してください。ベースイメージにはPythonの軽量イメージ（slim）を使用し、Ruff, Pytest, LibCSTなど検証に必要な最小限の依存関係をインストールする構成にしてください。※VRAM制約（8GB）を厳守するため、このコンテナ内ではLLMの推論・ロードは絶対に行いません。
+
+Step 2: ベンチマークランナー (run_benchmark.py) の実装
+tools/benchmark/run_benchmark.py を作成してください。以下のフローを実装します。
+
+ダミーのバグ混入ファイルとテストケースを用意する（一時ディレクトリまたはメモリ上）。
+
+ホスト側の Nazo-Agent の推論ロジック（Qwen/Gemma）を呼び出し、AST修正タスク（JSON）を生成させる。
+
+生成されたASTタスクと対象ファイルを、Step 1のDockerコンテナへボリュームマウントして渡し、コンテナ内部で tools/ast_modifier.py による適用と pytest の実行を行わせる。
+
+コンテナからの終了コードと実行結果を受け取る。
+
+Step 3: 定量評価メトリクスの計測と記録
+ランナー実行時に、以下の4つのメトリクスを計算し、tools/benchmark/reports/ ディレクトリにタイムスタンプ付きのJSON形式で記録するロジックを組み込んでください。
+
+Success Rate: 制限ターン内にコンテナ内Pytestがパスした割合
+
+Latency: バグ検知から修復完了までの所要時間
+
+Regression Rate: 正常な既存テストを破壊してしまった割合
+
+Code Complexity: 修正前後のASTノード数（または行数）の増加率
+
+Step 4: 静的解析とコミット
+実装完了後、uv run ruff check --fix tools/benchmark/ を実行し、構文エラーがないことを確認してください。
+その後、作成したディレクトリとファイルを明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(tools): Nazo-Agentの権限委譲評価用Dockerサンドボックスとメトリクス計測機構の構築"
+※注意: 変更ファイルのみを明示的に指定すること。git add . は絶対に使用しないでください。

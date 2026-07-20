@@ -1,0 +1,22 @@
+【ミッション: mtime依存のアンチパターン排除とトリガー状態のDB永続化】
+SREの絶対要件に基づき、ローカルファイル（ロックファイルのmtime）への状態依存を完全に排除し、トリガーのクールダウンおよび実行状態の管理をデータベース（SQLite）へ移行してください。
+
+Step 1: 永続化層（DBスキーマ）の拡張
+
+SQLAlchemyのモデル定義ファイル（例: packages/shared_core/nazokake_core/models.py 等）に、トリガーの状態を管理する新しいテーブル（例: trigger_state）を定義してください。
+カラム例: pipeline_id (PK), last_triggered_at (datetime), status (string) 等。
+
+Alembicを使用してマイグレーションスクリプトを生成し、DBスキーマを同期させてください。
+
+Step 2: DAO層とトリガーロジックの是正 (tools/mlops_trigger.py)
+
+tools/mlops_trigger.py から、filelock のインポートおよび MLOPS_PIPELINE_LOCK_PATH の mtime を使用したクールダウン・排他制御ロジックを完全にパージしてください。
+
+代わりに、DBから trigger_state レコードを取得し、「最終実行時刻からの経過時間（クールダウン判定）」および「現在のステータス（多重起動防止）」を評価するよう改修してください。
+
+条件を満たして非同期パイプライン（asyncio.create_subprocess_exec）をキックした直後に、DBの trigger_state レコードを現在時刻と適切なステータスでアトミックに更新してください。
+
+Step 3: 静的解析と厳密なコミット
+実装後、uv run ruff check tools/ packages/ 等を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更および追加されたファイル（モデル定義、Alembicマイグレーションスクリプト、DBアクセス層、mlops_trigger.py等）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "refactor(mlops): トリガーのmtime依存を排除し状態管理をDBへ完全移行"

@@ -1,0 +1,23 @@
+【ミッション: ドメイン固有例外の定義と監視システム向けシグナル（終了コード）変換の実装】
+内部のランタイムエラーを汎用例外からドメイン固有例外へ分離し、パイプラインの最上位層でOSの終了コード（インフラ異常: 125、実行異常: 1）に決定論的にマッピングしてください。
+
+Step 1: カスタム例外モジュールの新設 (tools/exceptions.py)
+tools/exceptions.py を新規作成し、以下の例外クラスを定義してください。
+・NazoAgentBaseError (Exceptionを継承する基底クラス)
+・MLOpsInfrastructureError (NazoAgentBaseErrorを継承。VRAM枯渇やDocker不在等のインフラ起因エラー用)
+・PipelineExecutionError (NazoAgentBaseErrorを継承。サブプロセスのクラッシュ等のロジック起因エラー用)
+
+Step 2: 共通モジュールでの例外送出の置換 (tools/mlops_common.py)
+tools/mlops_common.py 内の run_step 関数等で RuntimeError を送出している箇所を、PipelineExecutionError または MLOpsInfrastructureError へ置き換えてください（サブプロセスの異常終了は原則 PipelineExecutionError として扱います）。
+
+Step 3: 最上位層でのシグナル変換 (tools/mlops_pipeline_nazo.py, tools/mlops_pipeline_agent.py)
+両パイプラインスクリプトの main() 関数内にある try...except RuntimeError: ブロックを以下の構造に書き換え、捕捉した例外の型に基づいて終了コード（Exit Code）を振り分けてください。
+・except MLOpsInfrastructureError as e: を捕捉した場合は、_record_experiment(None, latency) 等の記録処理を行った後、 return 125 （または sys.exit(125)）で終了する。
+・except PipelineExecutionError as e: を捕捉した場合は、同様の記録処理を行った後、 return 1 （または sys.exit(1)）で終了する。
+・except Exception as e: の予期せぬエラー用フォールバックも用意し、記録処理を行ってから return 1 で終了する。
+
+Step 4: 静的解析とコミット
+実装完了後、uv run ruff check tools/ を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更および追加したファイル群を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "refactor(mlops): ドメイン固有例外の定義と最上位層での終了コード125/1マッピングの実装"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

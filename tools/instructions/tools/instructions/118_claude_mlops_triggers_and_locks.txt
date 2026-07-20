@@ -1,0 +1,28 @@
+【ミッション: MLOps自律稼働のためのVRAMグローバル排他制御と分離トリガーの実装】
+限られたVRAM（8GB）を安全に共有するため、アプリ本体とMLOps間でOSレベルのファイルロックを実装し、指定された閾値に基づく独立した起動トリガーを構築してください。
+
+Step 1: グローバルVRAMロックとアプリ側のフォールバック実装
+tools/config.py に VRAM_LOCK_PATH (例: BASE_DIR / ".vram.lock") を定義してください。
+apps/evaluator/backend/services/generation.py 等のローカルLLM呼び出し箇所を修正し、filelock.FileLock(timeout=0) 等を用いて非同期にロック取得を試みてください。
+ロックが取得できない（MLOpsが稼働中）場合は、直ちにローカル推論を諦め、クラウドAPI（Gemini/Claude等）へシームレスにフォールバックして処理を継続するよう改修してください。
+
+Step 2: MLOpsパイプラインの完全分離とバックオフ待機
+既存の tools/mlops_pipeline.py を破棄し、以下の2つに分離して再実装してください。
+
+tools/mlops_pipeline_nazo.py: なぞかけデータの抽出・学習・評価
+
+tools/mlops_pipeline_agent.py: Nazo-Agent推論軌跡の抽出・学習・評価
+各スクリプトは起動時に VRAM_LOCK_PATH のロックを取得します。アプリまたは他パイプラインがロックを保持している場合は、tenacity を用いた指数的バックオフによるポーリング待機を実装してください。
+
+Step 3: イベント駆動マルチトリガーの構築
+tools/mlops_trigger.py を新規作成してください。
+ローカルDBおよびログディレクトリをスキャンし、以下の条件を監視します。
+・条件A: ローカルDB内の未学習なぞかけDPO/SFTデータが 500件 以上 -> mlops_pipeline_nazo.py をサブプロセスで起動
+・条件B: 成功修復ログが 50件 以上 -> mlops_pipeline_agent.py をサブプロセスで起動
+（両方が閾値を超えた場合は順次起動するよう実装してください）
+
+Step 4: 静的解析とコミット
+実装後、uv run ruff check --fix tools/ apps/ を実行して構文エラーを解消してください。
+検証完了後、作成および変更したファイル群を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(mlops): VRAM排他制御と独立パイプライン化によるMLOps自律稼働基盤の実装"
+※注意: git add . は絶対に使用しないでください。変更対象ファイルを明示的に指定すること。

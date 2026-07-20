@@ -1,0 +1,26 @@
+【ミッション: フロントエンドのESM化とグローバル汚染の完全排除 (Buildless Architecture)】
+ビルドツールを導入せず、Vanilla JSの静的環境を維持したまま、Import MapsとES Modulesを用いてフロントエンドの依存関係をカプセル化し、グローバル名前空間（windowオブジェクト）の汚染を解消してください。
+
+Step 1: Import Mapsの定義
+apps/evaluator/frontend/public/ の index.html および admin.html の head 内に  を追加し、ローカルのJSモジュール（config, state, api, app, admin, ui/*等）および外部CDN（firebase/app, firebase/auth等）のパスを論理名にマッピングしてください。
+
+Step 2: windowアサインの排除と明示的なExport/Import化
+public/ 配下のすべてのJSファイル（app.js, admin.js, api.js, ui/*.js 等）を走査し、以下の改修を行ってください。
+・window.関数名 = ... の形式をすべて export function または export const に変更する。
+・他モジュールの関数や変数を参照している箇所は、ファイルの先頭で Import Maps で定義した論理名を用いて明示的に import するよう書き換える。
+・firebase-config.js の firebaseConfig も export const とし、利用先で import させる。
+・段階的移行のために残していた @ts-nocheck は必要に応じて外すか維持する。
+
+Step 3: エントリーポイントの新設とイベントディスパッチの集約
+・public/main_index.js および public/main_admin.js を新設し、各HTMLの唯一の  として読み込ませる。
+・HTML内に残存している onclick や oninput などのインライン属性を、data-action="機能名" 等のカスタムデータ属性にすべて置換する。
+・新設したメインモジュール内で document.addEventListener('click', ...) 等の中央集権的なルーターを実装し、data-action の値に応じて対象モジュールの関数を呼び出す（ディスパッチする）構造を確立する。
+・Service Workerの登録やウォームアップ通信などの初期化ロジックもメインモジュールに集約する。
+
+Step 4: 静的検査 (Type Check)
+実装完了後、apps/evaluator/frontend ディレクトリにて npm run type-check を実行し、モジュール解決の欠落やJSDocの型エラーが存在しないこと（エラー0件）を確認してください。
+
+Step 5: 明示的なGitコミット
+検証成功後、変更および追加したファイル群を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "refactor(frontend): ESMとImport Maps導入によるグローバル汚染の解消とカプセル化"
+※注意: git add . は絶対に使用しないでください。変更対象のファイルを個別に指定すること。

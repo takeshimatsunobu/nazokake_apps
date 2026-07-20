@@ -1,0 +1,19 @@
+【ミッション: フロントエンドのESM化とグローバル汚染の完全排除 (Buildless Architecture)】
+ビルドツールを導入しない静的配信環境のまま、Import MapsとES Modules (ESM) を用いてVanilla JSの技術的負債（windowオブジェクトの汚染）を解消し、ファイル単位のカプセル化を実現してください。
+
+Step 1: Import Mapsの定義
+apps/evaluator/frontend/public/ 配下のHTMLファイル（index.html, admin.html 等）の  ブロックに  を追加し、ローカルのJSファイル（api.js, auth.js 等）や外部CDN（Firebase等）のモジュール解決パスを定義してください。相対パスのハードコードを避けることが目的です。
+
+Step 2: windowオブジェクトからの脱却とモジュール化（Export）
+public/ 配下のすべてのJavaScriptファイル（admin.js, feed.js, api.js 等）を開き、window.関数名 = function(...) のようなグローバル変数への代入をすべて export function 関数名(...) に書き換えてください。
+同時に、global.d.ts に定義されていた不要なアンビエント宣言（window.* の型定義）をパージしてください。
+
+Step 3: エントリーポイントの集約と順序制御（Race Conditionの防止）
+各HTMLページに対応するメインモジュール（例: main_admin.js, main_index.js）を新規作成してください。
+HTML側は  のみを読み込むように変更し、メインモジュール内部で必要な関数を import して、DOMの初期化（イベントリスナーの登録等）を正しい順序でオーケストレーションしてください。
+
+Step 4: 静的解析とスモークテスト
+修正後、npm run type-check （または tsc -p jsconfig.json）を実行し、JSDocの型チェックがエラーなく通ることを確認してください。モジュール化によって型参照（import）が正しく解決されていることが必須です。
+
+Step 5: コミット
+検証完了後、変更したHTMLおよびJSファイル群を明示的に指定してGitコミット（例: "refactor(frontend): ESMとImport Maps導入によるグローバル汚染の解消とカプセル化"）を行ってください。git add . は絶対に使用しないでください。

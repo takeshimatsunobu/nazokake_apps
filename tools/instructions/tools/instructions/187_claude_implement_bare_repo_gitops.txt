@@ -1,0 +1,24 @@
+【SREアーキテクト監査：ZIP転送の廃止と閉域GitOps（Pull型デプロイ）の構築】
+現在のデプロイ方式（Windows側でZIP化してSCP転送するClickOps運用）は、サーバー上の稼働ディレクトリから .git 履歴を物理的に喪失させます。これは、エージェントが過去のコミットハッシュとの差分を評価し、自律的にロールバック（自己修復）を行うための前提を破壊するシャドウIT的なアンチパターンです。SREの観点からこのデプロイアーキテクチャを直ちに Reject（差し戻し）とします。
+以下の是正要件（Must Fix）に基づき、IAP完全閉域環境に対応した「Bareリポジトリを用いたPull型デプロイメント」へ IaC およびデプロイロジックを全面刷新してください。
+
+サーバー側 Pull型デプロイスクリプトの構築
+infra/verification_env/deploy_pull.sh を新規作成してください。
+VM上のBareリポジトリ（~/nazokake_apps.git）を origin（SSoT）と見なし、稼働ディレクトリ（~/nazokake_apps）にて git fetch および git reset --hard を用いて決定論的に状態を同期（Pull）するロジックを実装してください。同期直後に setup_verification_env.sh および docker compose up --build を実行してコンテナを再起動する一連のシーケンスを含めてください。
+
+クライアント側 Push＆デプロイ実行スクリプトの構築
+tools/deploy_to_vm.ps1（または既存のデプロイ自動化スクリプト）を改修してください。
+以下の処理をIAPトンネル経由（gcloud compute ssh）で自動実行するロジックへ置き換えてください。
+
+VM上に Bareリポジトリ（~/nazokake_apps.git）が存在しない場合は git init --bare で初期化する。
+
+ローカル（Windows）からVM上のBareリポジトリへ git push する（GIT_SSH_COMMAND に gcloud compute ssh をラップする等の手段を用いる）。
+
+Push成功後、サーバー上の deploy_pull.sh をSSH経由で非同期キックする。
+※これまでのZIP圧縮（Archive）および pscp.exe 等による直接ファイル転送ロジックは跡形もなく完全撤去すること。
+
+ダッシュボード（1-Click Deploy）バックエンドの統合
+GUIからデプロイをキックするAPIバックエンドが存在する場合、その内部処理を上記のGitOpsベースのスクリプト呼び出しへ置き換え、「No-Toil（ターミナル操作の撲滅）」を保証してください。
+
+実装後、静的解析を実行し、変更・作成したファイル群を明示的に指定してGitコミットを行ってください。
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを個別に指定すること。

@@ -1,0 +1,23 @@
+【ミッション: AST脆弱性の克服とワンタッチ・プロビジョニングの確立】
+SRE監査に基づく決定的な是正要件を通達します。前回のベンチマークにおいて、Agentは「SyntaxErrorによりASTパースに失敗した結果（success: null）」を無視し、ハルシネーション（すべて成功したという確証バイアス）を引き起こしました。この脆いアーキテクチャとメタ認知の欠陥を直ちに修正し、同時にインフラ運用のトイルをパージしてください。
+
+Step 1: メタ認知の是正と評価ロジックの厳格化
+評価スクリプト（tools/benchmark/run_benchmark.py等）において、success: null や例外による中断が発生したFixtureをスキップせず、厳格に「不合格（Fail / success: false）」としてカウントし、メトリクス（成功率等）に正確に反映させるよう修正してください。
+
+Step 2: ASTパース失敗時のフォールバック機構の実装
+tools/ast_modifier.py において、対象ファイルに構文エラーが存在し libcst.ParserSyntaxError 等の例外が発生した場合にクラッシュする挙動を修正してください。例外を捕捉（catch）した際は、対象ファイルの文字列を直接読み込み、正規表現または文字列置換（String-based fallback）を用いて、LLMが生成した修正コードを対象ファイルに強制的に上書き適用するフォールバックロジックを実装してください。
+
+Step 3: VMワンタッチプロビジョニングスクリプトの作成
+手動のインフラ運用（トイル）を排除するため、tools/deploy/run_verification_server.ps1 を新設し、以下の処理をすべて自動で直列実行するPowerShellスクリプトを構築してください。
+
+gcloud compute instances start nazokake-l4-vm --zone=us-east1-b によるVM起動。
+
+Test-NetConnection 等を用いた、ポート22（SSH）が開通するまでの自動リトライ待機ループ。
+
+git archive -o source.zip HEAD によるZIP化と、gcloud compute scp を用いたIAPトンネル経由での転送。
+
+gcloud compute ssh --command="..." を用いた、リモート側でのZIP解凍、setup_verification_env.sh の実行、および docker compose -f infra/verification_env/docker-compose.yml up -d --build mlops-scheduler によるコンテナ起動の自動実行。
+
+Step 4: 静的解析と厳密なコミット
+実装後、YAMLおよびPython/PowerShellの構文が正しいことを確認してください。検証完了後、変更・追加したファイル群（tools/ast_modifier.py, tools/deploy/run_verification_server.ps1 等）を明示的に指定してGitコミットを行ってください。コミットメッセージにはハルシネーションの教訓を反映させること。
+※絶対制約: git add . は厳禁です。

@@ -1,0 +1,23 @@
+【ミッション: CTOエスカレーション機構のGit Worktree隔離検証とサンドボックス統合】
+CTOモデル（クラウドLLM）が生成した修正案を安全に検証するため、メインの作業ツリーを汚染しないGit Worktreeの生成と、Dockerサンドボックスでの自動テスト実行機構を統合してください。
+
+Step 1: 隔離機構の統合と古いロジックのパージ
+tools/nazo_agent.py に残存している、git worktree を使用しない古い隔離ブランチ機構（AUTO_AUDIT_BRANCH等の切り替えロジック）を完全に削除してください。以降の隔離検証はすべて tools/agent_graph.py の sandbox_verify_node に集約します。
+
+Step 2: Git Worktreeによる隔離環境の構築
+tools/agent_graph.py の sandbox_verify_node 内で、以下の処理を実装してください。
+・現在の作業ディレクトリ状態を変更しないよう、git worktree add -b escalation/issue-{timestamp} <一時ディレクトリ> HEAD を実行する。
+・修正対象ファイルが属するリポジトリルートをファイルパスから動的に特定し、作成したワークツリー上で修正案の適用（AST置換）と git commit を行う。
+
+Step 3: Dockerサンドボックスによる自動検証のバインド
+ワークツリー上でのコミット後、tools/benchmark/run_benchmark.py をサブプロセスとして非同期または同期的に実行し、対象のワークツリーをDockerコンテナにマウントさせてテストを実行してください。
+・汎用のリグレッションチェックだけでなく、エスカレーション対象ファイルに関連する固有のPytestが実行されるように検証ロジックを拡張してください。
+
+Step 4: PRドラフトの生成と安全なSuspend
+サンドボックス内でのPytest実行結果（Exit Codeやエラーログ）を収集し、PRドラフト（tools/audit_reports/pr_drafts/ 配下のMarkdownファイル）にアノテーションとして追記してください。
+・ドラフト作成後、ワークツリーとブランチは人間のレビュー用に削除せずに残し、パイプラインを「待機状態（Suspend）」で正常終了（exit 0）させてください。
+
+Step 5: 静的解析と厳密なコミット
+実装後、uv run ruff check --fix tools/ を実行して構文エラーを解消してください。単純な文字列置換は使用せず、必ずASTレベルの修正か安全なエディタ操作を行ってください。
+検証完了後、変更したファイル（tools/agent_graph.py, tools/nazo_agent.py, tools/benchmark/run_benchmark.py 等）を明示的に指定してGitコミットを行ってください。
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

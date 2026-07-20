@@ -1,0 +1,14 @@
+【ミッション: 全コード抽出スクリプトの開発】
+現在のシステム全体のソースコードを、AIのコンテキスト入力用に単一のテキストファイルへダンプするPythonスクリプト（tools/extract_source.py）を作成してください。
+
+Step 1: 抽出スクリプトの作成
+以下の要件を満たすPythonスクリプト tools/extract_source.py を作成してください。
+・対象ディレクトリ: apps/, packages/, tools/ の配下。
+・除外ディレクトリ: .venv, .venv_ai, .venv_train, pycache, node_modules, .git, .pytest_cache などの環境・生成物ディレクトリを完全にスキップすること。
+・除外拡張子: .db, .pyc, .log, .tgz, .whl, .lock, .png などのバイナリや不要なログファイルを除外すること。
+・出力形式: 出力ファイル名は all_source_code.txt とし、各ファイルの記述の先頭にファイルパスを明記（例: ==================== \n File: apps/main.py \n ====================）してから中身を書き込むこと。
+・エンコーディング: 読み書きともに encoding="utf-8", errors="replace" を明示し、エンコーディングエラーによるクラッシュを防ぐこと。
+
+Step 2: 静的解析と動作確認
+スクリプト作成後、uv run ruff check --fix tools/extract_source.py を実行して構文をクリーンに保ってください。
+その後、実際にスクリプトを実行し、all_source_code.txt が生成されること、およびそのファイルサイズ（過剰に大きすぎないか）を確認して報告してください。最後にGitにコミットする場合は対象ファイルを明示的に指定してください。

@@ -1,0 +1,16 @@
+【ミッション: AlembicによるDBマイグレーション管理の導入 (Baseline Hygiene)】
+ORMのモデル定義と物理DBスキーマ間の完全な同期を担保するため、マイグレーションツール（Alembic）を導入し、システムの起動フローに組み込んでください。
+
+Step 1: Alembic環境の初期化とメタデータ紐付け
+packages/shared_core/ ディレクトリに移動し、alembic をインストール・初期化（alembic init alembic）してください。その後、生成された alembic/env.py を編集し、nazokake_core.database から Base のメタデータを読み込んで target_metadata にセットし、自動生成（autogenerate）が機能するように紐付けてください。alembic.ini の sqlalchemy.url も正しくローカルのSQLite（nazokake_local.db）へ向くよう構成してください。
+
+Step 2: 初期リビジョンの生成とマイグレーションの実行
+packages/shared_core/ で alembic revision --autogenerate -m "Initial schema" を実行し、現在定義されている nazokake_items と audit_logs テーブルを含む初期マイグレーションファイルを生成してください。
+※ 既存の空のDBファイルが存在する場合は、スキーマのコンフリクトを避けるため一度削除してからマイグレーション（alembic upgrade head）を実行・検証して構いません。
+
+Step 3: 起動スクリプトへの統合
+プロジェクトルートの run_api.ps1 等の起動ラッパースクリプトを修正し、FastAPI（uvicorn）が起動する直前に、常に alembic upgrade head が同期的に実行されるよう組み込んでください。これにより、環境起動時にスキーマが必ず決定論的に最新化されます。
+
+Step 4: 静的解析とコミット
+修正後、uv run ruff check --fix packages/ 等を実行して構文をクリーンに保ってください。
+検証完了後、追加した Alembic 関連のディレクトリ（alembic/ および alembic.ini）と変更した起動スクリプトを明示的に指定してGitコミット（例: "build(infra): Alembicマイグレーションの導入と起動フローへの統合"）を行ってください。git add . は絶対に使用しないでください。

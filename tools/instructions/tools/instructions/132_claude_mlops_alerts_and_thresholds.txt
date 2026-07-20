@@ -1,0 +1,23 @@
+【ミッション: 定量評価ゲート閾値の外部化とフェイルセーフ・アラート機構の導入】
+MLOpsパイプラインのデプロイ承認ゲートの閾値を外部設定化し、異常発生時のWebhook通知機構を実装してください。その際、外部API障害がVRAMロック解放を阻害しないようフェイルセーフを徹底してください。
+
+Step 1: 設定の外部化と機密情報保護 (tools/config.py)
+ToolsSettings クラスに以下のフィールドを追加してください。
+・QUALITY_GATE_COMPLEXITY_MAX: float (デフォルト 0.10)
+・ALERT_WEBHOOK_URL: pydantic.SecretStr の Optional フィールド (デフォルト None)。※クレデンシャル漏洩を防ぐための必須要件。
+
+Step 2: フェイルセーフなアラート送信関数の実装 (tools/mlops_common.py)
+Discord/Slack等のWebhookへ通知を送る関数 send_alert_webhook(message: str) を実装してください。
+・ALERT_WEBHOOK_URL が設定されていない場合は何もせずリターンする。
+・【絶対制約】httpx.post 等の呼び出しには timeout=3.0 を明示的に設定する。
+・【絶対制約】リクエスト時に発生するあらゆる例外（Timeout, RequestError等）は try-except で捕捉し、標準エラー出力等にログを出すのみに留め、例外を上位に伝播させない（パイプライン全体のクラッシュを防ぎVRAMロック解放を担保するため）。
+
+Step 3: MLOpsパイプラインへの組み込み (tools/mlops_pipeline_nazo.py, tools/mlops_pipeline_agent.py)
+・定量評価ゲート（Success Rate Delta, Code Complexity増加率等）の判定条件において、ハードコードされている閾値を tools/config.py の設定値を参照するように修正してください。
+・パイプラインが異常終了する場合（sys.exit(1)の直前）、または定量評価ゲートで不合格となった場合に、Step 2で作成した send_alert_webhook() を呼び出し、エラー理由を含めた通知を送信するよう配線してください。
+
+Step 4: 静的解析とコミット
+実装後、uv run ruff check tools/ を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（tools/config.py, tools/mlops_common.py, tools/mlops_pipeline_nazo.py, tools/mlops_pipeline_agent.py 等）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(mlops): 定量評価閾値の外部化とフェイルセーフなアラート通知機構の実装"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

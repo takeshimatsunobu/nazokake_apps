@@ -1,0 +1,20 @@
+【ミッション: フロントエンドの型安全性確立とコントラクト破壊検知の自動化】
+バックエンドとフロントエンドのAPI仕様のズレ（Zombie UI）を未然に防ぐため、ビルド不要のJSDoc型チェック（Vanilla JS + OpenAPI）を導入し、起動時に型定義が自動同期される仕組みを構築してください。
+
+Step 1: OpenAPIダンプスクリプトの作成
+tools/export_openapi.py を新規作成してください。このスクリプトは、FastAPIアプリケーションインスタンス（例: apps.evaluator.backend.main:app）を直接インポートし、app.openapi() を呼び出して openapi.json を apps/evaluator/frontend/ 配下へ静的にダンプする処理を実装してください。ローカルサーバーの起動は行わないでください。
+
+Step 2: フロントエンドの環境構築と型生成
+apps/evaluator/frontend/ に移動し、以下の設定ファイルを作成・設定してください。
+・ package.json を作成し、開発依存として openapi-typescript をインストールしてください。また、openapi.json から api.d.ts を生成するNPMスクリプト（例: "generate-types"）と、TypeScriptコンパイラによる静的検査スクリプト（例: "type-check": "tsc"）を定義してください。
+・ jsconfig.json を新規作成し、"compilerOptions": { "checkJs": true, "noEmit": true, "target": "ES2022" } を設定してサイレントな検知漏れを防いでください。
+
+Step 3: 起動スクリプト（run_api.ps1）へのフック組み込み
+プロジェクトルートの run_api.ps1 の冒頭（uvicorn起動前）に、Step 1（Pythonダンプ）とStep 2（NPM型生成）を同期的に実行する処理を追記してください。これにより、APIを起動するたびにフロントエンドの型が常に最新化されます。
+
+Step 4: JSDocの適用と静的検査（スモークテスト）
+apps/evaluator/frontend/public/ の admin.js や feed.js など主要なJSファイルにおいて、APIレスポンスを受け取る部分にJSDoc（/ @type {import('../api').components['schemas']['...']} */）を付与してください。
+その後、npm run type-check を実行し、既存コードで型エラーが発生しないこと（または検知されたエラーを安全に修正できること）を確認してください。
+
+Step 5: コミットの確定
+検査通過後、追加・変更したファイル（tools/export_openapi.py, apps/evaluator/frontend/package.json, jsconfig.json, run_api.ps1, JSファイル等）を明示的に指定してコミット（例: "feat(frontend): OpenAPIからの型定義自動生成とJSDocによるコントラクト検査の導入"）を行ってください。推測による git add . は厳禁です。

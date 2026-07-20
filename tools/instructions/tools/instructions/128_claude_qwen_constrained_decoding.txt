@@ -1,0 +1,17 @@
+【ミッション: Qwen Coder 7B層へのConstrained Decoding (JSON Schema強制) の導入】
+小規模モデル特有の構造化出力（JSON）の脆さを物理的に排除するため、Ollama (qwen2.5-coder:7b) の推論において、Pydanticスキーマに基づく厳密な文法制約付き生成（Constrained Decoding）を実装してください。
+
+Step 1: JSON Schemaの動的適用
+tools/agent_graph.py 内の craftsman_node (または該当するLLM呼び出しロジック) を改修してください。
+・単なる format="json" ではなく、AstModificationInstruction.model_json_schema() で生成したJSON Schemaを、OllamaのAPIリクエストの format パラメータとして明示的に渡すように実装を変更してください。
+・LangChainを使用している場合は、Ollamaモデルに対して .with_structured_output(AstModificationInstruction) を使用し、内部でJSON Schemaが強制適用されていることを確認（または直接APIを叩く形へ修正）してください。
+
+Step 2: 既存の防弾機構の維持とレジリエンス層
+・出力形式は推論エンジンに強制させますが、モデルに「どう考えさせるか」の質を保つため、既存の Few-shotプロンプトの静的注入 は必ず維持してください。
+・万が一、スキーマ制約下でもパースエラーが発生した場合に備え、既存のリトライループ（MAX_JSON_RETRIES=3 による Gemma へのサーキットブレーカー遷移）のロジックは絶対に変更・削除しないでください。
+
+Step 3: 静的解析と厳密なコミット
+実装後、uv run ruff check tools/agent_graph.py を実行し、構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（tools/agent_graph.py 等）を明示的に指定してGitコミットを行ってください（例: "feat(ai): Qwen 7B推論にConstrained Decodingを導入しJSON出力を防弾化"）。
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。
+上記を手動保存した後、VS Codeのターミナルから以下のコマンドを実行し、Claude Codeにタスクを委譲してください。

@@ -1,0 +1,24 @@
+【ミッション: データ保護型マイグレーションおよびインフラクリーンアップツールの開発】
+ローカルSSoTアーキテクチャにおいて、これまで蓄積した「なぞかけ」や「人間評価データ」などの資産を保護しつつ、DBスキーマの再構築と不要ファイル（WALの残骸やキャッシュなど）の完全パージを行うスクリプト tools/safe_reset_infra.py を作成してください。
+
+Step 1: 排他制御と安全検証（プロセスロック検知）
+psutil を用いて、nazokake_local.db などのDBファイルをロックしているプロセス（python, uvicorn等）が存在しないか検証してください。
+ロックを検知した場合は、該当のプロセス名とPIDをターミナルに警告として出力し、自動キルは行わずに即座に sys.exit(1) で安全に処理を停止する「フェイルファスト」を実装してください。
+
+Step 2: 資産のバックアップ（ETL抽出）
+排他制御を通過した場合、既存の nazokake_local.db（SQLAlchemy ORM等を利用）から NazokakeItemORM の全レコードを読み込み、一時的なJSONファイル（例: data/db_backup_temp.json）にエクスポートして資産を保護してください。（DBが空、または存在しない場合はバックアップ処理をスキップしてStep 3へ進んでください）
+
+Step 3: インフラの完全パージ（物理削除）
+バックアップの成功を確認した後、以下の不要なリソースを物理的に削除してください。
+・ メインDBおよびWALファイルの残骸: nazokake_local.db, nazokake_local.db-wal, nazokake_local.db-shm
+・ レポート残骸: tools/audit_reports/ 配下の全ファイル（ディレクトリ自体は保持）
+・ 実行時キャッシュ: プロジェクト内の __pycache__, .pytest_cache, .ruff_cache ディレクトリ
+・ 過去のダンプ遺物: プロジェクトルートの all_source_code.txt（存在する場合のみ）
+
+Step 4: スキーマ再構築とデータ復元（ETLロード）
+既存のデータベース初期化ロジック（packages/shared_core/nazokake_core/database.py 内のBase.metadata.create_all等）を呼び出して、最新のテーブルスキーマを持つクリーンなDBを再作成してください。
+その後、Step 2で退避した一時JSONからすべてのレコードを読み込んでDBへ一括インサートし（データを復元）、完了後に一時JSONファイルを物理削除してください。
+
+Step 5: 静的検査とコミット
+スクリプト実装完了後、ruff 等で静的解析を行い、エラーがないことを確認してください。
+その後、作成した tools/safe_reset_infra.py と関連ファイルのみを明示的に指定してGitコミットを行ってください（例: "feat(tools): データ保護と排他制御を備えたDB再作成・インフラクリーンアップスクリプトの作成"）。推測による git add . は厳禁です。

@@ -1,0 +1,17 @@
+【ミッション: UIルーターの完全Local-First化とFirestore依存の剥がし】
+アーキテクチャのLocal-First化を完遂するため、apps/evaluator/backend/api/routers/ 配下の feed.py や admin.py に残存しているFirestoreへの読み取り依存を完全に排除し、ローカルDB（SQLite）へ切り替えてください。
+
+【絶対制約: 同期状態とUI描画の分離】
+フロントエンドへ返すデータにおいて、クラウドへの同期状態（sync_status）を描画のブロック条件に絶対にしないでください。UIはローカルDBの status のみを正として最速でデータを返し、通信レイテンシの極小化というLocal-Firstのメリットを最大化してください。
+
+Step 1: 検索用インデックスの追加とDAOの拡張 (packages/shared_core)
+・database.py の NazokakeItemORM に、フィード取得用の複合インデックス（status と created_at.desc()）およびスコア用インデックス（s_total.desc()）を追加してください。
+・UI向けに、複数のアイテムを条件付きで非同期取得するDAO（例: async_get_feed_items, async_get_admin_items 等）を新設してください。
+
+Step 2: UIルーターのFirestore依存剥がし (apps/evaluator)
+・feed.py および admin.py（またはその他の依存ルーター）から google.cloud.firestore 関連のインポートとクエリを完全にパージしてください。
+・Step 1で作成したローカルDB用のDAO（async_get_feed_items等）を呼び出すようにエンドポイントを書き換えてください。
+
+Step 3: 静的解析とスモークテストの実行
+・修正後、uv run ruff check --fix を実行して構文をクリーンに保ってください。
+・モックリクエスト（またはFastAPI TestClient）を用いて、feed.py と admin.py のエンドポイントを叩き、Firestore通信なし（ローカルDBのみ）で正常にJSONデータが返却されることを確認するスモークテストを実行し、その結果を報告してください。

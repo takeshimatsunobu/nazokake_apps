@@ -1,0 +1,22 @@
+【ミッション: Epic 3 - プロセスツリーのアトミックな破棄機構とクロスプラットフォーム抽象化】
+マルチプロセス運用におけるVRAMリーク（ゾンビプロセス）をOSレベルで完全に排除するため、クロスプラットフォーム対応のプロセス管理レイヤーを構築し、既存の脆いポーリング自爆機構をパージしてください。
+
+Step 1: プラットフォーム抽象化マネージャーの実装
+tools/process_manager.py を新規作成し、OSごとのプロセス起動・終了を隠蔽するクラスまたは関数群を実装してください。
+・Linux/POSIX系の場合: subprocess.Popen 起動時に preexec_fn=os.setsid を指定し、終了時は os.killpg を用いてプロセスグループ（PGID）ごとアトミックに破棄する設計とすること。
+・Windows系の場合: ctypes.windll.kernel32 を用いて Job Object を作成し、JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE 属性を付与した上で子プロセスをアタッチする設計とすること。Linux実行環境を破壊しないよう、ctypes.windll のインポートはトップレベルではなくWindows判定の内部（遅延インポート）で行うこと。
+
+Step 2: Windows Job Object のネスト制限に対するフォールバック（絶対要件）
+Windows APIの仕様上、親プロセスが既に別のJob Object配下にありネスト制限に引っかかる場合、AssignProcessToJobObject が Access Denied (OSError/Error 5) を返すことがあります。
+このエラーが発生した場合、システムをクラッシュさせず、例外を安全に捕捉してください。捕捉後は Graceful Degradation として、psutil を用いて対象PIDの子孫プロセスツリーを再帰的に特定し、個別に終了（taskkill /T 相当）させるフォールバックロジックへ移行するように実装してください。
+
+Step 3: 既存の脆い自爆ロジックのパージと統合
+前回のタスクで tools/train_unsloth.py 等に実装された「--ppid を受け取り、デーモンスレッドで親プロセスの死活をポーリングして os._exit(1) で自爆する」ロジックは不確実なため、完全に削除してください。
+その後、tools/mlops_pipeline.py を修正し、サブプロセスの起動（データ抽出や学習スクリプトの実行）を Step 1 で作成した process_manager を経由して行うようにリファクタリングしてください。
+
+Step 4: 静的解析とスモークテスト
+修正後、uv run ruff check --fix tools/ を実行して構文エラーを解消してください。
+その後、tools/mlops_pipeline.py の dry-run を実行し、OS判定、プロセスグループ（またはJob Object）へのアタッチ、および正常な終了・クリーンアップが行われることを標準出力ログで確認してください。
+
+Step 5: コミット
+検証完了後、tools/process_manager.py, tools/mlops_pipeline.py, tools/train_unsloth.py のみを明示的に指定してGitコミット（例: "feat(tools): クロスプラットフォーム対応のアトミックなプロセスツリー破棄機構を実装"）を行ってください。git add . は絶対に使用しないでください。

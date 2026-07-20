@@ -1,0 +1,18 @@
+【ミッション: パイプライン異常終了時における可観測性（データリネージ）の修復】
+サブプロセスの異常終了（インフラエラー等）が原因でパイプラインが即死し、実験管理DBへの記録がスキップされるサイレントな障害を修復してください。
+
+Step 1: run_stepの例外送出化 (tools/mlops_common.py)
+run_step 関数がサブプロセスのエラーを検知した際、sys.exit(1) でプロセスごと即死させるのではなく、RuntimeError（または専用の例外）を raise するように変更してください（※アラートWebhookの送信処理はそのまま維持するか、パイプライン側のexceptブロックへ移譲してください）。
+
+Step 2: パイプラインでの捕捉と不変ログ記録 (tools/mlops_pipeline_nazo.py, tools/mlops_pipeline_agent.py)
+両パイプラインの main() 関数内の run_step 呼び出し群を try...except RuntimeError as e: で囲んでください。
+例外を捕捉した場合、以下の処理を確実に実行してから終了（return 1 または sys.exit(1)）するように設計してください。
+・_record_experiment() に「失敗」状態（例: report=None または空辞書など）を渡してDBに記録する。
+・export_metrics.export_metrics() を呼び出し、ダッシュボード用の静的JSONを最新化する。
+・（必要であれば、例外メッセージをDBの新しいカラムや既存のカラムに保存できるよう _record_experiment を拡張しても構いません）
+
+Step 3: 静的解析とコミット
+実装後、uv run ruff check tools/ を実行してエラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル群を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "fix(mlops): パイプライン異常終了時における実験管理DBへの不変ログ記録を保証"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

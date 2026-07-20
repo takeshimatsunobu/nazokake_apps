@@ -1,0 +1,21 @@
+【ミッション: Git Worktreeのライフサイクル管理と隔離機構の統合】
+エージェントの修復ループ等で利用される隔離環境（Git Worktree）において、UUIDによる名前空間の隔離と、コンテキストマネージャを用いたアトミックなクリーンアップ機構を実装してください。
+
+Step 1: コンテキストマネージャの実装 (tools/agent_graph.py または関連モジュール)
+@contextlib.contextmanager を用いた managed_git_worktree(repo_root) を実装してください。
+・uuid.uuid4().hex を用いて一意の一時ディレクトリパスとブランチ名（例: escalation/issue-{timestamp}-{uuid}）を生成する。
+・git worktree add -b <branch_name> <worktree_path> HEAD を実行して隔離環境を構築する。
+・yield worktree_path, branch_name で呼び出し元に制御を渡す。
+・【絶対制約】finally ブロックを用いて、処理の成功・例外に関わらず必ず git worktree remove --force <worktree_path> を実行し、物理ディレクトリをパージする（レビュー用にワークツリーを残す仕様は撤廃する。ただしGitブランチ自体は残すこと）。
+
+Step 2: sandbox_verify_node のリファクタリング (tools/agent_graph.py)
+sandbox_verify_node の処理を、Step 1で作成した managed_git_worktree の with ブロック内で実行するように書き換えてください。例外発生時でもワークツリーが確実に破棄されることを担保してください。
+
+Step 3: nazo_agent.py のレガシー機構パージ
+tools/nazo_agent.py を走査し、メインディレクトリで直接ブランチを切り替えるようなレガシーな隔離ロジックや、sandbox_verify_node に委譲しきれていない重複処理が残存している場合は、完全にパージして DRY 原則を適用してください。
+
+Step 4: 静的解析とコミット
+実装後、uv run ruff check tools/ を実行し、構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル群を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "refactor(tools): Git WorktreeのUUID隔離とアトミックなクリーンアップ機構の実装"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

@@ -1,0 +1,25 @@
+【ミッション: ポイズンピル（DLQ）管理UIの構築と運用サイクルの確立】
+同期ワーカーが処理を放棄し、sync_status="fatal"（ポイズンピル）として隔離されたデータ（Dead Letter Queue）を管理画面で可視化し、リカバリ操作を行えるようにしてください。
+
+Step 1: バックエンド APIの実装 (DLQ取得と操作)
+apps/evaluator/backend/api/routers/admin.py 等に以下の機能を追加してください。
+・ GET /admin/dlq : データベースから sync_status == "fatal" のレコード一覧を取得し、エラー理由（last_sync_error）と updated_at などのメタデータを含めて返すエンドポイント。必ず response_model を定義すること。
+・ POST /admin/dlq/action : 特定の doc_id に対して「再試行（sync_status="pending", retry_count=0 にリセット）」または「破棄（sync_status="discarded" 等に変更し隔離状態を終了）」の操作を行うエンドポイント。
+
+Step 2: フロントエンド 型定義の同期
+Step 1の実装後、ローカルサーバーを起動せずにフロントエンドの型を同期するため、以下のコマンドを実行してください。
+
+python tools/export_openapi.py （openapi.json の再生成）
+
+npm --prefix apps/evaluator/frontend run generate-types （api.d.ts の再生成）
+
+Step 3: フロントエンド UIの実装
+apps/evaluator/frontend/public/admin.js および admin.html （または該当のUIファイル）を修正し、以下の機能を実装してください。
+・ 管理画面に「デッドレター（エラー隔離）」タブを新設する。
+・ Step 1で作成したAPIを呼び出し、隔離されたアイテムのリスト（doc_id, odai, last_sync_error 等）を画面に表示する。
+・ 各アイテムに対して「再試行」と「破棄」のアクションボタンを配置し、POST /admin/dlq/action を呼び出す処理を実装する。
+・ 新規追加するフェッチ処理のレスポンスに対して、JSDoc（/ @type {import('../api').components['schemas']['...']} */）を適切に付与し、型検査を通すこと。
+
+Step 4: 静的検査とコミット
+フロントエンドディレクトリで npm run type-check を実行し、TypeScriptコンパイラによるエラー（JSDocの型不整合）がないことを確認してください。
+検証完了後、修正したファイル（バックエンドのルーター、スキーマ、フロントエンドのHTML/JS）のみを明示的に指定してGitコミットを行ってください（例: "feat(admin): ポイズンピル(DLQ)の可視化とリカバリ用管理UIの実装"）。推測による git add . は厳禁です。

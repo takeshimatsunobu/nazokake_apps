@@ -1,0 +1,16 @@
+【ミッション: Dockerマウントパスの標準化（SSoTの確立）とDRY原則の適用】
+SREの観点から、コンテナとホスト間のI/Oインターフェースのねじれを根本解決します。出力先ディレクトリとして混在しているマジックストリングをパージし、システム全体でマウントパスを /output に完全統合してください。
+
+Step 1: run_benchmark.py のマウントパス統一
+tools/benchmark/run_benchmark.py を開き、docker run コマンドを組み立てている箇所（_run_in_docker や run_target_specific_pytest など）を修正してください。
+・コンテナ側のマウントポイントをすべて /output に統一する。
+例: -v, f"{output_dir}:/output:rw"
+・同時に、コンテナ内で実行するコマンド引数も /output を指すように統一する。
+例: --output-dir /output や --junitxml=/output/target_pytest.xml
+・スクリプト内に残存する /mnt/output の記述を完全に削除（置換）すること。
+
+Step 2: 静的解析とコミット
+実装後、uv run ruff check tools/benchmark/run_benchmark.py を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（tools/benchmark/run_benchmark.py）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "refactor(benchmark): Dockerマウントパスを/outputに標準化しI/Oインターフェースのねじれを解消"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

@@ -1,0 +1,25 @@
+【ミッション: 1-Click Deploy APIの新設とダッシュボード統合（No-Toilの徹底）】
+SRE原則に基づき、運用時のCLI操作（人間によるターミナルでのデプロイ実行やログ確認）を完全にパージし、管理ツール（GUI）から1-Clickでデプロイからストリーミング監視まで完結するアーキテクチャを実装してください。
+
+Step 1: バックエンドAPIの実装とGitOps自動化 (admin.py等)
+FastAPIにPOST /api/admin/deployエンドポイントを新設してください。
+
+自動コミット: 実行時、ワークツリーに変更があるか検知し、変更がある場合は git add . を絶対に使わず、変更された追跡済みファイルおよび tools/instructions/ 等の安全な対象のみを明示的に指定して自動コミット（例: "chore: 1-Click Deployによる自動同期"）する処理を実装してください。
+
+非同期プロビジョニング: subprocess.Popenを用いて run_verification_server.ps1 を非同期にバックグラウンドで起動してください。
+
+ログのルーティング: スクリプトの標準出力および標準エラー出力を、フロントエンドがアクセス可能な静的ファイル（例: apps/evaluator/frontend/public/data/deploy.log）へリアルタイムでリダイレクト（追記）するよう配線してください。
+
+Step 2: ダッシュボードUIの拡張 (admin.html, admin.js)
+
+admin.htmlに、「本番デプロイ実行」ボタンと、スクリプトの実行ログを視覚化するターミナル風の読み取り専用テキストエリアを追加してください。
+
+admin.jsに、デプロイボタン押下時に /api/admin/deploy をキックする処理を実装してください。
+
+APIキック後、setInterval等を用いて定期的に /data/deploy.log をfetch()し、ターミナルエリアにログをストリーミング表示するロジックを実装してください。XSS防止のため、必ず textContent を使用してDOMへ反映すること（innerHTMLは厳禁）。
+
+Step 3: 静的解析と厳密なコミット
+実装後、uv run ruff check tools/ apps/ を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。フロントエンドの型検査（type-check）も通すこと。
+検証完了後、変更および新設したファイル群を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "feat(admin): No-Toil原則に基づく1-Click Deploy APIとGUIストリーミング監視の実装"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

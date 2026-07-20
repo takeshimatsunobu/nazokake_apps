@@ -1,0 +1,17 @@
+【ミッション: Epic 4 - エンコーディングの厳格化と境界防衛層（Anti-Corruption Layer）の構築】
+サイレントなデータ破損を防ぐため、システム全体のデフォルトエンコーディングをUTF-8に強制し、フェイルサイレントな実装（errors="replace"）を厳格な例外（errors="strict"）へ修正してください。同時に、Windowsネイティブコマンドとの境界に安全なデコードラッパーを実装してください。
+
+Step 1: グローバル環境変数の強制
+プロジェクトルートの run_api.ps1 および boot_factory.ps1 （存在する場合）の冒頭に、$env:PYTHONUTF8="1" を追加し、Pythonの実行環境がOSの設定に依存せず常にUTF-8を使用するよう強制してください。
+
+Step 2: 境界防衛（ラッパー関数）の実装
+tools/mlops_pipeline.py などで、Windowsネイティブのコマンド（nvidia-smi や taskkill 等）を subprocess.run で呼び出している箇所を修正してください。ネイティブコマンドの出力（cp932）を安全に受け取るため、encoding="mbcs", errors="strict" を指定してデコードするラッパー関数を定義し、直接の呼び出しを置き換えてください。
+
+Step 3: フェイルサイレント（errors="replace"）の完全パージ
+プロジェクト内のPythonファイル（特に tools/ 配下）を grep 検索し、subprocess.run やファイルの open() 等で errors="replace" が使われている箇所をすべて errors="strict" に書き換えてください（Step 2のネイティブコマンドラッパーを除く）。
+
+Step 4: 静的解析とスモークテスト
+修正後、uv run ruff check --fix tools/ を実行して構文をクリーンに保ってください。その後、tools/mlops_pipeline.py の dry-run を実行し、ネイティブコマンド（nvidia-smi）の呼び出しが UnicodeDecodeError でクラッシュせず正常に終了することを実機確認してください。
+
+Step 5: コミット
+検証完了後、変更したスクリプト群を明示的に指定してGitコミット（例: "fix(infra): PYTHONUTF8=1の強制と errors=strict への是正、ネイティブ境界のデコード修正"）を行ってください。git add . は絶対に使用しないでください。

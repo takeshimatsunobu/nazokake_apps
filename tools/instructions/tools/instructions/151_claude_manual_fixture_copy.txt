@@ -1,0 +1,14 @@
+【ミッション: コンテナ内のパーミッションエラー解消（手動ファイルコピーへの改修）】
+shutil.copytree のディレクトリアトリビュートコピーに起因する PermissionError を物理的に回避するため、データ実体のみを転送する手動コピー処理へリファクタリングしてください。
+
+Step 1: container_runner.py のコピー処理リファクタリング
+tools/benchmark/container_runner.py を開き、main() 関数内の shutil.copytree 呼び出しを完全に削除し、以下の手動トラバーサルロジックに置き換えてください。
+・コピー元（Path(args.fixture_dir)）を rglob("*") でトラバースする。
+・ディレクトリの場合は、コピー先（WORKSPACE配下）に mkdir(parents=True, exist_ok=True) を実行する。
+・ファイルの場合は、コピー先の親ディレクトリを mkdir で確保した上で、shutil.copyfile() を用いて実体データのみをコピーする（権限メタデータは一切コピーしないこと）。
+
+Step 2: 静的解析とコミット
+実装後、uv run ruff check tools/benchmark/container_runner.py を実行して構文エラーがないことを確認してください（--fixは使用しないこと）。
+検証完了後、変更したファイル（tools/benchmark/container_runner.py）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "fix(benchmark): shutil.copytreeを廃止しデータ実体のみを手動コピーするよう改修"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを指定すること。

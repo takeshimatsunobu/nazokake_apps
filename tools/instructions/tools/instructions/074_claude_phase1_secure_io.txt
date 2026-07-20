@@ -1,0 +1,20 @@
+【ミッション: セキュアI/Oの防弾化とSSoT参照の修復 (アーキテクチャ統合 - フェーズ1)】
+ギャップ分析で判明したI/Oの脆弱性とファイルパスの不整合を修正し、すべてのファイル書き込みを単一の安全なゲートキーパーに統合してください。
+
+Step 1: SSoT参照パスの修復
+tools/nazo_agent.py を開き、project_context.txt を読み込んでいる箇所を検索し、正しいファイル名である SSoT_architecture.md へ参照パスを変更してください。
+
+Step 2: アトミック書き込みへのメタデータ保護追加
+tools/ast_modifier.py の _atomic_write_text 関数を修正してください。
+・import shutil を追加すること。
+・os.replace によるすげ替えの直前に、shutil.copymode を用いて元の対象ファイル（存在する場合）から一時ファイルへパーミッション等のメタデータをコピーする処理を追加すること。
+・ファイルの読み書きにおいて encoding="utf-8" および errors="strict" が明示されていない箇所があれば、すべて明示すること。
+
+Step 3: agent_graph.py の書き込み経路の統一
+tools/agent_graph.py を開き、Ollamaの自己修復ループ内で Path(state["file_path"]).write_text(...) のように直接ファイルへ書き込んでいる箇所を特定してください。
+・この直接書き込みを廃止し、tools/ast_modifier.py の _atomic_write_text をインポートして使用するように書き換えてください。
+・これにより、ClaudeパイプラインとOllamaパイプラインの書き込み経路を単一のアトミックなゲートキーパーに統一します。
+
+Step 4: 静的解析とスモークテスト
+修正後、uv run ruff check --fix tools/ を実行して構文をクリーンに保ってください。
+その後、agent_graph.py の処理を経由してダミーファイルが正しくアトミックに書き換えられ、パーミッションが保持されることを確認する簡単な動作確認を行い、結果を報告してください。

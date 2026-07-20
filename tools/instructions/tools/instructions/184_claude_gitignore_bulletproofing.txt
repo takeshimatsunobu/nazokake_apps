@@ -1,0 +1,19 @@
+【ミッション: DevSecOpsに基づくシークレット漏洩の再発防止と .gitignore の防弾化】
+セキュリティ・インシデント（Secret Leak）のトリアージとして、人間の管理者によりAPIキーのローテーションおよび過去のGit履歴のパージが完了しました。
+あなたは開発エージェントとして、以下の「非破壊的かつ安全な再発防止策」のみを実行してください。
+
+Step 1: インデックスからの安全な除外
+apps/batch_factory/.env が現在Gitの追跡対象になっている場合、対象ファイルのGitインデックスからの安全な除外（git rm --cached apps/batch_factory/.env）を実行してください。
+※絶対制約: 物理ファイルや過去のコミット履歴自体を破壊・改変するコマンドは実行厳禁です。
+
+Step 2: .gitignore の防弾化
+apps/batch_factory/.gitignore に、以下のシークレット関連の拡張子を厳格に追記してください。
+.env
+.env.*
+*.key
+*.pem
+
+Step 3: 厳格なコミット
+実装後、変更対象のファイル（apps/batch_factory/.gitignore 等）を明示的に指定してGitコミットを行ってください。
+コミットメッセージ例: "chore(security): .envの追跡除外と.gitignoreの防弾化"
+※絶対制約: git add . は厳禁です。必ず対象ファイルパスを個別に指定すること。
