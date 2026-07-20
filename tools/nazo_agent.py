@@ -1841,6 +1841,135 @@ def _commit_or_shadow(target_dir: Path, files: list[str], commit_message: str) -
     return True
 
 
+def _autonomous_rollback(target_dir: Path, commit_hash: str = "HEAD") -> None:
+    """直前のNazo-Agent自動コミット(commit_hash)を `git revert --no-edit` で自律的に
+    取り消す(instructions/188、6次元定量評価ゲートで退行を検知した場合のFail-Safe)。
+
+    【厳格なFail-Closed(Blast Radiusの最小化)】git revert自体がコンフリクト等で失敗
+    した場合、不確実な状態での処理続行(Fail-Open)を絶対に許容しない。まず
+    `git revert --abort`で作業ツリーをクリーンな状態へ戻し、それ自体も失敗した場合
+    (revertシーケンスが開始していなかった等)は`git reset --hard HEAD`で強制的に
+    復旧する。いずれの場合も最終的に`sys.exit(1)`でプロセス全体を直ちに停止する
+    (呼び出し元のtry/except Exceptionでは捕捉されない、SystemExitはExceptionの
+    サブクラスではないため)。
+    """
+    revert_result = subprocess.run(
+        ["git", "revert", "--no-edit", commit_hash],
+        cwd=str(target_dir),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if revert_result.returncode == 0:
+        print(f"✅ [Fail-Safe] 自律ロールバックが完了しました(git revert {commit_hash})。")
+        return
+
+    print(
+        f"🚨 [Fail-Closed] git revertに失敗しました(コンフリクト等の可能性): "
+        f"{revert_result.stderr.strip()}",
+        file=sys.stderr,
+    )
+    abort_result = subprocess.run(
+        ["git", "revert", "--abort"],
+        cwd=str(target_dir),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if abort_result.returncode != 0:
+        print(
+            f"⚠️  [Fail-Closed] git revert --abortにも失敗しました"
+            f"({abort_result.stderr.strip()})。git reset --hard HEADで強制復旧します。",
+            file=sys.stderr,
+        )
+        subprocess.run(
+            ["git", "reset", "--hard", "HEAD"],
+            cwd=str(target_dir),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+        )
+
+    print(
+        "🚨 [Fail-Closed] 自律ロールバックが不確実な状態で終わったため、"
+        "処理を続行せず直ちに停止します(Blast Radiusの最小化)。",
+        file=sys.stderr,
+    )
+    sys.exit(1)
+
+
+def _run_post_commit_quality_gate(target_dir: Path) -> bool:
+    """Nazo-Agentがtarget_dirへ実際にコミット(shadow_mode抑止でない、_commit_or_shadow
+    がTrueを返した場合のみ呼ぶこと)した直後、6次元定量評価ゲート
+    (tools/benchmark/run_benchmark.py: evaluate_6d_quality_gate)を再実行し、退行
+    (Fail)を検知した場合は直前のコミットを_autonomous_rollback()で自律的に取り消す
+    (instructions/188)。
+
+    【インフラエラーと品質退行を混同しない】tools/benchmark/run_benchmark.pyの終了コード
+    契約(instructions/136)では、exit code 125はDocker CLI不在等の「インフラエラー」
+    専用であり、この場合そもそもベンチマーク自体が1件も実行されずreport["quality_gate_6d"]
+    は生成されない。これを「退行を検知した」と混同してロールバックしてしまうと、Docker
+    未導入の開発機(このリポジトリの現状のNazo-Agentライブ自己修復loop実行環境)では、
+    正常に成功したコミットが理由なく毎回ロールバックされ、自己修復能力そのものが構造的に
+    機能停止する。したがって、ゲートを実際に評価できなかった場合(exit code 125等の
+    インフラエラー・レポート未生成・JSON破損)は「非退行を確認できない」だけであり
+    「退行を検知した」わけではないため、ロールバックせず警告のみに留める(Fail-Closedは
+    instructions/188が明示するgit revert自体の失敗時にのみ適用する。_autonomous_rollback
+    参照)。ロールバックするのはreport["quality_gate_6d"]["passed"]が明示的にFalseの
+    場合のみ。
+
+    戻り値: ゲートに合格した、またはゲート自体を評価できなかった場合はTrue(いずれも
+    ロールバック不要)。退行を明示的に検知してロールバックを実行した場合はFalse。
+    ロールバック自体が失敗した場合は_autonomous_rollback内でsys.exit(1)しこの関数から
+    戻らない。
+    """
+    print("\n🧪 [Fail-Safe] コミット後の退行を6次元定量評価ゲートで検証します...")
+    result = subprocess.run(
+        ["uv", "run", "python", "tools/benchmark/run_benchmark.py"],
+        cwd=str(BASE_DIR),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+    if result.stdout:
+        print(result.stdout)
+    if result.stderr:
+        print(result.stderr, file=sys.stderr)
+
+    report = None
+    if result.returncode == 0:
+        reports = sorted((BASE_DIR / "tools" / "benchmark" / "reports").glob("benchmark_*.json"))
+        if reports:
+            try:
+                report = json.loads(reports[-1].read_text(encoding="utf-8"))
+            except (json.JSONDecodeError, OSError):
+                report = None
+
+    gate = (report or {}).get("quality_gate_6d")
+    if gate is None:
+        print(
+            f"⚠️  [Fail-Safe] 6次元定量評価ゲートを評価できませんでした"
+            f"(exit code={result.returncode}、インフラエラーの可能性)。退行を検知した"
+            "わけではないため、ロールバックせず処理を継続します。"
+        )
+        return True
+
+    if gate.get("passed"):
+        print("✅ [Fail-Safe] 6次元定量評価ゲートに合格しました。ロールバックは不要です。")
+        return True
+
+    print(
+        "🚨 [Fail-Safe] 6次元定量評価ゲートで退行を検知しました。直前のコミットを"
+        f"自律的にロールバックします: {json.dumps(gate.get('dimensions'), ensure_ascii=False)}"
+    )
+    _autonomous_rollback(target_dir)
+    return False
+
+
 async def _escalate_test_update_tasks_to_sandbox(tasks: list[dict]) -> None:
     """テストの陳腐化(triage_type == "test_update")と判定された各タスクを、
     tools/agent_graph.py の sandbox_verify_node による隔離ワークツリー(git worktree)+
@@ -1973,7 +2102,11 @@ async def _run_claude_pipeline_and_commit(
             f"\n📦 {success_count}件の成功ファイルを一括コミット(Bulk Commit)します..."
         )
         try:
-            _commit_or_shadow(TARGET_APP_DIR, successful_files, commit_message)
+            committed = _commit_or_shadow(TARGET_APP_DIR, successful_files, commit_message)
+            # 【instructions/188】実際にライブブランチへコミットした場合のみ、6次元定量
+            # 評価ゲートで退行を検証する(shadow_mode抑止時はコミット自体が存在しない)。
+            if committed:
+                _run_post_commit_quality_gate(TARGET_APP_DIR)
         except Exception as e:
             print(f"⚠️ コミット失敗: {e}")
 
@@ -2062,7 +2195,12 @@ async def _process_target(user_instruction: str, engine: str, log_path: Path) ->
                             # 【instructions/182】シャドウモードで実コミットが抑止された
                             # 場合(committed=False)、抽出対象となる実際のコミットが
                             # 存在しないため、このフック自体もスキップする。
-                            if committed:
+                            # 【instructions/188】6次元定量評価ゲートで退行を検知して
+                            # 自律ロールバックした場合(_run_post_commit_quality_gateが
+                            # Falseを返す)、そのコミットは既に取り消されているため、
+                            # 学習データとして抽出・蓄積しない(フライホイールが退行を
+                            # 「成功修復」として誤学習することを防ぐ)。
+                            if committed and _run_post_commit_quality_gate(TARGET_APP_DIR):
                                 print(
                                     "\n🌀 [Flywheel] 今回の修復軌跡を学習データとして抽出します..."
                                 )
