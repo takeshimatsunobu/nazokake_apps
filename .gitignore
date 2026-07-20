@@ -68,6 +68,9 @@ __pycache__/
 # 未追跡ファイル)。以後の再追跡・再発を防ぐため、この行を明示的な根拠として維持する。
 all_source_code.txt
 
-# tools/deploy/run_verification_server.ps1(instructions/164)がgit archiveで都度
-# 再生成する、検証サーバー転送用のHEADスナップショット(再生成可能な成果物)。
+# tools/deploy/run_ephemeral_pipeline.ps1(instructions/177)がgit archiveで都度
+# 再生成する、エフェメラルVM転送用のHEADスナップショット(再生成可能な成果物)。
+# 【instructions/187】tools/deploy/run_verification_server.ps1(instructions/164)は
+# ZIP圧縮+scp転送方式そのものがSRE監査でRejectされ、閉域GitOps(git push)方式の
+# tools/deploy/deploy_to_vm.ps1へ置き換えられた(source.zipを生成しない)。
 source.zip
