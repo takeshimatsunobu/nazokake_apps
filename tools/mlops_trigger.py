@@ -362,18 +362,24 @@ def _run_trigger_cycle(args: argparse.Namespace) -> int:
     """
     # 【instructions/175】マージ済みのescalation/*・draft/*ブランチ/worktreeの
     # ガベージコレクションをこのトリガーの定期サイクルに便乗させる。診断目的の
-    # dry-run実行時は意図せずリソースを削除しないようスキップし、失敗しても
-    # このトリガー自身の本来の責務(閾値判定)は継続する。
+    # dry-run実行時は意図せずリソースを削除しないようスキップする。
     # 【instructions/176】マージ判定はgit branch --mergedの祖先関係に加え、Squash
     # Merge等でコミットハッシュが変わったケースもgit cherryの等価パッチ検出で
     # カバーするよう堅牢化した(cleanup_git_resources.py側)。このトリガー自身の
     # --dry-runとは独立して、環境変数DRY_RUN=trueを設定するだけでも
     # cleanup_merged_git_resources()単体を検証実行(実際の削除なし)できる。
+    # 【instructions/186】dry-run以外での失敗(gitコマンド欠落等のインフラ不備を含む)は
+    # Fail-Closedとして即座にサイクルを中断し、Exit 1で後続の閾値判定・VMキックへ処理を
+    # 進めない(以前はここで例外を握り潰し、閾値判定を継続させるFail-Openだった)。
     if not args.dry_run:
         try:
             cleanup_merged_git_resources()
-        except Exception as e:  # noqa: BLE001 - クリーンアップ失敗で本来のトリガー評価を止めない
-            print(f"⚠️  [Trigger] Gitリソースクリーンアップに失敗しました: {e}")
+        except Exception as e:  # noqa: BLE001 - Fail-Closed: 検知した例外はログ後に
+            # 即座にサイクルを中断するための捕捉(握り潰しではない)。
+            message = f"Gitリソースクリーンアップに失敗したため、このサイクルを中断します: {e}"
+            print(f"🛑  [Trigger] {message}", file=sys.stderr)
+            _save_last_run_status("error", message)
+            return 1
 
     # 【ステートレスな条件評価】前回トリガー時点からの差分ではなく、現在の生カウントを
     # 直接閾値と比較するだけ(instructions/173)。

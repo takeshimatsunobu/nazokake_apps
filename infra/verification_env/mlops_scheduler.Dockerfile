@@ -25,10 +25,12 @@ FROM python:3.11-slim
 COPY --from=ghcr.io/astral-sh/uv:0.11.16 /uv /uvx /usr/local/bin/
 
 # tools/benchmark/run_benchmark.pyがDocker-outside-of-Dockerで`docker run`を起動する
-# ためのCLI自体をビルド時に導入する(コンテナ起動ごとのapt-getは、実行タイミングに
-# よってインストール内容が変わりうるドリフトの余地を生むため、イメージビルド時に
-# 一度だけ固定する)。
-RUN apt-get update && apt-get install -y --no-install-recommends docker.io \
+# ためのCLI、およびtools/cleanup_git_resources.py(escalation/*・draft/*ブランチの
+# ガベージコレクション、tools/mlops_trigger.pyの定期サイクルから呼び出される)が
+# `git branch`/`git worktree`等を実行するためのGit本体を、それぞれビルド時に導入する
+# (コンテナ起動ごとのapt-getは、実行タイミングによってインストール内容が変わりうる
+# ドリフトの余地を生むため、イメージビルド時に一度だけ固定する)。
+RUN apt-get update && apt-get install -y --no-install-recommends docker.io git \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /workspace
