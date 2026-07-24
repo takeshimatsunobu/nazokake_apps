@@ -59,5 +59,13 @@
       ".gitignore (親: /apps/evaluator/除外行を削除、/apps/evaluator_backup/除外を追加)"
     ],
     "notes": "005で判明したリスク(履歴749MB・GCP鍵混入)に対する解決策として実施。除外した内容: .git/, serviceAccountKey.json, .env, *.pem, *.key, *.gguf*(Llama-3-ELYZA 4.6GBの.bak含む), cloudflared.exe(52MB), models/・llama-bin/・node_modules/・.venv_ai/等のキャッシュ/モデルデータ、およびロボコピーの固定パターンに一致しなかった雑多なバックアップ断片(main.py.health_bak等4件)・cf_log.txtを個別に追加削除。結果: 6.9GB→49MBへ縮小、serviceAccountKey.json/.env/*.pem/*.key が新apps/evaluator/配下に存在しないことをfind/globで確認済み。apps/evaluator_backup/がgit check-ignoreで除外対象と確認済み。オペレーターへ、ローカル検証用にシークレットをバックアップから手動配置する旨をログ通知済み(このメッセージの直前の出力を参照)。git addおよびgit commitは実行していない(指示書の禁止事項通り)。旧apps/evaluator/のGitHub remote(nazokake-evaluator)には一切手を触れていない。"
+  },
+  "007_implement_circuit_breaker": {
+    "status": "completed",
+    "completed_at": "2026-07-25",
+    "artifacts": [
+      "infra/data-sync-daemon/sync_daemon_entrypoint.py (第1層: 文字数10-1000/URLブラックリスト、第2層: Gemini Flash構造化出力Judge(is_safe/is_useful/reason、Pydantic検証)を統合)"
+    ],
+    "notes": "apps/evaluator/backend/services/evaluation.pyの既存google-genai利用パターン(response_mime_type=application/json + response_schema + Gemini独自の大文字type規約)を再利用。統合ロジックの設計判断: (1) 第2層で棄却されたイベントもcreated_atはsync_metadataのカーソル前進対象に含める(棄却は「処理済み」であり、放置すると同一の汚染データを毎サイクルGemini APIへ再判定させ続ける無限コスト/攻撃面になるため)。(2) Gemini API呼び出し自体の失敗(429/503等)はフェイルクローズで握り潰さず例外をそのまま伝播させ、instructions/003で実装済みの指数バックオフ再試行ループに委ねる(一時的なAPI障害を「安全性未確認」として正規データを永久棄却しないため)。py_compileに加え、Gemini呼び出しをモックした動的テストで(a)ヒューリスティック棄却、(b)LLM判定棄却、(c)両棄却時もlast_synced_atが正しく前進すること、(d)API例外時はDBへ何もコミットされずカーソルも前進しないことを確認済み。実際のGemini API呼び出し自体(ネットワーク・認証・実際のプロンプトインジェクション耐性)は、この開発機にGEMINI_API_KEYの実運用検証環境が無いため未検証。git addおよびgit commitは実行していない(指示書の禁止事項通り、オペレーターのコードレビュー後の手動コミット待ち)。"
   }
 }
