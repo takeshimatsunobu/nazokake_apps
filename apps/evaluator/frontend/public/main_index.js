@@ -1,0 +1,92 @@
+// @ts-nocheck -- 未移行(段階的にJSDoc型付けを進める対象)
+// frontend/public/main_index.js
+// index.html 用のエントリーポイント。app.js(Controller)と各ui/*.jsモジュールをimportし、
+// クリック/入力イベントの委譲ディスパッチ、フォーム初期化、Service Worker登録、
+// ヘルスチェックウォームアップの初期化順序をここで一元的にオーケストレーションする。
+//
+// app.js を単にimportするだけで、その内部の自己実行コード(匿名認証初期化・ディープリンク
+// 処理・研究データロード・ページ来訪ログ)がモジュール評価時に実行される(従来の
+// <script type="module" src="app.js">読み込みと同じ副作用タイミング)。
+
+import {
+    switchTab, startGeneration, submitFeedback, shareTextResult, switchBoardCategory,
+    submitBoardPost, submitUserEvaluation, submitHumanRiddle,
+} from "app";
+import { uiInitForm } from "ui/form";
+import { setFeedbackRating } from "ui/feedback";
+import { uiShowReplyForm, uiHideReplyForm } from "ui/board";
+import { setFeedRating } from "ui/feed";
+import { setGenRating, setGenComment, submitGenEvaluation, uiResetGenerator } from "ui/result";
+
+// action名(data-action属性の値)の完全一致キーで実関数へディスパッチする。
+// 旧実装のactionStr.includes(...)という部分文字列マッチは、意図しない誤爆
+// (例: 'submitFeedback'という文字列が別のaction名の部分文字列になる等)の
+// リスクを構造的に持っていたため、厳密な完全一致に置き換えて堅牢化する。
+const CLICK_ACTIONS = {
+    switchTab: (ds) => switchTab(ds.arg),
+    startGeneration: () => startGeneration(),
+    shareTextResult: (ds) => shareTextResult(ds.arg),
+    setFeedbackRating: (ds) => setFeedbackRating(parseInt(ds.arg, 10)),
+    submitFeedback: () => submitFeedback(),
+    switchBoardCategory: (ds) => switchBoardCategory(ds.arg),
+    submitBoardPost: (ds) => submitBoardPost(ds.parentId || null),
+    setFeedRating: (ds) => setFeedRating(ds.docId, Number(ds.score)),
+    submitUserEvaluation: (ds) => submitUserEvaluation(ds.docId),
+    uiShowReplyForm: (ds) => uiShowReplyForm(ds.postId),
+    uiHideReplyForm: (ds) => uiHideReplyForm(ds.postId),
+    setGenRating: (ds) => setGenRating(ds.model, Number(ds.score)),
+    submitGenEvaluation: (ds) => submitGenEvaluation(ds.model),
+    uiResetGenerator: () => uiResetGenerator(),
+};
+
+const INPUT_ACTIONS = {
+    setGenComment: (ds, value) => setGenComment(ds.model, value),
+};
+
+document.addEventListener('click', (e) => {
+    const el = /** @type {Element} */ (e.target).closest('[data-action]');
+    if (!el) return;
+    const handler = CLICK_ACTIONS[/** @type {HTMLElement} */ (el).dataset.action];
+    if (!handler) return;
+    e.preventDefault();
+    handler(/** @type {HTMLElement} */ (el).dataset);
+});
+
+document.addEventListener('input', (e) => {
+    const el = /** @type {Element} */ (e.target).closest('[data-oninput-action]');
+    if (!el) return;
+    const handler = INPUT_ACTIONS[/** @type {HTMLElement} */ (el).dataset.oninputAction];
+    if (!handler) return;
+    handler(/** @type {HTMLElement} */ (el).dataset, /** @type {HTMLInputElement} */ (e.target).value);
+});
+
+document.addEventListener('DOMContentLoaded', () => {
+    // 自作鑑定フォームを初期化。UI制御は ui/form.js、API通信は submitHumanRiddle を注入。
+    uiInitForm(submitHumanRiddle);
+});
+
+// Service Worker登録(旧index.html末尾のインラインscriptから移設、ロジックは無改変)。
+if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => {
+        navigator.serviceWorker.register('sw.js').then(reg => {
+            console.log('ServiceWorker registration successful!');
+        }).catch(err => console.error('ServiceWorker registration failed: ', err));
+    });
+}
+
+// バックエンドの0円コールドスタート対策ウォームアップ(旧index.html末尾のインラインscriptから移設、
+// ロジックは無改変)。
+window.addEventListener('load', () => {
+    setTimeout(() => {
+        // ローカル環境（localhost/127.0.0.1）ならポート7800、本番なら絶対パスを自動選択
+        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+        const warmupUrl = isLocal ? 'http://127.0.0.1:7800/api/health' : 'https://nazokake-backend-r6jq2erkta-an.a.run.app/api/health';
+
+        console.log("⚙️ [Warmup] " + warmupUrl + " へフェッチを送信し、サーバーを安全に起動します...");
+
+        fetch(warmupUrl)
+            .then(res => res.json())
+            .then(data => console.log("⚙️ [Warmup] 事前起動（0円ウォームアップ）に成功しました：", data))
+            .catch(err => console.warn("⚙️ [Warmup] ウォームアップ通信でエラーが発生しましたが、動作には影響ありません。", err));
+    }, 2000);
+});

@@ -1,0 +1,16 @@
+{
+  "name": "なぞかけ道場 - からくりAI",
+  "short_name": "なぞかけ道場",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F9F6EA",
+  "theme_color": "#902A19",
+  "icons": [
+    {
+      "src": "/assets/icon/app_icon.png",
+      "sizes": "192x192 512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

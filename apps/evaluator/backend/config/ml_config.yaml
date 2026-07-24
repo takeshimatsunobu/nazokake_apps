@@ -1,0 +1,16 @@
+# ==========================================
+# なぞかけ MLOps クオリティゲート設定ファイル
+# ==========================================
+dataset:
+  project_id: "nazokakeapp-137e5"
+  collection_name: "nazokake_items"
+  
+sft:
+  min_score: 4.1
+  require_golden_flag: false
+  output_filename: "sft_dataset.jsonl"
+
+dpo:
+  min_score_diff: 0.5
+  max_pairs_per_group: 5
+  output_filename: "dpo_dataset.jsonl"

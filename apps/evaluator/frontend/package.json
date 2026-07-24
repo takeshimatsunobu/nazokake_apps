@@ -1,0 +1,14 @@
+{
+  "name": "nazokake-evaluator-frontend",
+  "private": true,
+  "version": "1.0.0",
+  "description": "なぞかけディスカバリー フロントエンド(Vanilla JS)。JSDoc + OpenAPI型定義によるバックエンド契約の静的検査を行う。",
+  "scripts": {
+    "generate-types": "openapi-typescript openapi.json -o api.d.ts",
+    "type-check": "tsc -p jsconfig.json"
+  },
+  "devDependencies": {
+    "openapi-typescript": "^7.4.0",
+    "typescript": "^5.6.0"
+  }
+}

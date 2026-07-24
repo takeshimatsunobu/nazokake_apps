@@ -48,5 +48,16 @@
       ".github/workflows/deploy_cloud_run.yml (脆弱性スキャンステップをプレースホルダーからハード・フェイル本実装へ格上げ: CRITICAL/HIGH検出時exit 1、それ以外exit 0)"
     ],
     "notes": "要件B(セキュリティゲートのハード・フェイル化)のみ実施。要件A(.gitignoreからのapps/evaluator/除外解除・モノレポ統合)はユーザー判断により見送り。調査で判明した事実: (1) apps/evaluator/serviceAccountKey.json(実在するGCPサービスアカウント鍵)がネスト側.gitignoreでは除外されておらず、outer .gitignoreの除外を外すと直接git履行に平文コミットされる実害がある、(2) apps/evaluator/.gitは749MBの履歴・35コミットを持つ、GitHub上で独立ホストされている実プロジェクト(origin=github.com/takeshimatsunobu/nazokake-evaluator、現在のブランチはmainではなくrefactor/gemma-cleanup)であり、.gitmodules無しでのgit addは実ファイルを追跡しない壊れたgitlinkになる。この2点をユーザーへ提示し、モノレポ統合(履歴込みsubtree統合)は本タスクの範囲を超える意思決定と判断され、明示的に保留(見送り)された。git addおよびgit commitは実行していない(指示書側の特別許可は認識しているが、上記の実害リスクを理由にユーザー確認を優先し、ユーザーもStopを選択)。"
+  },
+  "006_setup_physical_integration": {
+    "status": "completed",
+    "completed_at": "2026-07-25",
+    "artifacts": [
+      "apps/evaluator_backup/ (旧apps/evaluator/を丸ごと退避。.git履歴749MB・serviceAccountKey.json含む)",
+      "apps/evaluator/ (新規、.git無し、49MBの純粋ソースコードのみ)",
+      "apps/evaluator/.gitignore (serviceAccountKey.json/*.pem/*.key/models等を追加)",
+      ".gitignore (親: /apps/evaluator/除外行を削除、/apps/evaluator_backup/除外を追加)"
+    ],
+    "notes": "005で判明したリスク(履歴749MB・GCP鍵混入)に対する解決策として実施。除外した内容: .git/, serviceAccountKey.json, .env, *.pem, *.key, *.gguf*(Llama-3-ELYZA 4.6GBの.bak含む), cloudflared.exe(52MB), models/・llama-bin/・node_modules/・.venv_ai/等のキャッシュ/モデルデータ、およびロボコピーの固定パターンに一致しなかった雑多なバックアップ断片(main.py.health_bak等4件)・cf_log.txtを個別に追加削除。結果: 6.9GB→49MBへ縮小、serviceAccountKey.json/.env/*.pem/*.key が新apps/evaluator/配下に存在しないことをfind/globで確認済み。apps/evaluator_backup/がgit check-ignoreで除外対象と確認済み。オペレーターへ、ローカル検証用にシークレットをバックアップから手動配置する旨をログ通知済み(このメッセージの直前の出力を参照)。git addおよびgit commitは実行していない(指示書の禁止事項通り)。旧apps/evaluator/のGitHub remote(nazokake-evaluator)には一切手を触れていない。"
   }
 }

@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>なぞかけ研究所 - Nazo-Agent</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* 和風スチームパンク・テーマカラー */
+        :root {
+            --color-enji: #902A19; /* 臙脂色 */
+            --color-kogane: #C5B358; /* 黄金色 */
+            --color-wakakusa: #5B8124; /* 若草色 */
+        }
+        body { font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; }
+        .bg-enji { background-color: var(--color-enji); }
+        .text-enji { color: var(--color-enji); }
+        .border-enji { border-color: var(--color-enji); }
+        .bg-kogane { background-color: var(--color-kogane); }
+        .text-kogane { color: var(--color-kogane); }
+        .bg-wakakusa { background-color: var(--color-wakakusa); }
+        .text-wakakusa { color: var(--color-wakakusa); }
+        
+        /* スムーズなアコーディオンアニメーション */
+        details > summary { list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+        details[open] summary ~ * { animation: slideDown 0.3s ease-in-out; }
+        @keyframes slideDown {
+            0% { opacity: 0; transform: translateY(-10px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+    <div id="app-container" class="max-w-md mx-auto h-[100dvh] bg-[#Fdfbf7] shadow-xl relative flex flex-col overflow-hidden">
+        
+        <header class="bg-enji text-white p-4 shadow-md flex justify-between items-center z-10 shrink-0">
+            <h1 class="text-xl font-bold truncate">⚗️ なぞかけ研究所</h1>
+            <button onclick="location.href='index.html'" class="text-sm bg-white/20 px-3 py-1 rounded hover:bg-white/30 transition">戻る</button>
+        </header>
+
+        <main class="flex-1 overflow-y-auto p-4 pb-24 relative space-y-6">
+            
+            <div class="flex space-x-2 pb-2 overflow-x-auto scrollbar-hide border-b-2 border-gray-200 sticky top-0 bg-[#Fdfbf7] z-10 pt-2">
+                <button onclick="switchTab('definition')" id="btn-definition" class="whitespace-nowrap px-4 py-2 rounded-t-lg font-bold bg-enji text-white shadow-sm transition">📜 定義</button>
+                <button onclick="switchTab('culture')" id="btn-culture" class="whitespace-nowrap px-4 py-2 rounded-t-lg font-bold bg-gray-200 text-gray-600 hover:bg-gray-300 transition">🌸 文化</button>
+            </div>
+
+            <div id="tab-definition" class="space-y-4">
+                
+                <details class="group bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" open>
+                    <summary class="p-4 cursor-pointer flex justify-between items-center bg-gray-50 hover:bg-gray-100 transition">
+                        <h2 class="text-lg font-bold text-gray-800">🧩 現代のなぞかけの基本の形</h2>
+                        <span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <div class="p-4 border-t border-gray-100 space-y-4">
+                        <div class="bg-white rounded-lg p-4 shadow-xs border border-gray-100">
+                            <span class="inline-block bg-enji text-white text-xs px-2 py-1 rounded mb-2">📖 実在ファクト</span>
+                            <h3 class="font-bold text-gray-800 mb-2">「Aとかけて、Bと解く。その心はC」</h3>
+                            <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1">
+                                <li><strong>A（お題）:</strong> 提示されるテーマ。</li>
+                                <li><strong>B（解き）:</strong> Aとは一見無関係な別の事象。</li>
+                                <li><strong>C（心）:</strong> AとBを結びつける共通のキーワード（同音異義語など）。</li>
+                            </ul>
+                            <div class="mt-3 text-xs text-wakakusa font-bold bg-green-50 p-2 rounded">
+                                💡 推論のハイライト：全く異なる二つの世界を、一つの言葉遊びで縫い合わせる知的遊戯。
+                            </div>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="group bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <summary class="p-4 cursor-pointer flex justify-between items-center bg-gray-50 hover:bg-gray-100 transition">
+                        <h2 class="text-lg font-bold text-gray-800">🏛️ なぞかけの学術的・多角的定義</h2>
+                        <span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <div class="p-4 border-t border-gray-100 space-y-4">
+                        <div class="bg-white rounded-lg p-4 shadow-xs border border-gray-100 relative">
+                            <span class="inline-block bg-kogane text-white text-xs px-2 py-1 rounded mb-2">📖 伝統話芸</span>
+                            <h3 class="font-bold text-gray-800 mb-1">寄席演芸における「落ち（サゲ）」の極致</h3>
+                            <p class="text-sm text-gray-600">落語や漫才において、観客の意表を突く論理的飛躍と着地を最短距離で成立させる話芸のフォーマット。</p>
+                        </div>
+                        
+                        <div class="bg-white rounded-lg p-4 shadow-xs border border-gray-100">
+                            <span class="inline-block bg-wakakusa text-white text-xs px-2 py-1 rounded mb-2">📖 認知心理学</span>
+                            <h3 class="font-bold text-gray-800 mb-2">脳内での「意味ネットワーク」の探索</h3>
+                            <ol class="list-decimal pl-5 text-sm text-gray-600 space-y-2">
+                                <li>発散的思考による連想展開</li>
+                                <li>無関連概念への強制マッピング</li>
+                                <li>収束的思考による意味の統合（アハ体験）</li>
+                            </ol>
+                        </div>
+                    </div>
+                </details>
+
+                <details class="group bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+                    <summary class="p-4 cursor-pointer flex justify-between items-center bg-gray-50 hover:bg-gray-100 transition">
+                        <h2 class="text-lg font-bold text-gray-800">📖 辞書・事典別アプローチ比較一覧</h2>
+                        <span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <div class="p-4 border-t border-gray-100 space-y-4">
+                        <div class="grid grid-cols-1 gap-3">
+                            <div class="bg-white p-3 rounded shadow-xs border-l-4 border-kogane">
+                                <h4 class="font-bold text-sm">国語辞典のアプローチ</h4>
+                                <p class="text-xs text-gray-600 mt-1">言葉の定義と言い換えに終始する傾向。</p>
+                            </div>
+                            <div class="bg-white p-3 rounded shadow-xs border-l-4 border-blue-500">
+                                <h4 class="font-bold text-sm">百科事典のアプローチ</h4>
+                                <p class="text-xs text-gray-600 mt-1">歴史的背景や社会的な位置づけまで言及。</p>
+                            </div>
+                        </div>
+                    </div>
+                </details>
+            </div>
+
+            <div id="tab-culture" class="hidden space-y-4">
+                
+                <details class="group bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" open>
+                    <summary class="p-4 cursor-pointer flex justify-between items-center bg-gray-50 hover:bg-gray-100 transition">
+                        <h2 class="text-lg font-bold text-gray-800">📜 なぞかけ進化論：推論と歴史</h2>
+                        <span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                    </summary>
+                    <div class="p-4 border-t border-gray-100 relative">
+                        <div class="absolute left-6 top-4 bottom-4 w-0.5 bg-gray-200"></div>
+
+                        <div class="space-y-6 relative">
+                            <div class="pl-8 relative">
+                                <div class="absolute left-[-21px] top-1 w-3 h-3 bg-enji rounded-full border-2 border-white shadow"></div>
+                                <h3 class="font-bold text-enji mb-1">【飛鳥時代】謎の起源</h3>
+                                <p class="text-sm text-gray-600 mb-2">言葉の裏に隠された意味を読み解く「謎合」の誕生。</p>
+                                <img src="./assets/research/asuka_mokkan.jpg" alt="飛鳥の木簡" onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100%\' height=\'100\'><rect width=\'100%\' height=\'100\' fill=\'#eee\'/><text x=\'50%\' y=\'50%\' font-size=\'14\' text-anchor=\'middle\' fill=\'#999\' dy=\'.3em\'>🖼️ 画像を準備中です</text></svg>'" class="w-full h-auto rounded border border-gray-200 shadow-sm">
+                            </div>
+
+                            <div class="pl-8 relative">
+                                <div class="absolute left-[-21px] top-1 w-3 h-3 bg-kogane rounded-full border-2 border-white shadow"></div>
+                                <h3 class="font-bold text-kogane mb-1">【平安時代】貴族の知的な言葉遊び</h3>
+                                <p class="text-sm text-gray-600 mb-2">掛詞や見立てを用いた優雅な遊戯へ。</p>
+                                <img src="./assets/research/heian_makimono.jpg" alt="平安の巻物" onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100%\' height=\'100\'><rect width=\'100%\' height=\'100\' fill=\'#eee\'/><text x=\'50%\' y=\'50%\' font-size=\'14\' text-anchor=\'middle\' fill=\'#999\' dy=\'.3em\'>🖼️ 画像を準備中です</text></svg>'" class="w-full h-auto rounded border border-gray-200 shadow-sm">
+                            </div>
+
+                            <div class="pl-8 relative">
+                                <div class="absolute left-[-21px] top-1 w-3 h-3 bg-wakakusa rounded-full border-2 border-white shadow"></div>
+                                <h3 class="font-bold text-wakakusa mb-1">【鎌倉・室町時代】禅問答と庶民化</h3>
+                                <img src="./assets/research/zen_kakejiku.jpg" alt="禅寺の掛け軸" onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100%\' height=\'100\'><rect width=\'100%\' height=\'100\' fill=\'#eee\'/><text x=\'50%\' y=\'50%\' font-size=\'14\' text-anchor=\'middle\' fill=\'#999\' dy=\'.3em\'>🖼️ 画像を準備中です</text></svg>'" class="w-full h-auto rounded border border-gray-200 shadow-sm">
+                            </div>
+
+                            <div class="pl-8 relative">
+                                <div class="absolute left-[-21px] top-1 w-3 h-3 bg-enji rounded-full border-2 border-white shadow"></div>
+                                <h3 class="font-bold text-enji mb-1">【江戸時代】大衆娯楽の爆発と「なぞかけ」の確立</h3>
+                                <p class="text-sm text-gray-600 mb-2">謎本が出版され、現在の「〇〇とかけて」のフォーマットが定着。</p>
+                                <img src="./assets/research/edo_kusazoushi.jpg" alt="江戸の草双紙" onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100%\' height=\'100\'><rect width=\'100%\' height=\'100\' fill=\'#eee\'/><text x=\'50%\' y=\'50%\' font-size=\'14\' text-anchor=\'middle\' fill=\'#999\' dy=\'.3em\'>🖼️ 画像を準備中です</text></svg>'" class="w-full h-auto rounded border border-gray-200 shadow-sm">
+                            </div>
+
+                            <div class="pl-8 relative">
+                                <div class="absolute left-[-21px] top-1 w-3 h-3 bg-kogane rounded-full border-2 border-white shadow"></div>
+                                <h3 class="font-bold text-kogane mb-1">【明治時代】メディアミックスと近代化</h3>
+                                <img src="./assets/research/meiji_dandan.jpg" alt="明治の團團珍聞" onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100%\' height=\'100\'><rect width=\'100%\' height=\'100\' fill=\'#eee\'/><text x=\'50%\' y=\'50%\' font-size=\'14\' text-anchor=\'middle\' fill=\'#999\' dy=\'.3em\'>🖼️ 画像を準備中です</text></svg>'" class="w-full h-auto rounded border border-gray-200 shadow-sm">
+                            </div>
+
+                            <div class="pl-8 relative">
+                                <div class="absolute left-[-21px] top-1 w-3 h-3 bg-wakakusa rounded-full border-2 border-white shadow"></div>
+                                <h3 class="font-bold text-wakakusa mb-1">【大正・昭和時代】寄席演芸への定着</h3>
+                                <p class="text-sm text-gray-600 mb-2">漫才や寄席の枕として、プロの芸人がその技を競い合う。</p>
+                                <img src="./assets/research/showa_shonen.jpg" alt="大正昭和の少年倶楽部" onerror="this.onerror=null; this.src='data:image/svg+xml;utf8,<svg xmlns=\'http://www.w3.org/2000/svg\' width=\'100%\' height=\'100\'><rect width=\'100%\' height=\'100\' fill=\'#eee\'/><text x=\'50%\' y=\'50%\' font-size=\'14\' text-anchor=\'middle\' fill=\'#999\' dy=\'.3em\'>🖼️ 画像を準備中です</text></svg>'" class="w-full h-auto rounded border border-gray-200 shadow-sm">
+                            </div>
+                        </div>
+                    </div>
+                </details>
+            </div>
+            
+        </main>
+        
+        <div class="h-env-safe-bottom bg-[#Fdfbf7] shrink-0"></div>
+    </div>
+
+    <script>
+        // タブ切り替え制御ロジック
+        function switchTab(tabId) {
+            document.getElementById('tab-definition').classList.add('hidden');
+            document.getElementById('tab-culture').classList.add('hidden');
+            
+            document.getElementById('btn-definition').className = 'whitespace-nowrap px-4 py-2 rounded-t-lg font-bold bg-gray-200 text-gray-600 hover:bg-gray-300 transition';
+            document.getElementById('btn-culture').className = 'whitespace-nowrap px-4 py-2 rounded-t-lg font-bold bg-gray-200 text-gray-600 hover:bg-gray-300 transition';
+            
+            document.getElementById('tab-' + tabId).classList.remove('hidden');
+            document.getElementById('btn-' + tabId).className = 'whitespace-nowrap px-4 py-2 rounded-t-lg font-bold bg-enji text-white shadow-sm transition';
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>⛩️ 謎掛け学術振興会 - 管理コックピット</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- MLOps推移ダッシュボード(admin.js)用。index.htmlと同じCDN、グローバルChartとして利用する。 -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <!-- Firebase SDK (compat / CDN): ローカル(localhost:8000)・本番のどちらでも解決可能 -->
+    <!-- ※ admin.js は firebase.auth() のみ使用。Firestore はクライアント直接アクセスしない（全て backend API 経由）ため
+         firestore-compat は読み込まない（未使用SDKのパージ＝攻撃面・バンドル削減）。
+         FirebaseUI 6.1.0にESM版が存在しないため、Firebase Auth本体もcompatのグローバル`firebase`
+         のまま維持する(firebase.initializeApp()の呼び出しはadmin.js側へ移設済み)。 -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <!-- FirebaseUI（ログインUI）: Firebase 10 系互換の 6.1.0 を使用 -->
+    <script src="https://www.gstatic.com/firebasejs/ui/6.1.0/firebase-ui-auth.js"></script>
+    <link type="text/css" rel="stylesheet" href="https://www.gstatic.com/firebasejs/ui/6.1.0/firebase-ui-auth.css" />
+
+    <script type="importmap">
+    {
+        "imports": {
+            "config": "/config.js",
+            "state": "/state.js",
+            "api": "/api.js",
+            "app": "/app.js",
+            "admin": "/admin.js",
+            "firebase-config": "/firebase-config.js",
+            "ui/auth": "/ui/auth.js",
+            "ui/toast": "/ui/toast.js",
+            "ui/tabs": "/ui/tabs.js",
+            "ui/feed": "/ui/feed.js",
+            "ui/board": "/ui/board.js",
+            "ui/form": "/ui/form.js",
+            "ui/result": "/ui/result.js",
+            "ui/feedback": "/ui/feedback.js",
+            "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+            "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
+        }
+    }
+    </script>
+    <script type="module" src="/main_admin.js"></script>
+</head>
+<body class="bg-gray-100 text-gray-800 p-4 md:p-8 font-sans">
+    <div id="toast-container" class="fixed top-5 left-1/2 transform -translate-x-1/2 z-[100] flex flex-col gap-2 pointer-events-none"></div>
+
+    <div id="login-screen" class="max-w-md mx-auto mt-20 bg-white p-8 rounded-xl shadow-md text-center" style="display: none;">
+        <h2 class="text-2xl font-bold text-[#902A19] mb-4">⚙️ 管理者ログイン</h2>
+        <p class="text-gray-600 mb-6 text-sm">許可されたGoogleアカウントで認証してください</p>
+        <div id="firebaseui-auth-container"></div>
+    </div>
+
+    <div id="admin-screen" class="max-w-[1000px] mx-auto hidden">
+        <header class="mb-8 flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+            <div>
+                <h1 class="text-2xl font-bold text-[#902A19] flex items-center gap-2">
+                    <span class="text-3xl">🛠️</span> RLHF データセット管理コックピット
+                </h1>
+                <p class="text-xs text-gray-500 mt-1">※取扱注意：ここでの操作は本番AIモデルとDBに直結しています。</p>
+            </div>
+            <button data-action="logout" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded font-bold text-sm transition">
+                🚪 ログアウト
+            </button>
+        </header>
+
+        <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-blue-600">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-blue-800 flex items-center gap-2">
+                    <span>📊</span> アプリ利用状況 (テレメトリ)
+                </h2>
+                <button class="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100 transition border border-blue-200">
+                    🔄 データを最新化
+                </button>
+            </div>
+            
+            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+                <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm">
+                    <p class="text-xs text-gray-500 font-bold">総ページ閲覧数 (PV)</p>
+                    <p id="adm-pv" class="text-3xl font-black text-blue-700 mt-1">0</p>
+                </div>
+                <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm">
+                    <p class="text-xs text-gray-500 font-bold">総訪問者数 (UU)</p>
+                    <p id="adm-uu" class="text-3xl font-black text-emerald-600 mt-1">0</p>
+                </div>
+                <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm col-span-2 sm:col-span-1">
+                    <p class="text-xs text-gray-500 font-bold">平均滞在時間</p>
+                    <p id="adm-dur" class="text-2xl font-black text-gray-800 mt-1.5">0<span class="text-xs font-normal text-gray-500">秒</span></p>
+                </div>
+            </div>
+
+            <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-inner">
+                <h3 class="text-sm font-bold text-gray-700 mb-3 border-b pb-2">🎯 ユーザーアクション統計</h3>
+                <div class="space-y-3 text-sm" id="adm-events-container">
+                    <p class="text-gray-400 text-center py-2">データを読み込んでいます...</p>
+                </div>
+            </div>
+        </section>
+
+        <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-teal-600">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-teal-800 flex items-center gap-2">
+                    <span>🫀</span> mlops-scheduler 稼働状況
+                </h2>
+            </div>
+            <!-- 【instructions/169】SSH接続無しでのデーモン生存監視。
+                 tools/export_daemon_heartbeat.pyが書き出すdaemon_heartbeat.jsonを
+                 静的fetchするのみ(バックエンドAPIに依存しない)。 -->
+            <div id="daemon-heartbeat-container" class="flex items-center gap-3">
+                <span id="daemon-heartbeat-dot" class="inline-block w-3 h-3 rounded-full bg-gray-300 flex-shrink-0"></span>
+                <p id="daemon-heartbeat-text" class="text-sm text-gray-500">読み込んでいます...</p>
+            </div>
+        </section>
+
+        <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-gray-800">
+            <div class="flex justify-between items-center mb-4">
+                <h2 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+                    <span>🚀</span> ワンタッチ本番デプロイ
+                </h2>
+                <button id="deploy-btn" data-action="deployToProduction"
+                    class="bg-gray-900 text-white text-sm font-bold px-4 py-2 rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                    本番デプロイ実行
+                </button>
+            </div>
+            <!-- 【instructions/172: 1-Click Deploy】POST /api/admin/deploy が
+                 tools/deploy/run_verification_server.ps1 をバックグラウンドで起動する。
+                 その標準出力/標準エラー出力はdeploy.logへ追記され、admin.jsが
+                 定期的にfetchしてこのターミナル風エリアへストリーミング表示する
+                 (SSH接続・ターミナル操作を一切必要としない)。 -->
+            <p class="text-xs text-gray-500 mb-2">
+                作業ツリーの保留中の変更を自動コミットした上で、検証サーバーへの
+                プロビジョニング・デプロイをバックグラウンドで実行します。
+            </p>
+            <textarea id="deploy-log-terminal" readonly rows="14"
+                class="w-full bg-black text-green-400 font-mono text-xs p-3 rounded-lg resize-none"
+                placeholder="デプロイ実行時にログがここへストリーミング表示されます..."></textarea>
+        </section>
+
+        <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-purple-600">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-purple-800 flex items-center gap-2">
+                    <span>📈</span> MLOps推移ダッシュボード
+                </h2>
+            </div>
+            <div id="mlops-chart-container">
+                <canvas id="mlops-chart" height="120"></canvas>
+                <p id="mlops-chart-empty" class="text-center py-10 text-gray-400 text-sm hidden">
+                    まだMLOpsパイプラインの実行履歴がありません
+                </p>
+                <p id="mlops-chart-error" class="text-center py-10 text-red-500 text-sm hidden"></p>
+            </div>
+        </section>
+
+        <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-[#902A19]">
+            <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+                <span>🎛️</span> AI生成エンジン 操縦パネル
+            </h2>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <label class="block text-sm font-bold text-gray-700 mb-2">Temperature (温度: 0.0 〜 2.0)</label>
+                    <input type="range" id="config-temp" min="0" max="2.0" step="0.1" value="0.8" class="w-full accent-[#902A19]">
+                    <div class="flex justify-between text-xs text-gray-500 mt-1">
+                        <span>カタイ(0.0)</span><span id="temp-val-display" class="font-bold text-[#902A19]">0.8</span><span>ブッ飛ぶ(2.0)</span>
+                    </div>
+                </div>
+                <div>
+                                        <label class="block text-sm font-bold text-gray-700 mb-2">生成モデル (ボケ役LLM)</label>
+                    <select id="config-model" class="w-full p-2 border border-gray-300 rounded focus:ring-[#902A19] focus:border-[#902A19] outline-none font-bold text-[#902A19]">
+                        <option value="elyza:8b">ELYZA 8B (🏠 純国産ローカル)</option>
+                        <option value="gemini-3.5-flash">Gemini 3.5 Flash (☁️ クラウド高速)</option>
+                        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (☁️ クラウド高品質)</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-bold text-gray-700 mb-2">評価モデル (審査員LLM)</label>
+                    <select id="config-evaluator" class="w-full p-2 border border-gray-300 rounded focus:ring-[#5B8124] focus:border-[#5B8124] outline-none font-bold text-[#5B8124]">
+                        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (☁️ クラウド厳格審査)</option>
+                        <option value="gemini-3.5-flash">Gemini 3.5 Flash (☁️ クラウド高速審査)</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2">
+                    <label class="block text-sm font-bold text-gray-700 mb-2">システムプロンプト (微調整)</label>
+                    <textarea id="config-prompt" rows="3" class="w-full p-3 border border-gray-300 rounded text-sm focus:ring-[#902A19] focus:border-[#902A19] outline-none font-mono">あなたは前衛的な天才なぞかけ芸人です。</textarea>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-end">
+                <button class="bg-[#902A19] hover:bg-[#7a2315] text-white px-6 py-2 rounded font-bold shadow-md transition transform hover:-translate-y-0.5">
+                    💾 エンジン設定をバックエンドに反映
+                </button>
+            </div>
+        </section>
+
+        <section class="bg-white p-6 rounded-xl shadow-md border-t-4 border-[#5B8124]">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    <span>📋</span> 承認待ちデータ (ユーザー評価済)
+                </h2>
+                <button class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded transition border border-gray-200">
+                    🔄 リロード
+                </button>
+            </div>
+            <div id="pending-container" class="space-y-4">
+                <div class="text-center py-10 text-gray-500">データを読み込んでいます...</div>
+            </div>
+
+            <!-- 直近の処理済みデータ（スマホ考慮で承認待ちの直下・縦配置）。最大10件・新しい順。 -->
+            <div class="mt-8 pt-6 border-t border-gray-200">
+                <h3 class="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2"><span>✅</span> 直近の処理済みデータ（最新10件）</h3>
+                <div id="resolved-container" class="space-y-4 opacity-90">
+                    <div class="resolved-empty text-center py-6 text-gray-400 text-sm">まだ処理済みのデータはありません</div>
+                </div>
+            </div>
+        </section>
+
+        <section class="bg-white p-6 rounded-xl shadow-md mt-8 border-t-4 border-[#C5B358]">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    <span>🧪</span> RLHFレビュー（モデル別 人間評価＋コメント）
+                </h2>
+                <button class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded transition border border-gray-200">
+                    🔄 リロード
+                </button>
+            </div>
+            <div id="model-feedback-container" class="space-y-3">
+                <div class="text-center py-10 text-gray-500">データを読み込んでいます...</div>
+            </div>
+        </section>
+
+        <section class="bg-white p-6 rounded-xl shadow-md mt-8 border-t-4 border-red-600">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-red-700 flex items-center gap-2">
+                    <span>☠️</span> デッドレター（エラー隔離）
+                </h2>
+                <button id="dlq-reload-btn" class="text-xs bg-red-50 text-red-600 px-3 py-1 rounded hover:bg-red-100 transition border border-red-200">
+                    🔄 リロード
+                </button>
+            </div>
+            <div id="dlq-container" class="space-y-4">
+                <div class="text-center py-10 text-gray-500">データを読み込んでいます...</div>
+            </div>
+        </section>
+
+        <section class="bg-white p-6 rounded-xl shadow-md mt-8 border-t-4 border-gray-500">
+            <div class="flex justify-between items-center mb-6">
+                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                    <span>🧾</span> 監査証跡（Audit Logs）
+                </h2>
+                <button id="audit-log-reload-btn" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded transition border border-gray-200">
+                    🔄 リロード
+                </button>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm text-left">
+                    <thead>
+                        <tr class="text-gray-500 border-b border-gray-200">
+                            <th class="py-2 pr-4">作成日時</th>
+                            <th class="py-2 pr-4">actor</th>
+                            <th class="py-2 pr-4">action</th>
+                            <th class="py-2 pr-4">対象ID</th>
+                            <th class="py-2 pr-4">reason</th>
+                        </tr>
+                    </thead>
+                    <tbody id="audit-log-container">
+                        <tr><td colspan="5" class="text-center py-10 text-gray-500">データを読み込んでいます...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+    </div>
+
+    <!-- 承認待ち作品の詳細モーダル（デュアルAI・11軸・人間評価/コメント） -->
+    <div id="admin-detail-modal" class="hidden fixed inset-0 z-[90] bg-black/50 flex items-start justify-center overflow-y-auto p-4">
+        <div class="bg-white rounded-xl shadow-2xl max-w-[900px] w-full my-8 relative">
+            <div class="sticky top-0 bg-white flex justify-between items-center p-4 border-b border-gray-200 rounded-t-xl">
+                <h3 class="font-bold text-[#902A19]">🔍 作品詳細</h3>
+                <button class="text-gray-400 hover:text-gray-700 text-2xl leading-none font-bold">×</button>
+            </div>
+            <div id="admin-detail-body" class="p-5"></div>
+        </div>
+    </div>
+</body>
+</html>
+

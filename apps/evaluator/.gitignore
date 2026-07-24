@@ -1,0 +1,30 @@
+.venv/
+.venv_ai/
+__pycache__/
+.aider*
+audit_reports/
+.env
+.env.*
+
+# シークレットファイル(instructions/006 Step 4: 物理統合時に必ず除外する)
+serviceAccountKey.json
+*.pem
+*.key
+
+# Large binaries and local backups
+cloudflared.exe
+*.gguf*
+AllCode_Backup.txt
+
+# ローカルLLMモデルデータ・重いキャッシュ(instructions/006 Step 3の除外方針を継続)
+models/
+llama-bin/
+node_modules/
+.mypy_cache/
+.ruff_cache/
+.firebase/
+chroma_db/
+
+**/serviceAccountKey.json
+**/*.pem
+**/*.key

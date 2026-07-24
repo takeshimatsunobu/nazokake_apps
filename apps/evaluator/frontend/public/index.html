@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="ja">
+    <head>
+        <meta charset="UTF-8">
+        <link rel="manifest" href="manifest.json">
+        <meta name="theme-color" content="#F9F6EA">
+        <link rel="apple-touch-icon" href="assets/icon/app_icon.png">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>⚙️ 謎掛け学術振興会</title>
+        <meta name="description" content="AIと人間が織りなす「なぞかけ」の育成道場。最新生成AIがあなたの作品を11の評価軸で本格鑑定！">
+        <meta property="og:title" content="⚙️ 謎掛け学術振興会">
+        <meta property="og:description" content="AIと人間が織りなす「なぞかけ」の育成道場。最新生成AIがあなたの作品を11の評価軸で本格鑑定！">
+        <meta property="og:type" content="website">
+        <meta property="og:url" content="https://nazokakeapp-137e5.web.app/">
+        <meta property="og:site_name" content="謎掛け学術振興会">
+        <meta name="twitter:card" content="summary">
+        <link rel="icon" href="data:,">
+        <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700;900&display=swap" rel="stylesheet">
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <script type="importmap">
+        {
+            "imports": {
+                "config": "/config.js",
+                "state": "/state.js",
+                "api": "/api.js",
+                "app": "/app.js",
+                "admin": "/admin.js",
+                "firebase-config": "/firebase-config.js",
+                "ui/auth": "/ui/auth.js",
+                "ui/toast": "/ui/toast.js",
+                "ui/tabs": "/ui/tabs.js",
+                "ui/feed": "/ui/feed.js",
+                "ui/board": "/ui/board.js",
+                "ui/form": "/ui/form.js",
+                "ui/result": "/ui/result.js",
+                "ui/feedback": "/ui/feedback.js",
+                "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+                "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
+            }
+        }
+        </script>
+        <style>
+            body {
+                background-color: #FAF8F5;
+                background-image: url("data:image/svg+xml,%3Csvg width='200' height='200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='200' height='200' filter='url(%23noise)' opacity='0.05'/%3E%3Cpath d='M10 10l180 180M190 10L10 190' stroke='%23C5B358' stroke-width='0.5' opacity='0.2'/%3E%3Ccircle cx='100' cy='100' r='50' stroke='%23C5B358' stroke-width='0.5' fill='none' opacity='0.2'/%3E%3C/svg%3E");
+                font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+            }
+            .theme-bg { background-color: #902A19; }
+            .theme-btn { background-color: #5B8124; }
+            .theme-btn:hover { background-color: #4a6b1d; }
+            .nav-bg {
+                background-color: #2C3539;
+                border-top: 3px solid #C5B358;
+            }
+            .tab-btn { transition: all 0.3s; }
+            #bottom-nav .tab-btn { color: #888; }
+            header .tab-btn { color: rgba(255, 255, 255, 0.8); }
+            header .tab-btn:hover { color: #ffffff; }
+            .tab-btn.active {
+                color: #C5B358 !important;
+                text-shadow: 0 0 5px rgba(197, 179, 88, 0.5);
+            }
+            .view-section { display: none; }
+            .view-section.active { display: block; }
+            details > summary::-webkit-details-marker { display: none; }
+        </style>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+    </head>
+    <body class="h-[100dvh] flex flex-col overflow-hidden text-gray-800">
+        <div id="toast-container" class="fixed top-5 left-1/2 transform -translate-x-1/2 z-[100] flex flex-col gap-2 pointer-events-none"></div>
+        <header class="shrink-0 theme-bg text-white shadow-md sticky top-0 z-50 border-b-[3px] border-[#C5B358]">
+    <div class="flex items-center justify-between px-2 py-2 sm:py-3">
+        <h1 class="font-black tracking-widest flex flex-col items-start sm:items-center pl-1 sm:pl-4 shrink overflow-hidden" style="font-family: 'Noto Serif JP', serif;">
+            <span class="text-sm sm:text-xl truncate w-full">⚙️ 謎掛け学術振興会</span>
+            <span class="text-[7px] sm:text-[9px] font-normal opacity-90 mt-0.5 tracking-normal truncate w-full">（※ねづっち氏および所属事務所とは一切関係ありません・非公認）</span>
+        </h1>
+        <div class="flex items-center shrink-0">
+            <button data-action="switchTab" data-arg="guide" id="tab-guide" class="tab-btn flex flex-col items-center justify-center px-1.5 sm:px-2">
+                <span class="text-base sm:text-lg mb-0.5 leading-none">❓</span>
+                <span class="text-[8px] font-bold">指南書</span>
+            </button>
+            <button data-action="switchTab" data-arg="feedback" id="tab-feedback" class="tab-btn flex flex-col items-center justify-center px-1.5 sm:px-2">
+                <span class="text-base sm:text-lg mb-0.5 leading-none">📮</span>
+                <span class="text-[8px] font-bold">ご意見</span>
+            </button>
+            <a href="research.html" id="tab-research" class="tab-btn flex flex-col items-center justify-center px-1.5 sm:px-2">
+                <span class="text-base sm:text-lg mb-0.5 leading-none">⚗️ </span>
+                <span class="text-[8px] font-bold">研究所</span>
+            </a>
+        </div>
+    </div>
+</header>
+        <main class="flex-1 overflow-y-auto">
+            <div class="max-w-[800px] mx-auto p-4">
+                <section id="view-generate" class="view-section active">
+                    <div class="bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-6 border border-[#C5B358]/50 max-w-[500px] mx-auto relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-[#C5B358]"></div>
+                        <h2 class="text-lg font-bold text-[#902A19] text-center mb-6">からくりAIに生成させる</h2>
+                        <div class="mb-6">
+                            <input type="text" id="odaiInput" placeholder="お題を入力 (例: 大谷翔平)" class="w-full px-4 py-3 bg-gray-50 border border-[#C5B358]/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C5B358]">
+                        </div>
+                        <button id="generateBtn" data-action="startGeneration" class="theme-btn w-full text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 shadow-md hover:scale-[1.02] transition">
+                            <span class="text-xl">⚙️</span>
+                            お題から生成・鑑定
+                        </button>
+                    </div>
+                    <div id="loading" class="mt-8 text-center hidden">
+                        <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-[#C5B358] mx-auto mb-4"></div>
+                        <p id="statusMsg" class="text-gray-500 font-medium animate-pulse">からくりが作動中...</p>
+                    </div>
+                    <div id="error-card" class="mt-8 bg-red-50 text-red-600 rounded-xl p-4 hidden border border-red-200 text-center max-w-[500px] mx-auto font-bold"></div>
+                    <div id="result-card" class="mt-8 hidden max-w-[600px] mx-auto">
+                        <div class="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-6 border-t-4 border-[#902A19] relative">
+                            <div class="text-center mb-6">
+                                <p class="text-xl font-bold mb-2">
+                                    「<span id="resHint" class="text-[#902A19]"></span>
+                                    」とかけて、
+                                </p>
+                                <p class="text-xl font-bold mb-2">
+                                    「<span id="resToku" class="text-[#5B8124]"></span>
+                                    」ととく。
+                                </p>
+                                <p class="text-sm text-gray-500 mb-2">そのこころは、</p>
+                                <p class="text-xl font-bold text-[#902A19]" id="resKokoro"></p>
+                            </div>
+                            <hr class="my-4 border-[#C5B358]/30">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="flex items-center justify-center w-full">
+                                    <div class="w-[200px] h-[200px] sm:w-[240px] sm:h-[240px] shrink-0 mx-auto">
+                                        <canvas id="radarChart"></canvas>
+                                    </div>
+                                </div>
+                                <div class="flex flex-col justify-center w-full">
+                                    <details class="group bg-[#FAF8F5] p-3 rounded-lg border border-[#C5B358]/50 cursor-pointer shadow-sm">
+                                        <summary class="font-bold text-[#902A19] text-xs flex justify-between items-center list-none outline-none">
+                                            <span>⚙️ 分析官の講評を見る</span>
+                                            <span class="transition group-open:rotate-180 text-[#C5B358]">▼</span>
+                                        </summary>
+                                        <div class="mt-3 pt-3 border-t border-[#C5B358]/30 text-[11px] text-gray-700 leading-relaxed">
+                                            <p id="resReasoning"></p>
+                                        </div>
+                                    </details>
+                                    <div class="text-center mt-4">
+                                        <span class="text-xs text-gray-500">総合評価: </span>
+                                        <span id="resScore" class="text-2xl font-bold text-[#902A19]">0.0</span>
+                                        <span class="text-sm text-gray-500">/5.0</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <button data-action="shareTextResult" data-arg="gen" class="w-full mt-4 bg-[#2C3539] text-[#C5B358] border border-[#C5B358] py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition shadow-md">📤 なぞかけをSNS (LINE/Xなど) でシェア</button>
+                    </div>
+                </section>
+                <section id="view-human" class="view-section">
+                    <div class="bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-6 border border-[#C5B358]/50 max-w-[500px] mx-auto relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-full h-1 bg-[#5B8124]"></div>
+                        <h2 class="text-lg font-bold text-[#5B8124] text-center mb-6">自作の謎掛けを鑑定する</h2>
+                        <div class="space-y-4 mb-6">
+                            <div class="flex items-center gap-2">
+                                <input type="text" id="hOdai" placeholder="例: 満員電車" class="flex-1 px-4 py-2 bg-gray-50 border border-[#C5B358]/50 rounded-lg">
+                                <span class="font-bold text-gray-700">とかけて、</span>
+                            </div>
+                            <div class="flex items-center gap-2">
+                                <input type="text" id="hToku" placeholder="例: 鼻づまり" class="flex-1 px-4 py-2 bg-gray-50 border border-[#C5B358]/50 rounded-lg">
+                                <span class="font-bold text-gray-700">と解く。</span>
+                            </div>
+                            <div class="flex flex-col gap-2 mt-2">
+                                <span class="font-bold text-gray-700 text-sm">その心は、</span>
+                                <input type="text" id="hKokoro" placeholder="例: 身動きが取れない" class="w-full px-4 py-2 bg-gray-50 border border-[#C5B358]/50 rounded-lg">
+                            </div>
+                        </div>
+                        <button id="humanSubmitBtn" class="bg-[#5B8124] hover:bg-[#4a6b1d] w-full text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 shadow-md hover:scale-[1.02] transition">
+                            <span class="text-xl">🖌️</span>
+                            職人AIに鑑定を依頼
+                        </button>
+                    </div>
+                    <div id="human-loading" class="mt-8 text-center hidden">
+                        <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-[#5B8124] mx-auto mb-4"></div>
+                        <p id="humanStatusMsg" class="text-gray-500 font-medium animate-pulse">からくり分析官が鑑定中...</p>
+                    </div>
+                    <div id="human-result-card" class="mt-8 hidden max-w-[600px] mx-auto">
+                        <div class="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-6 border-t-4 border-[#5B8124] relative">
+                            <div class="text-center mb-6">
+                                <p class="text-xl font-bold mb-2">
+                                    「<span id="hResHint" class="text-[#902A19]"></span>
+                                    」とかけて、
+                                </p>
+                                <p class="text-xl font-bold mb-2">
+                                    「<span id="hResToku" class="text-[#5B8124]"></span>
+                                    」ととく。
+                                </p>
+                                <p class="text-sm text-gray-500 mb-2">そのこころは、</p>
+                                <p class="text-xl font-bold text-[#902A19]" id="hResKokoro"></p>
+                            </div>
+                            <hr class="my-4 border-[#C5B358]/30">
+                            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                <div class="flex items-center justify-center w-full">
+                                    <div class="w-[200px] h-[200px] sm:w-[240px] sm:h-[240px] shrink-0 mx-auto">
+                                        <canvas id="humanRadarChart"></canvas>
+                                    </div>
+                                </div>
+                                <div class="flex flex-col justify-center w-full">
+                                    <details class="group bg-[#FAF8F5] p-3 rounded-lg border border-[#C5B358]/50 cursor-pointer shadow-sm">
+                                        <summary class="font-bold text-[#5B8124] text-xs flex justify-between items-center list-none outline-none">
+                                            <span>⚙️ 分析官の講評を見る</span>
+                                            <span class="transition group-open:rotate-180 text-[#C5B358]">▼</span>
+                                        </summary>
+                                        <div class="mt-3 pt-3 border-t border-[#C5B358]/30 text-[11px] text-gray-700 leading-relaxed">
+                                            <p id="hResReasoning"></p>
+                                        </div>
+                                    </details>
+                                    <div class="text-center mt-4">
+                                        <span class="text-xs text-gray-500">総合評価: </span>
+                                        <span id="hResScore" class="text-2xl font-bold text-[#5B8124]">0.0</span>
+                                        <span class="text-sm text-gray-500">/5.0</span>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                        <button data-action="shareTextResult" data-arg="human" class="w-full mt-4 bg-[#2C3539] text-[#C5B358] border border-[#C5B358] py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition shadow-md">📤 なぞかけをSNS (LINE/Xなど) でシェア</button>
+                    </div>
+                </section>
+                <section id="view-feed" class="view-section">
+                    <h2 class="text-xl font-black text-[#902A19] text-center mb-6 border-b-2 border-[#C5B358]/30 pb-2 inline-block mx-auto flex items-center gap-2" style="font-family: 'Noto Serif JP', serif;">
+                        <span class="text-2xl">📜</span>
+                        道場破り
+                    </h2>
+                    <div id="feed-loading" class="text-center py-8 hidden">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-[#902A19] mx-auto mb-4"></div>
+                        <p class="text-gray-500 text-sm">書庫から作品を取得中...</p>
+                    </div>
+                    <div id="feed-container" class="space-y-8 max-w-[600px] mx-auto"></div>
+                    <div id="feed-sentinel" class="h-10 my-4 flex items-center justify-center">
+                        <div class="animate-bounce w-2 h-2 bg-[#C5B358] rounded-full"></div>
+                    </div>
+                </section>
+                <section id="view-guide" class="view-section">
+                    <div class="bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-6 border border-[#C5B358]/50 max-w-[600px] mx-auto mb-8">
+                        <h2 class="text-xl font-black text-[#902A19] text-center mb-4 border-b border-[#C5B358]/30 pb-2" style="font-family: 'Noto Serif JP', serif;">🏮 アプリの楽しみ方（指南書）</h2>
+                        <div class="bg-red-50 text-[#902A19] text-xs p-3 rounded-lg border border-red-200 mb-6 font-bold text-center shadow-inner">※当サイトは「ねづっち」氏および所属事務所とは一切関係のない、非公認の学術的AIプロジェクトです。
+                </div>
+                        <div class="space-y-4 text-sm text-gray-800">
+                            <div class="bg-[#FAF8F5] p-4 rounded-lg border border-[#C5B358]/50 shadow-sm">
+                                <h3 class="font-bold text-[#902A19] mb-3 flex items-center gap-2 text-base">
+                                    <span class="text-xl">🔰</span>
+                                    序の巻：基本の遊び方
+                                </h3>
+                                <p class="mb-2 leading-relaxed">まずは「⚙️ からくり生成」タブで、好きなお題を入力してみてください。最新のAIが瞬時になぞかけを作ります。</p>
+                                <p class="leading-relaxed">また、「🖌️ 自作鑑定」タブでは、あなたが考えたなぞかけをAI分析官が容赦なく本格採点します！</p>
+                            </div>
+                            <details class="group bg-white p-4 rounded-lg border border-gray-200 shadow-sm transition-all duration-300">
+                                <summary class="font-bold text-[#5B8124] flex justify-between items-center cursor-pointer list-none outline-none text-base">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xl">⚔️</span>
+                                        破の巻：デュアルAIの仕組み
+                                    </div>
+                                    <span class="transition-transform duration-300 group-open:rotate-180 text-gray-400">▼</span>
+                                </summary>
+                                <div class="mt-4 pt-4 border-t border-gray-100 text-gray-600 leading-relaxed text-xs">
+                                    <p class="mb-3">当システムは、なぞかけを考案する「生成AI（ボケ役）」と、それを11の評価軸で厳しく採点する「評価AI（審査員役）」の、2つの頭脳（デュアルAI）が連携することで機能しています。</p>
+                                    <p class="mb-3">しかし、論理的な計算は得意なAIも、人間特有の「笑いのツボ」や「言葉の絶妙なニュアンス」はまだ完璧には理解できていません。時には的外れな講評をしてしまうこともあります。</p>
+                                    <p class="mb-3">
+                                        そこで、「📜 道場破り」タブの出番です。<br>あなたがAIの作品に「星評価」を下し、しっくりこない部分を「赤ペン先生」として添削すると、そのデータは『人間が本当に面白いと感じる模範解答』としてシステムに蓄積されていきます。
+                                    </p>
+                                    <p>皆様から集まったこの貴重なフィードバックを「新しい教科書」としてAIに再学習させることで、AIは人間の複雑な「お笑いの感覚」を徐々にインストールし、真の天才なぞかけ芸人へと進化していく仕組みです。</p>
+                                </div>
+                            </details>
+                            <details class="group bg-white p-4 rounded-lg border border-gray-200 shadow-sm transition-all duration-300">
+                                <summary class="font-bold text-[#C5B358] flex justify-between items-center cursor-pointer list-none outline-none text-base">
+                                    <div class="flex items-center gap-2">
+                                        <span class="text-xl">🕸️</span>
+                                        急の巻：11の評価軸（レーダーチャート）
+                                    </div>
+                                    <span class="transition-transform duration-300 group-open:rotate-180 text-gray-400">▼</span>
+                                </summary>
+                                <div class="mt-4 pt-4 border-t border-gray-100 text-gray-600 leading-relaxed text-xs">
+                                    <p class="mb-4 font-bold text-gray-700">当システムの分析官AIは、単なる言葉遊びの枠を超え、認知科学や言語学などの学術的背景に基づいた「11の評価軸」で作品を本格採点しています。</p>
+                                    <div class="mb-4 bg-gray-50 p-3 rounded border border-gray-200">
+                                        <h4 class="font-bold text-[#5B8124] border-b border-gray-300 pb-1 mb-2">
+                                            【第1の柱：言語と技巧】<span class="font-normal text-[10px] text-gray-500 ml-1">職人としての基礎</span>
+                                        </h4>
+                                        <ul class="list-none space-y-1.5 pl-1">
+                                            <li>
+                                                <span class="font-bold text-gray-700">自然さ (S_nat):</span>
+                                                文脈や言い回しが、日本語として違和感なく自然に成立しているか。
+                                            </li>
+                                            <li>
+                                                <span class="font-bold text-gray-700">技巧性 (S_tech):</span>
+                                                同音異義語、掛詞、ダブルミーニングなどの「言葉遊び」の精巧さ。
+                                            </li>
+                                            <li>
+                                                <span class="font-bold text-gray-700">リズム (S_rhy):</span>
+                                                声に出して読んだ時の心地よさ（七五調など）。
+                                            </li>
+                                            <li>
+                                                <span class="font-bold text-gray-700">韻律 (S_prosody):</span>
+                                                母音の響きや、韻を踏んでいるかなど、音響的な美しさ。
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    <div class="mb-4 bg-gray-50 p-3 rounded border border-gray-200">
+                                        <h4 class="font-bold text-[#902A19] border-b border-gray-300 pb-1 mb-2">
+                                            【第2の柱：論理と共感】<span class="font-normal text-[10px] text-gray-500 ml-1">笑いと感情のコア</span>
+                                        </h4>
+                                        <ul class="list-none space-y-1.5 pl-1">
+                                            <li>
+                                                <span class="font-bold text-gray-700">意外性 (S_sur):</span>
+                                                お題と解きの距離感。どれだけ遠く意外なものを結びつけたか。
+                                            </li>
+                                            <li>
+                                                <span class="font-bold text-gray-700">論理/納得感 (S_emo):</span>
+                                                「その心は」を聞いた瞬間の、論理的な納得度やカタルシス（アハ体験）。
+                                            </li>
+                                            <li>
+                                                <span class="font-bold text-gray-700">文化的背景 (S_cultural):</span>
+                                                日本の文化、常識、あるあるネタなど、人間同士の「共通認識」をうまく利用しているか。
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    <div class="mb-4 bg-gray-50 p-3 rounded border border-gray-200">
+                                        <h4 class="font-bold text-[#C5B358] border-b border-gray-300 pb-1 mb-2">
+                                            【第3の柱：芸術性と深み】<span class="font-normal text-[10px] text-gray-500 ml-1">芸術的評価の真骨頂</span>
+                                        </h4>
+                                        <ul class="list-none space-y-1.5 pl-1">
+                                            <li>
+                                                <span class="font-bold text-gray-700">視覚的喚起力 (S_visual):</span>
+                                                その情景が、頭の中で鮮明な映像として浮かび上がるか。
+                                            </li>
+                                            <li>
+                                                <span class="font-bold text-gray-700">感覚的表現 (S_sensory):</span>
+                                                視覚以外の五感（聴覚、触覚、味覚、嗅覚）に訴えかける表現があるか。
+                                            </li>
+                                            <li>
+                                                <span class="font-bold text-gray-700">クロスモーダル (S_cm):</span>
+                                                異なる感覚領域（例：「甘い声」「冷たい視線」など）を比喩的に交差させているか。
+                                            </li>
+                                            <li>
+                                                <span class="font-bold text-gray-700">存在論的深み (S_ontology):</span>
+                                                単なる表面的な類似性ではなく、物事の「本質」や「存在意義」の共通点を突いているか。<span class="text-[#902A19] font-bold">（※これが高いと名作になります）</span>
+                                            </li>
+                                        </ul>
+                                    </div>
+                                    <p class="mt-4 p-3 bg-red-50 text-[#902A19] rounded-lg border border-red-100 font-bold text-center">※分析官の講評は学問的基準に照らし合わせるため時に厳しくなりますが、どうか気に病まず、笑い飛ばしてください！</p>
+                                </div>
+                            </details>
+                        </div>
+                    </div>
+                </section>
+                <section id="view-feedback" class="view-section">
+                    <div class="bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-6 border border-[#C5B358]/50 max-w-[600px] mx-auto mt-6">
+                        <h2 class="text-lg font-bold text-[#902A19] text-center mb-2 flex items-center justify-center gap-2 border-b border-[#C5B358]/30 pb-2">
+                            <span>📮</span>
+                            管理人へのご意見箱
+                        </h2>
+                        <p class="text-xs text-gray-600 text-center mb-6 mt-2">アプリの改善要望や、AIの面白かった回答など、自由にご意見をお寄せください。</p>
+                        <div id="feedback-form-container">
+                            <div class="mb-5 text-center bg-[#FAF8F5] p-4 rounded-lg border border-[#C5B358]/30 shadow-inner">
+                                <label class="block text-sm font-bold text-gray-700 mb-3">アプリの満足度</label>
+                                <input type="hidden" id="feedback-score" value="0">
+                                <div class="flex justify-center gap-2">
+                                    <button data-action="setFeedbackRating" data-arg="1" id="fb-star-1" class="w-10 h-10 rounded-full bg-white border border-gray-200 text-gray-300 text-lg font-bold transition-all duration-200 hover:scale-110 shadow-sm">⭐</button>
+                                    <button data-action="setFeedbackRating" data-arg="2" id="fb-star-2" class="w-10 h-10 rounded-full bg-white border border-gray-200 text-gray-300 text-lg font-bold transition-all duration-200 hover:scale-110 shadow-sm">⭐</button>
+                                    <button data-action="setFeedbackRating" data-arg="3" id="fb-star-3" class="w-10 h-10 rounded-full bg-white border border-gray-200 text-gray-300 text-lg font-bold transition-all duration-200 hover:scale-110 shadow-sm">⭐</button>
+                                    <button data-action="setFeedbackRating" data-arg="4" id="fb-star-4" class="w-10 h-10 rounded-full bg-white border border-gray-200 text-gray-300 text-lg font-bold transition-all duration-200 hover:scale-110 shadow-sm">⭐</button>
+                                    <button data-action="setFeedbackRating" data-arg="5" id="fb-star-5" class="w-10 h-10 rounded-full bg-white border border-gray-200 text-gray-300 text-lg font-bold transition-all duration-200 hover:scale-110 shadow-sm">⭐</button>
+                                </div>
+                            </div>
+                            <div class="mb-5">
+                                <label class="block text-sm font-bold text-gray-700 mb-2">ご意見・ご感想</label>
+                                <textarea id="feedback-comment" rows="4" placeholder="例: もっとサクサク動いてほしい！ / 自作鑑定で辛口すぎる！" class="w-full p-3 rounded-lg bg-gray-50 text-gray-800 border border-[#C5B358]/50 focus:border-[#C5B358] focus:ring-1 focus:ring-[#C5B358] outline-none text-sm resize-none shadow-inner"></textarea>
+                            </div>
+                            <button data-action="submitFeedback" class="w-full bg-[#2C3539] text-[#C5B358] hover:bg-gray-800 font-bold py-3 rounded-lg shadow-md transition-all duration-200 hover:scale-[1.02]">📤 投函する
+                    </button>
+                        </div>
+                    </div>
+                </section>
+                <section id="view-board" class="view-section">
+                    <h2 class="text-xl font-black text-[#902A19] text-center mb-6 border-b-2 border-[#C5B358]/30 pb-2 inline-block mx-auto flex items-center gap-2" style="font-family: 'Noto Serif JP', serif;">
+                        <span class="text-2xl">📋</span>
+                        なぞかけ掲示板
+                    </h2>
+                    <div class="max-w-[800px] mx-auto">
+                        <div class="flex justify-center gap-3 mb-4">
+                            <button data-action="switchBoardCategory" data-arg="nazokake" id="board-tab-nazokake" class="px-5 py-2 rounded-full font-bold text-sm bg-[#2C3539] text-[#C5B358] shadow-md border border-[#C5B358] transition-all">なぞかけ議論</button>
+                            <button data-action="switchBoardCategory" data-arg="ai" id="board-tab-ai" class="px-5 py-2 rounded-full font-bold text-sm bg-white/70 text-gray-600 hover:bg-white border border-gray-300 shadow-sm transition-all">AI・システム議論</button>
+                        </div>
+                        <div class="bg-white/90 backdrop-blur-sm rounded-xl shadow-sm p-4 mb-6 border border-[#C5B358]/50">
+                            <textarea id="board-main-input" rows="3" class="w-full p-3 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#5B8124]" placeholder="AIやなぞかけについて、自由に語り合いましょう..."></textarea>
+                            <div class="flex justify-between items-center mt-3">
+                                <span class="text-[10px] text-gray-400">※スパム防止のため、1日3回までの書き込み制限があります。</span>
+                                <button data-action="submitBoardPost" class="bg-[#2C3539] text-[#C5B358] px-6 py-2 rounded-lg font-bold text-sm shadow-md hover:bg-gray-800 transition">書き込む 📤</button>
+                            </div>
+                        </div>
+                        <div id="board-container" class="space-y-4"></div>
+                    </div>
+                </section>
+            </div>
+        </main>
+        <nav id="bottom-nav" class="shrink-0 nav-bg flex justify-around items-center pt-2 z-50 shadow-[0_-4px_10px_rgba(0,0,0,0.2)]" style="padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));">
+    <button data-action="switchTab" data-arg="generate" id="tab-generate" class="tab-btn active flex flex-col items-center flex-1 py-1 px-0.5 overflow-hidden">
+        <span class="text-lg sm:text-xl mb-1">⚙️</span>
+        <span class="text-[9px] sm:text-[10px] font-bold truncate w-full text-center">からくり生成</span>
+    </button>
+    <button data-action="switchTab" data-arg="human" id="tab-human" class="tab-btn flex flex-col items-center flex-1 py-1 px-0.5 overflow-hidden">
+        <span class="text-lg sm:text-xl mb-1">🖌️</span>
+        <span class="text-[9px] sm:text-[10px] font-bold truncate w-full text-center">自作鑑定</span>
+    </button>
+    <button data-action="switchTab" data-arg="feed" id="tab-feed" class="tab-btn flex flex-col items-center flex-1 py-1 px-0.5 overflow-hidden">
+        <span class="text-lg sm:text-xl mb-1">📜</span>
+        <span class="text-[9px] sm:text-[10px] font-bold truncate w-full text-center">道場破り</span>
+    </button>
+    <button data-action="switchTab" data-arg="board" id="tab-board" class="tab-btn flex flex-col items-center flex-1 py-1 px-0.5 overflow-hidden">
+        <span class="text-lg sm:text-xl mb-1">📋</span>
+        <span class="text-[9px] sm:text-[10px] font-bold truncate w-full text-center">掲示板</span>
+    </button>
+</nav>
+        <script type="module" src="/main_index.js"></script>
+    </body>
+</html>

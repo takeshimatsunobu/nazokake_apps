@@ -1,0 +1,15 @@
+# Cloud Build にアップロードしないファイルのブラックリスト
+.git
+.gitignore
+.venv
+.venv_*
+__pycache__/
+*.pyc
+.env
+.env.*
+node_modules/
+.firebase/
+.vscode/
+.venv/
+__pycache__/
+.git/

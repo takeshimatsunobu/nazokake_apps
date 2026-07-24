@@ -1,0 +1,55 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/build/
+/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/android/app/debug
+/android/app/profile
+/android/app/release
+
+# --- JSDoc型チェック(openapi-typescript)関連: 起動ごとに自動再生成される生成物 ---
+node_modules/
+openapi.json
+api.d.ts
+
+# --- MLOps推移ダッシュボード: パイプライン完了ごとにtools/export_metrics.pyが
+# アトミックに再生成する静的JSONダンプ(および書き込み途中の一時ファイル)。
+public/data/metrics.json
+public/data/metrics.tmp.json

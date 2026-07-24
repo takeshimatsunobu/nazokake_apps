@@ -1,0 +1,28 @@
+{
+  "compilerOptions": {
+    "checkJs": true,
+    "allowJs": true,
+    "noEmit": true,
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "moduleResolution": "bundler",
+    "paths": {
+      "config": ["./public/config.js"],
+      "state": ["./public/state.js"],
+      "api": ["./public/api.js"],
+      "app": ["./public/app.js"],
+      "admin": ["./public/admin.js"],
+      "firebase-config": ["./public/firebase-config.js"],
+      "ui/auth": ["./public/ui/auth.js"],
+      "ui/toast": ["./public/ui/toast.js"],
+      "ui/tabs": ["./public/ui/tabs.js"],
+      "ui/feed": ["./public/ui/feed.js"],
+      "ui/board": ["./public/ui/board.js"],
+      "ui/form": ["./public/ui/form.js"],
+      "ui/result": ["./public/ui/result.js"],
+      "ui/feedback": ["./public/ui/feedback.js"]
+    }
+  },
+  "include": ["public/**/*.js", "public/**/*.d.ts"],
+  "exclude": ["node_modules"]
+}

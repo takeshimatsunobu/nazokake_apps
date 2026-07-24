@@ -1,0 +1,11 @@
+fastapi[standard]
+uvicorn[standard]
+pydantic
+firebase-admin
+google-cloud-firestore
+google-genai
+httpx
+python-dotenv
+
+loguru
+-e ../../packages/shared_core
