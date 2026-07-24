@@ -1,0 +1,112 @@
+# infra/docker-compose.yml
+# ============================================
+# ローカル・クリーンルーム(instructions/001)。なぞかけ生成および自己修正ループを
+# 常設のローカルDockerインフラとして安全かつ独立に実行するための定義。
+# infra/verification_env/docker-compose.yml (検証サーバー移行パッケージ、
+# instructions/147) とは目的が異なり、両者は並存する。
+#
+# 使い方(リポジトリルートで):
+#   docker compose -f infra/docker-compose.yml up -d gen-engine
+#   docker compose -f infra/docker-compose.yml run --rm agent-workspace
+#
+# 【ネットワーク分離の設計】instructions/001が要求する「外部への不要なアクセスを
+# 遮断し、APIレイヤーへのアクセスのみに制限」を、Docker Composeのネットワーク境界
+# で近似する。
+#   - cleanroom-internal (internal: true): agent-workspace <-> gen-engine間の
+#     推論エンドポイント通信専用。外部ゲートウェイを持たないため、gen-engineは
+#     この網だけではインターネットに一切到達できない。
+#   - cleanroom-egress (通常のbridge): Claude/Gemini API・Firestoreへの到達が
+#     必要な agent-workspace / data-sync-daemon のみ接続する。
+#   【未検証事項】Docker Composeのネットワーク分離はL3/L4境界であり、ドメイン単位
+#   のアウトバウンド許可リスト(api.anthropic.com等のみ許可)は組めない。厳密な
+#   ドメインフィルタが必要な場合は、cleanroom-egress側にエグレスプロキシ
+#   (例: squid等)を別途追加する要件として将来のバックログに切り出す。
+
+networks:
+  cleanroom-internal:
+    driver: bridge
+    internal: true
+  cleanroom-egress:
+    driver: bridge
+
+services:
+  # 自律コード修正ループの実行(Gemma -> Qwen -> Claude、SSoT_architecture.md 8.4節)。
+  agent-workspace:
+    build:
+      context: ..
+      dockerfile: infra/agent-workspace/Dockerfile
+    image: nazo-agent-workspace
+    # マウント対象は指示書の要求どおり厳格に絞る。infra/ (このディレクトリ自身)
+    # と data/ (SSoT本体・鍵情報) はマウントしない。エージェントの自己修正ループ
+    # がインフラ定義・データ領域を予期せず破壊することを構造的に防ぐ。
+    volumes:
+      - ../apps:/workspace/apps
+      - ../packages:/workspace/packages
+      - ../tools:/workspace/tools
+      - ../tests:/workspace/tests
+      - ../SSoT_architecture.md:/workspace/SSoT_architecture.md:ro
+    # 秘密情報(ANTHROPIC_API_KEY等)はイメージへCOPYせず、env_fileでホスト側の
+    # .envを読み、値のみをプロセスの環境変数として注入する
+    # (infra/verification_env/docker-compose.ymlのmlops-schedulerサービスと同じ方針)。
+    env_file:
+      - ../.env
+    environment:
+      # Ollama(ELYZA/Gemma/Qwenの対話的タイムシェアリング稼働、SSoT 8.3節)は
+      # ホスト常駐プロセスのまま変更しない。コンテナ内の127.0.0.1はコンテナ自身を
+      # 指すため、host.docker.internal経由で明示的に上書きする。
+      - OLLAMA_HOST=http://host.docker.internal:11434
+      # gen-engine(vLLM大量生成、cleanroom-internal網経由)への到達先。
+      - GEN_ENGINE_URL=http://gen-engine:8000
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - cleanroom-internal
+      - cleanroom-egress
+    # このサービスは常駐プロセスを前提としない(手動 run による単発実行想定)ため
+    # 通常のupの対象からは除外する。
+    profiles: ["run-only"]
+
+  # ローカル大量生成エンジン(vLLM)。apps/batch_factory向けの大量生成専用スロット。
+  gen-engine:
+    build:
+      context: ..
+      dockerfile: infra/gen-engine/Dockerfile
+    image: nazo-gen-engine
+    env_file:
+      - ../.env
+    # ポートはホストにも他サービスにも公開せず、cleanroom-internal網内の
+    # agent-workspaceからのみ到達可能にする(exposeのみでports指定は行わない)。
+    expose:
+      - "8000"
+    networks:
+      - cleanroom-internal
+    # NVIDIA Container ToolkitによるGPUパススルー。
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: ["gpu"]
+
+  # Firestore <-> ローカルSQLite間のデータ同期バッチ処理(SSoT_architecture.md 8.2節)。
+  data-sync-daemon:
+    build:
+      context: ..
+      dockerfile: infra/data-sync-daemon/Dockerfile
+    image: nazo-data-sync-daemon
+    volumes:
+      # SQLite(WALモード)は-wal/-shmサイドカーファイルを本体と同一ディレクトリへ
+      # 作成するため、単一ファイルではなくディレクトリそのものをrwマウントする
+      # (infra/verification_env/docker-compose.ymlのmlops-schedulerサービスと同じ理由)。
+      - ../data/sqlite:/app/data/sqlite
+      # GCPサービスアカウントキー等はread-onlyでマウントする。
+      - ../data/credentials:/app/data/credentials:ro
+    env_file:
+      - ../.env
+    environment:
+      - NAZOKAKE_DB_PATH=/app/data/sqlite/nazokake_local.db
+      - GOOGLE_APPLICATION_CREDENTIALS=/app/data/credentials/serviceAccountKey.json
+    # gen-engineへの到達は不要なため、外部API(Firestore)向けのegress網のみ接続する。
+    networks:
+      - cleanroom-egress

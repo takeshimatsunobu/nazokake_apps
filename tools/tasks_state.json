@@ -1,1 +1,17 @@
-{}
+{
+  "001_setup_local_cleanroom": {
+    "status": "completed",
+    "completed_at": "2026-07-25",
+    "artifacts": [
+      "infra/docker-compose.yml",
+      "infra/agent-workspace/Dockerfile",
+      "infra/gen-engine/Dockerfile",
+      "infra/data-sync-daemon/Dockerfile",
+      "infra/data-sync-daemon/sync_daemon_entrypoint.py",
+      "data/sqlite/.gitkeep",
+      "data/credentials/.gitkeep",
+      "data/credentials/.gitignore",
+      "SSoT_architecture.md (section 9 appended)"
+    ]
+  }
+}

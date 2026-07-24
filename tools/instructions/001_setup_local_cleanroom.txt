@@ -1,0 +1,48 @@
+# 【実装指示書】ローカル・クリーンルーム構築および SSoT_architecture.md 差分更新
+
+## 1. 目的
+なぞかけ生成および自己修正ループを安全かつ独立して実行するためのローカルインフラ（Dockerコンテナ群）を構築し、既存のアーキテクチャ定義ドキュメントを非破壊で更新する。
+
+## 2. 構築するディレクトリ・ファイル構造
+以下のディレクトリおよびファイルをプロジェクトルートに作成すること。
+/infra
+  ├── docker-compose.yml
+  ├── agent-workspace/
+  │   └── Dockerfile
+  ├── gen-engine/
+  │   └── Dockerfile
+  └── data-sync-daemon/
+      └── Dockerfile
+/data
+  ├── sqlite/ (ローカルデータベースSSoT用 / WALモード稼働)
+  └── credentials/ (GCPサービスアカウントキー等マウント用)
+
+## 3. docker-compose.yml の要件
+以下の3つのサービスを定義すること。
+
+*   **agent-workspace**:
+    *   役割: 自律コード修正ループの実行（Claude Code等のローカルエージェント想定）。
+    *   マウント: ホストのソースコードディレクトリ（対象を厳格に絞り、インフラ定義やデータ領域への予期せぬ破壊を防ぐ）。
+    *   ネットワーク: 外部への不要なアクセスを遮断し、APIレイヤーへのアクセスのみに制限。
+*   **gen-engine**:
+    *   役割: ローカルLLM（vLLM等）のホスティングおよび大量生成の実行。
+    *   リソース: NVIDIA Container ToolkitによるGPUパススルー。`deploy.resources.reservations.devices` を適切に設定。
+    *   ポート: 内部向けAPIとして推論エンドポイントを公開。
+*   **data-sync-daemon**:
+    *   役割: FirestoreとローカルSQLite間のデータ同期バッチ処理。
+    *   マウント: `/data/sqlite/` と `/data/credentials/` をマウント。
+    *   権限: SQLiteデータベースに対する排他制御（WALモード対応）を考慮し、適切なユーザー権限でコンテナを実行する。
+
+## 4. SSoT_architecture.md の差分更新（厳守事項）
+対象ファイル: SSoT_architecture.md
+制約: 既存の行を一切削除・圧縮しないこと。情報欠損を防ぐため、ファイルの末尾または適切なセクションに「追記」する形でのみ更新を行う。
+
+追記すべき内容の要件:
+1.  **インフラ分離の定義**: ローカル環境（Agent-Workspace, Gen-Engine, Data-Sync-Daemon）とクラウド環境（Cloud Run, Firestore）の物理的な役割分担。
+2.  **データフライホイールの双方向性**: コードは一方向（Local -> Cloud）のプル型デプロイとし、データは双方向（Cloud Firestore -> Local SQLite）の還流によって成立する旨の明記。
+3.  **ビジネスロジックのフロー**: SNS上の不毛な争いをユーモアでアウフヘーベンさせるというシステム目標において、本番環境で収集した鎮静化の成否データが、ローカルエージェントの継続的自己改善のトリガーとなる一連の流れ。
+
+## 5. 実行完了条件
+*   上記ファイル群が作成され、`docker compose config` コマンドで構文エラーが発生しないこと。
+*   `SSoT_architecture.md` の既存内容が保持されたまま、指定のアーキテクチャ要件が追記されていること。
+*   処理完了後、状態管理ファイル（例: tasks_state.json）を更新し、タスクの完了を記録すること。
