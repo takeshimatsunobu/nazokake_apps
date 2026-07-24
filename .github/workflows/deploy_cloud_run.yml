@@ -79,13 +79,14 @@ jobs:
       - name: Push image to Artifact Registry
         run: docker push "${{ env.IMAGE }}:${{ github.sha }}"
 
-      # 【プレースホルダー・未検証】Container Analysis (On-Demand Scanning API)
-      # によるCRITICAL/HIGH脆弱性スキャン。`gcloud artifacts docker images scan`
-      # および `list-vulnerabilities` のフィールド名・出力形式は、この開発機に
-      # GCPアクセスが無く動的に検証できていない。実運用開始時に
+      # Container Analysis (On-Demand Scanning API) によるCRITICAL/HIGH脆弱性の
+      # ハード・フェイルゲート(instructions/005でプレースホルダーから本実装へ格上げ)。
+      # 【未検証事項】`gcloud artifacts docker images scan` / `list-vulnerabilities`
+      # のフィールド名・出力形式は、この開発機にGCPアクセスが無く動的に検証できていない
+      # (infra/docs/gcp_wif_artifact_registry_setup.mdと同じ位置づけ)。初回の実運用時に
       # `gcloud artifacts docker images list-vulnerabilities --help` で
       # 実際のフィールド名(vulnerability.effectiveSeverity)を確認すること。
-      - name: Scan image for CRITICAL/HIGH vulnerabilities (Container Analysis)
+      - name: Scan image for CRITICAL/HIGH vulnerabilities (hard-fail gate)
         run: |
           set -euo pipefail
           IMAGE_REF="${{ env.IMAGE }}:${{ github.sha }}"
@@ -101,11 +102,14 @@ jobs:
           echo "CRITICAL/HIGH件数: ${SEVERE_COUNT}"
 
           if [ "${SEVERE_COUNT}" -gt 0 ]; then
-            echo "🚨 CRITICAL/HIGHの脆弱性が検出されたため、デプロイを中止します。" >&2
+            echo "🚨 CRITICAL/HIGHの重大な脆弱性が${SEVERE_COUNT}件検出されたため、デプロイをハード・フェイルさせます。" >&2
             gcloud artifacts docker images list-vulnerabilities "${SCAN_NAME}" \
               --format='table(vulnerability.effectiveSeverity, vulnerability.cvssScore, noteName)' >&2 || true
             exit 1
           fi
+
+          echo "✅ CRITICAL/HIGHの脆弱性は検出されませんでした(MEDIUM以下、または無し)。デプロイを継続します。"
+          exit 0
 
       - id: deploy
         name: Deploy to Cloud Run

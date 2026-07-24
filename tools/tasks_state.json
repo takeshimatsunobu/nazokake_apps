@@ -40,5 +40,13 @@
       "infra/docs/gcp_wif_artifact_registry_setup.md"
     ],
     "notes": "yaml.safe_loadでの構文検証は合格(トップレベルキー'on'がPyYAML1.1仕様でTrueとパースされる既知の現象を確認したが、これはGitHub Actions側では正しく'on:'として解釈される無害な既知動作であり、YAML構文エラーではない)。実際のWIF認証・Artifact Registry push・脆弱性スキャン・Cloud Runデプロイは、この開発機にGitHubリモート/GCP認証情報が無いため未実行・未検証。既知の重大な前提未達: apps/evaluator/はルート.gitignoreで除外されており、GitHub Actionsのactions/checkoutではDockerfileが取得できないため、現状のままでは実運用パイプラインはビルドステップで失敗する(ワークフロー内コメント・手順書の両方に明記済み)。"
+  },
+  "005_monorepo_security_gate": {
+    "status": "partial",
+    "completed_at": "2026-07-25",
+    "artifacts": [
+      ".github/workflows/deploy_cloud_run.yml (脆弱性スキャンステップをプレースホルダーからハード・フェイル本実装へ格上げ: CRITICAL/HIGH検出時exit 1、それ以外exit 0)"
+    ],
+    "notes": "要件B(セキュリティゲートのハード・フェイル化)のみ実施。要件A(.gitignoreからのapps/evaluator/除外解除・モノレポ統合)はユーザー判断により見送り。調査で判明した事実: (1) apps/evaluator/serviceAccountKey.json(実在するGCPサービスアカウント鍵)がネスト側.gitignoreでは除外されておらず、outer .gitignoreの除外を外すと直接git履行に平文コミットされる実害がある、(2) apps/evaluator/.gitは749MBの履歴・35コミットを持つ、GitHub上で独立ホストされている実プロジェクト(origin=github.com/takeshimatsunobu/nazokake-evaluator、現在のブランチはmainではなくrefactor/gemma-cleanup)であり、.gitmodules無しでのgit addは実ファイルを追跡しない壊れたgitlinkになる。この2点をユーザーへ提示し、モノレポ統合(履歴込みsubtree統合)は本タスクの範囲を超える意思決定と判断され、明示的に保留(見送り)された。git addおよびgit commitは実行していない(指示書側の特別許可は認識しているが、上記の実害リスクを理由にユーザー確認を優先し、ユーザーもStopを選択)。"
   }
 }
