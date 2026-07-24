@@ -31,6 +31,18 @@ VERIFICATION_HOME="${VERIFICATION_HOME:-${HOME}}"
 REPO_DIR="${REPO_DIR:-${VERIFICATION_HOME}/nazokake_apps}"
 BARE_REPO_DIR="${BARE_REPO_DIR:-${VERIFICATION_HOME}/nazokake_apps.git}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-deploy}"
+DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/tmp/deployment_in_progress.lock}"
+
+# 【原子的排他制御(instructions/199)】touch/rmによる存在チェックは、プロセスが
+# SIGKILL等で異常終了した際にロックファイルだけが残置される(=監視スクリプト側の
+# 安全装置を無期限に無力化しうる)非決定的な設計だった。exec {fd}>file + flockに
+# よるファイル記述子ロックへ置き換えることで、本スクリプトがどのように終了しても
+# (正常終了・SIGKILL問わず)OSがfd close時に確実にロックを解放する設計とする。
+exec {DEPLOY_LOCK_FD}>"${DEPLOY_LOCK_FILE}"
+if ! flock -n "${DEPLOY_LOCK_FD}"; then
+    echo "🚨 [Fail-Closed] 他のデプロイが既に進行中です(ロック取得失敗: ${DEPLOY_LOCK_FILE})。" >&2
+    exit 1
+fi
 
 echo "=== [1/3] Bareリポジトリからの稼働ディレクトリ同期(Pull) ==="
 
