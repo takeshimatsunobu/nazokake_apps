@@ -31,5 +31,14 @@
       "infra/data-sync-daemon/sync_daemon_entrypoint.py (Firestore aufheben_events -> ローカルflywheel.db のPull同期を本実装)"
     ],
     "notes": "SQLite側のスキーマ作成・アトミックトランザクション・冪等性(INSERT OR REPLACE)はin-memoryではない一時DBでの動的テストで確認済み。実際のFirestore接続(認証・ネットワーク・指数バックオフの実動作)は、この開発機にGCP認証情報が無いため未検証。gen-engineのCDI構文はinfra/scripts/setup_host.sh(instructions/002)がホスト側で/etc/cdi/nvidia.yamlを生成済みであることが前提。"
+  },
+  "004_setup_github_actions_wif": {
+    "status": "completed",
+    "completed_at": "2026-07-25",
+    "artifacts": [
+      ".github/workflows/deploy_cloud_run.yml",
+      "infra/docs/gcp_wif_artifact_registry_setup.md"
+    ],
+    "notes": "yaml.safe_loadでの構文検証は合格(トップレベルキー'on'がPyYAML1.1仕様でTrueとパースされる既知の現象を確認したが、これはGitHub Actions側では正しく'on:'として解釈される無害な既知動作であり、YAML構文エラーではない)。実際のWIF認証・Artifact Registry push・脆弱性スキャン・Cloud Runデプロイは、この開発機にGitHubリモート/GCP認証情報が無いため未実行・未検証。既知の重大な前提未達: apps/evaluator/はルート.gitignoreで除外されており、GitHub Actionsのactions/checkoutではDockerfileが取得できないため、現状のままでは実運用パイプラインはビルドステップで失敗する(ワークフロー内コメント・手順書の両方に明記済み)。"
   }
 }

@@ -1,0 +1,116 @@
+# .github/workflows/deploy_cloud_run.yml
+# ============================================
+# GitリポジトリをSSoTとしたPull型デプロイパイプライン(instructions/004)。
+# SSoT_architecture.md 9節が定義する「コードは一方向(Local -> Cloud、プル型デプロイ)」
+# を、GitHub Actions + Workload Identity Federation (WIF) で実装する。
+#
+# サービスアカウントキーJSON(長期認証情報)は一切使用しない。GitHub Actionsが
+# 発行するOIDCトークンをWIF経由でGCPサービスアカウントへ交換し、短命な認証情報のみで
+# デプロイする(google-github-actions/authのWIF利用パターン)。
+#
+# 事前準備(WIF Pool/Provider・CI/CD用サービスアカウント・Artifact Registry・
+# Container Analysis APIの有効化)は infra/docs/gcp_wif_artifact_registry_setup.md
+# の手順書に従って、人間のオペレーターがこのワークフロー実行前に完了させておく必要がある。
+#
+# 【既知の制約・要フォローアップ】このリポジトリのルート.gitignoreは
+# `/apps/evaluator/` と `/apps/batch_factory/` を「別リポジトリとして独立管理する
+# ため、このスーパープロジェクトのインデックスから除外する」設計にしている
+# (該当コメント参照)。そのため、下記の`docker build`が参照する
+# `apps/evaluator/Dockerfile`は、actions/checkoutによる素のgit checkoutでは
+# チェックアウトされず、このワークフローは現状のリポジトリ構成のままでは
+# ビルドステップで失敗する。cloudbuild.yaml(ローカルの`gcloud builds submit`、
+# .gitignoreではなく.gcloudignore/ローカルファイルシステムを参照するため問題なく
+# 動作する)と異なり、Git履行の差分をトリガーとするCI/CDでは、対象アプリを
+# このスーパープロジェクトのgit管理下に置く(例: apps/tactical_cicのように追納する、
+# またはapps/evaluatorの.gitignore除外を見直す)ことが本ワークフローの実運用開始の
+# 前提条件になる。PROJECT_ID/REGION/REPOSITORY/SERVICE_NAMEはcloudbuild.yaml
+# (リポジトリルート)の既存値と一致させてあり、切替時の値の不整合は無い。
+
+name: Deploy to Cloud Run (WIF)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      # infra/ や tools/ の変更ではクラウドへのデプロイを実行しない(instructions/004)。
+      - "apps/**"
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  PROJECT_ID: nazokakeapp-137e5
+  REGION: asia-northeast1
+  REPOSITORY: nazo-agent
+  SERVICE_NAME: nazokake-backend
+  DOCKERFILE_PATH: apps/evaluator/Dockerfile
+  IMAGE: asia-northeast1-docker.pkg.dev/nazokakeapp-137e5/nazo-agent/nazokake-backend
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # サービスアカウントキーJSONは使用しない。WIF経由でOIDCトークンを
+      # 短命なGCPアクセストークンへ交換する。
+      - id: auth
+        name: Authenticate to GCP (Workload Identity Federation)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.WIF_PROVIDER }}
+          service_account: ${{ secrets.WIF_SERVICE_ACCOUNT }}
+
+      - name: Setup gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker "${{ env.REGION }}-docker.pkg.dev" --quiet
+
+      - name: Build image
+        run: |
+          docker build \
+            -f "${{ env.DOCKERFILE_PATH }}" \
+            -t "${{ env.IMAGE }}:${{ github.sha }}" \
+            .
+
+      - name: Push image to Artifact Registry
+        run: docker push "${{ env.IMAGE }}:${{ github.sha }}"
+
+      # 【プレースホルダー・未検証】Container Analysis (On-Demand Scanning API)
+      # によるCRITICAL/HIGH脆弱性スキャン。`gcloud artifacts docker images scan`
+      # および `list-vulnerabilities` のフィールド名・出力形式は、この開発機に
+      # GCPアクセスが無く動的に検証できていない。実運用開始時に
+      # `gcloud artifacts docker images list-vulnerabilities --help` で
+      # 実際のフィールド名(vulnerability.effectiveSeverity)を確認すること。
+      - name: Scan image for CRITICAL/HIGH vulnerabilities (Container Analysis)
+        run: |
+          set -euo pipefail
+          IMAGE_REF="${{ env.IMAGE }}:${{ github.sha }}"
+
+          SCAN_NAME=$(gcloud artifacts docker images scan "${IMAGE_REF}" \
+            --location="${{ env.REGION }}" \
+            --format='value(response.scan)')
+          echo "scan resource: ${SCAN_NAME}"
+
+          SEVERE_COUNT=$(gcloud artifacts docker images list-vulnerabilities "${SCAN_NAME}" \
+            --format='value(vulnerability.effectiveSeverity)' \
+            | grep -E '^(CRITICAL|HIGH)$' | wc -l || true)
+          echo "CRITICAL/HIGH件数: ${SEVERE_COUNT}"
+
+          if [ "${SEVERE_COUNT}" -gt 0 ]; then
+            echo "🚨 CRITICAL/HIGHの脆弱性が検出されたため、デプロイを中止します。" >&2
+            gcloud artifacts docker images list-vulnerabilities "${SCAN_NAME}" \
+              --format='table(vulnerability.effectiveSeverity, vulnerability.cvssScore, noteName)' >&2 || true
+            exit 1
+          fi
+
+      - id: deploy
+        name: Deploy to Cloud Run
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.SERVICE_NAME }}
+          region: ${{ env.REGION }}
+          image: ${{ env.IMAGE }}:${{ github.sha }}
