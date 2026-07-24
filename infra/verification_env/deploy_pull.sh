@@ -31,6 +31,15 @@ VERIFICATION_HOME="${VERIFICATION_HOME:-${HOME}}"
 REPO_DIR="${REPO_DIR:-${VERIFICATION_HOME}/nazokake_apps}"
 BARE_REPO_DIR="${BARE_REPO_DIR:-${VERIFICATION_HOME}/nazokake_apps.git}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-deploy}"
+AUTO_SHUTDOWN_DEST="${AUTO_SHUTDOWN_DEST:-/home/takes/nazokake-evaluator/scripts/auto_shutdown.py}"
+
+# 【/tmp名前空間の共有検証(instructions/200)】本スクリプトはgcloud compute sshで
+# キックされるプレーンなログインシェル、auto_shutdown.py側はtakesユーザーの
+# crontabから直接起動される。どちらもsystemdサービス化やコンテナ化はされておらず
+# (docker composeでコンテナ化されているのはmlops-schedulerサイドカーのみで、本
+# スクリプト自身はホストのベアメタルシェルで実行される)、PrivateTmp等による
+# /tmpの名前空間分離を受けない。したがって両者はホストOSのグローバルな/tmpを
+# 確実に共有でき、ロックファイルパスを/tmp外へ変更する必要はない。
 DEPLOY_LOCK_FILE="${DEPLOY_LOCK_FILE:-/tmp/deployment_in_progress.lock}"
 
 # 【原子的排他制御(instructions/199)】touch/rmによる存在チェックは、プロセスが
@@ -44,7 +53,7 @@ if ! flock -n "${DEPLOY_LOCK_FD}"; then
     exit 1
 fi
 
-echo "=== [1/3] Bareリポジトリからの稼働ディレクトリ同期(Pull) ==="
+echo "=== [1/4] Bareリポジトリからの稼働ディレクトリ同期(Pull) ==="
 
 if [[ ! -d "${BARE_REPO_DIR}" ]]; then
     echo "🚨 [Fail-Closed] Bareリポジトリが見つかりません: ${BARE_REPO_DIR}" >&2
@@ -78,7 +87,20 @@ echo "♻️  git reset --hard origin/${DEPLOY_BRANCH} ..."
 git reset --hard "origin/${DEPLOY_BRANCH}"
 echo "✅ 稼働ディレクトリを $(git rev-parse --short HEAD) へ同期しました。"
 
-echo "=== [2/3] setup_verification_env.sh(初回のみ、冪等性センチナル) ==="
+echo "=== [2/4] auto_shutdown.pyをCron参照パスへ同期 ==="
+# 【IaCとランタイムの構成同期(instructions/200)】instructions/199でauto_shutdown.py
+# をリポジトリ管理下に置きflockによる排他制御を実装したが、本スクリプトは
+# git reset --hardでREPO_DIR配下を更新するのみで、実際にtakesユーザーのcrontabが
+# 参照するAUTO_SHUTDOWN_DESTへは配置していなかった(同期漏れ)。これを放置すると、
+# デプロイのたびにリポジトリ側だけが更新され、VM上で稼働し続ける旧タイマー
+# (mtimeベースの非決定的な監視ロジック)が発火し続ける「突然死」を招く。
+# install -m 755はコピーと実行権限付与を1コマンドで行い、コピー漏れ・権限漏れの
+# どちらも構造的に防ぐ。
+mkdir -p "$(dirname "${AUTO_SHUTDOWN_DEST}")"
+install -m 755 "${REPO_DIR}/infra/verification_env/scripts/auto_shutdown.py" "${AUTO_SHUTDOWN_DEST}"
+echo "✅ ${AUTO_SHUTDOWN_DEST} を最新化しました。"
+
+echo "=== [3/4] setup_verification_env.sh(初回のみ、冪等性センチナル) ==="
 # 【冪等性(instructions/165を継承)】OSレベルのプロビジョニング(cgroup委譲・NVIDIA
 # Container Toolkit登録)は1度で十分であり、繰り返しdockerdを再起動するリスクそのものを
 # 構造的に無くすため、センチナルファイルにより初回のみ実行する。
@@ -90,7 +112,7 @@ else
     echo "ℹ️  setup_verification_env.sh は既に適用済みのためスキップします(冪等性)。"
 fi
 
-echo "=== [3/3] mlops-schedulerサイドカーの再起動 ==="
+echo "=== [4/4] mlops-schedulerサイドカーの再起動 ==="
 # docker compose up --buildはVM状態に関わらず毎回実行する(コードの再デプロイ自体は
 # 毎回反映させる必要があり、Compose自体は冪等かつtools/scheduler_daemon.pyの
 # Graceful Shutdown対応済みのため安全、instructions/165と同じ方針)。
