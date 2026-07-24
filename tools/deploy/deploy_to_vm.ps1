@@ -57,6 +57,16 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $SshWrapperPath = Join-Path $PSScriptRoot "gcloud_ssh_wrapper.ps1"
 
+# 【instructions/201: ゾーン在庫枯渇(ZONE_RESOURCE_POOL_EXHAUSTED)への対処】
+# 当初案(起動失敗時に--zoneを切り替えて自動リトライ)は採用しなかった。GCEインスタンスは
+# 永続ディスクを含め作成時のゾーンに恒久的に固定されるため、$InstanceNameは$Zone以外の
+# ゾーンには実体が存在せず、--zoneを変えて`instances start`しても「リソースが見つかりません」
+# エラーになるだけで在庫枯渇を回避できない(自動フェイルオーバーには、各候補ゾーンへの
+# インスタンス複製、またはディスクのスナップショット化からの再作成が必要で、本スクリプトの
+# 責務を大きく超える)。そのため、在庫枯渇を検知した場合は下記$CandidateZonesを手動対応の
+# 選択肢として提示するにとどめ、自動での切り替えは行わない。
+$CandidateZones = @('us-east1-b', 'us-east1-c', 'us-east1-d')
+
 # 【instructions/166: 自律的リトライ(Exponential Backoff)】GCPのOS Login/IAPの権限
 # プロビジョニングは、VM起動・SSH開通後もタイムラグを伴って反映されることがある。
 # run_verification_server.ps1と同一実装(この間の一時的な認証エラーを「本当の失敗」と
@@ -104,8 +114,26 @@ if ($currentStatus -eq "RUNNING") {
     Write-Host "ℹ️  VMは既にRUNNING状態です。起動処理をスキップします(冪等性)。" -ForegroundColor Yellow
 } else {
     Write-Host "🚀 VMを起動します(現在の状態: $currentStatus)..." -ForegroundColor Cyan
-    gcloud compute instances start $InstanceName --project=$ProjectId --zone=$Zone
+    $startOutput = gcloud compute instances start $InstanceName --project=$ProjectId --zone=$Zone 2>&1
+    $startOutput | ForEach-Object { Write-Host $_ }
     if ($LASTEXITCODE -ne 0) {
+        $startOutputText = ($startOutput | Out-String)
+        if ($startOutputText -match 'ZONE_RESOURCE_POOL_EXHAUSTED' -or $startOutputText -match 'is currently unavailable') {
+            $otherZones = $CandidateZones | Where-Object { $_ -ne $Zone }
+            Write-Error (
+                "🚨 [在庫枯渇] ゾーン '$Zone' で $InstanceName (L4 GPU) の物理的な在庫が" +
+                "枯渇しています(ZONE_RESOURCE_POOL_EXHAUSTED / is currently unavailable)。`n" +
+                "このVMは永続ディスクを含めゾーン '$Zone' に恒久的に固定されているため、" +
+                "-Zoneを変えるだけでの自動フェイルオーバーはできません" +
+                "(他ゾーンには$InstanceNameの実体が存在しないため)。`n" +
+                "手動対応の選択肢:`n" +
+                "  1. 時間をおいて再実行する(在庫枯渇は一時的な場合が多い)。`n" +
+                "  2. 恒久対応が必要な場合は、ディスクをスナップショット化した上で候補ゾーン" +
+                "($($otherZones -join ', '))のいずれかでインスタンスを再作成する" +
+                "(データ整合性・ダウンタイムを要検討、本スクリプトの範囲外)。"
+            )
+            exit 1
+        }
         Write-Error "VMの起動に失敗しました($InstanceName, zone=$Zone)。"
         exit 1
     }
