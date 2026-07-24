@@ -2883,7 +2883,7 @@
       "実行",
       "再生成"
     ],
-    "filepath": "tools/instructions/tools/104_claude_dlq_management_ui.txt"
+    "filepath": "tools/instructions/104_claude_dlq_management_ui.txt"
   },
   {
     "id": "072",
@@ -2920,7 +2920,7 @@
       "ルートディレクトリ",
       "タイムシェアリング稼働"
     ],
-    "filepath": "tools/instructions/tools/instructions/072_claude_gap_analysis.txt"
+    "filepath": "tools/instructions/072_claude_gap_analysis.txt"
   },
   {
     "id": "074",
@@ -2957,7 +2957,7 @@
       "utf-8",
       "errors"
     ],
-    "filepath": "tools/instructions/tools/instructions/074_claude_phase1_secure_io.txt"
+    "filepath": "tools/instructions/074_claude_phase1_secure_io.txt"
   },
   {
     "id": "076",
@@ -2994,7 +2994,7 @@
       "Single",
       "Source"
     ],
-    "filepath": "tools/instructions/tools/instructions/076_claude_phase3_local_first.txt"
+    "filepath": "tools/instructions/076_claude_phase3_local_first.txt"
   },
   {
     "id": "077",
@@ -3031,7 +3031,7 @@
       "SQLAlchemy",
       "journal_mode"
     ],
-    "filepath": "tools/instructions/tools/instructions/077_claude_phase3_local_db_migration.txt"
+    "filepath": "tools/instructions/196_claude_phase3_sqlite_wal_serialized_writer.txt"
   },
   {
     "id": "078",
@@ -3068,7 +3068,7 @@
       "install",
       "venv"
     ],
-    "filepath": "tools/instructions/tools/instructions/078_claude_atomic_write_perfection.txt"
+    "filepath": "tools/instructions/078_claude_atomic_write_perfection.txt"
   },
   {
     "id": "081",
@@ -3105,7 +3105,7 @@
       "Serialized",
       "Writer"
     ],
-    "filepath": "tools/instructions/tools/instructions/081_claude_epic0_step2_e2e.txt"
+    "filepath": "tools/instructions/081_claude_epic0_step2_e2e.txt"
   },
   {
     "id": "083",
@@ -3142,7 +3142,7 @@
       "apps/evaluator",
       "google.cloud.firestore"
     ],
-    "filepath": "tools/instructions/tools/instructions/083_claude_ui_local_first.txt"
+    "filepath": "tools/instructions/083_claude_ui_local_first.txt"
   },
   {
     "id": "084",
@@ -3179,7 +3179,7 @@
       "ui_updated",
       "API"
     ],
-    "filepath": "tools/instructions/tools/instructions/084_claude_epic0_poison_pill_and_commit.txt"
+    "filepath": "tools/instructions/084_claude_epic0_poison_pill_and_commit.txt"
   },
   {
     "id": "085",
@@ -3216,7 +3216,7 @@
       "reraise",
       "True"
     ],
-    "filepath": "tools/instructions/tools/instructions/085_claude_tenacity_backoff.txt"
+    "filepath": "tools/instructions/085_claude_tenacity_backoff.txt"
   },
   {
     "id": "086",
@@ -3253,7 +3253,7 @@
       "undefined",
       "Git"
     ],
-    "filepath": "tools/instructions/tools/instructions/086_claude_frontend_envelope_fix.txt"
+    "filepath": "tools/instructions/086_claude_frontend_envelope_fix.txt"
   },
   {
     "id": "087",
@@ -3290,7 +3290,7 @@
       "replace",
       "run"
     ],
-    "filepath": "tools/instructions/tools/instructions/087_claude_extract_script.txt"
+    "filepath": "tools/instructions/087_claude_extract_script.txt"
   },
   {
     "id": "088",
@@ -3327,7 +3327,7 @@
       "success",
       "apps/evaluator/frontend/public/admin.js"
     ],
-    "filepath": "tools/instructions/tools/instructions/088_claude_frontend_zombie_ui_fix.txt"
+    "filepath": "tools/instructions/088_claude_frontend_zombie_ui_fix.txt"
   },
   {
     "id": "089",
@@ -3364,7 +3364,7 @@
       "nazokake_local_YYYYMMDD_HHMMSS.db.bak",
       "run"
     ],
-    "filepath": "tools/instructions/tools/instructions/089_claude_init_local_db.txt"
+    "filepath": "tools/instructions/089_claude_init_local_db.txt"
   },
   {
     "id": "090",
@@ -3401,7 +3401,7 @@
       "PowerShell",
       "Git"
     ],
-    "filepath": "tools/instructions/tools/instructions/090_claude_run_api_script.txt"
+    "filepath": "tools/instructions/090_claude_run_api_script.txt"
   },
   {
     "id": "093",
@@ -3438,7 +3438,7 @@
       "venv",
       "pycache"
     ],
-    "filepath": "tools/instructions/tools/instructions/093_claude_tree_based_context.txt"
+    "filepath": "tools/instructions/093_claude_tree_based_context.txt"
   },
   {
     "id": "094",
@@ -3475,7 +3475,7 @@
       "human/delete",
       "fetch"
     ],
-    "filepath": "tools/instructions/tools/instructions/094_claude_frontend_admin_js_cleanup.txt"
+    "filepath": "tools/instructions/094_claude_frontend_admin_js_cleanup.txt"
   },
   {
     "id": "095",
@@ -3512,7 +3512,7 @@
       "RTX",
       "I/O"
     ],
-    "filepath": "tools/instructions/tools/instructions/095_claude_qwen_single_model_integration.txt"
+    "filepath": "tools/instructions/095_claude_qwen_single_model_integration.txt"
   },
   {
     "id": "096",
@@ -3549,7 +3549,7 @@
       "注入",
       "職人ノード"
     ],
-    "filepath": "tools/instructions/tools/instructions/096_claude_qwen_gemma_fallback_graph.txt"
+    "filepath": "tools/instructions/096_claude_qwen_gemma_fallback_graph.txt"
   },
   {
     "id": "097",
@@ -3586,7 +3586,7 @@
       "wal",
       "shm"
     ],
-    "filepath": "tools/instructions/tools/instructions/097_claude_git_guardrails.txt"
+    "filepath": "tools/instructions/097_claude_git_guardrails.txt"
   },
   {
     "id": "098",
@@ -3623,7 +3623,7 @@
       "Deleted",
       "commit"
     ],
-    "filepath": "tools/instructions/tools/instructions/098_claude_git_index_purge.txt"
+    "filepath": "tools/instructions/098_claude_git_index_purge.txt"
   },
   {
     "id": "099",
@@ -3660,7 +3660,7 @@
       "app",
       "app.openapi"
     ],
-    "filepath": "tools/instructions/tools/instructions/099_claude_frontend_type_safety.txt"
+    "filepath": "tools/instructions/099_claude_frontend_type_safety.txt"
   },
   {
     "id": "100",
@@ -3697,7 +3697,7 @@
       "パッチ原因",
       "インフラ"
     ],
-    "filepath": "tools/instructions/tools/instructions/100_claude_post_mortem_cleanup.txt"
+    "filepath": "tools/instructions/100_claude_post_mortem_cleanup.txt"
   },
   {
     "id": "101",
@@ -3734,7 +3734,7 @@
       "apps/evaluator/backend/api/routers/admin.py",
       "GET"
     ],
-    "filepath": "tools/instructions/tools/instructions/101_claude_dlq_management_ui.txt"
+    "filepath": "tools/instructions/101_claude_dlq_management_ui.txt"
   },
   {
     "id": "102",
@@ -3771,7 +3771,7 @@
       "fixtures",
       "tools/nazo_agent.py"
     ],
-    "filepath": "tools/instructions/tools/instructions/102_claude_epic2_benchmark_sandbox.txt"
+    "filepath": "tools/instructions/102_claude_epic2_benchmark_sandbox.txt"
   },
   {
     "id": "103",
@@ -3808,7 +3808,7 @@
       "SQLAlchemy",
       "ORM"
     ],
-    "filepath": "tools/instructions/tools/instructions/103_claude_safe_reset_infra.txt"
+    "filepath": "tools/instructions/103_claude_safe_reset_infra.txt"
   },
   {
     "id": "105",
@@ -3845,7 +3845,7 @@
       "os.environ",
       "env"
     ],
-    "filepath": "tools/instructions/tools/instructions/105_claude_epic3_dataset_extraction.txt"
+    "filepath": "tools/instructions/105_claude_epic3_dataset_extraction.txt"
   },
   {
     "id": "106",
@@ -3882,7 +3882,7 @@
       "Child",
       "Suicide"
     ],
-    "filepath": "tools/instructions/tools/instructions/106_claude_epic3_mlops_pipeline.txt"
+    "filepath": "tools/instructions/106_claude_epic3_mlops_pipeline.txt"
   },
   {
     "id": "107",
@@ -3919,7 +3919,7 @@
       "SFT/DPO",
       "git"
     ],
-    "filepath": "tools/instructions/tools/instructions/107_claude_epic4_minhash_lsh.txt"
+    "filepath": "tools/instructions/107_claude_epic4_minhash_lsh.txt"
   },
   {
     "id": "108",
@@ -3956,7 +3956,7 @@
       "Layer",
       "run_api.ps1"
     ],
-    "filepath": "tools/instructions/tools/instructions/108_claude_epic4_utf8_strict.txt"
+    "filepath": "tools/instructions/108_claude_epic4_utf8_strict.txt"
   },
   {
     "id": "109",
@@ -3993,13 +3993,13 @@
       "preexec_fn",
       "os.setsid"
     ],
-    "filepath": "tools/instructions/tools/instructions/109_claude_epic3_atomic_teardown.txt"
+    "filepath": "tools/instructions/109_claude_epic3_atomic_teardown.txt"
   },
   {
     "id": "110",
     "summary": "",
     "keywords": [],
-    "filepath": "tools/instructions/tools/instructions/110_claude_epic4_cross_platform_encoding.txt"
+    "filepath": "tools/instructions/110_claude_epic4_cross_platform_encoding.txt"
   },
   {
     "id": "111",
@@ -4036,7 +4036,7 @@
       "venv_train/",
       "SQLite"
     ],
-    "filepath": "tools/instructions/tools/instructions/111_claude_git_guardrails.txt"
+    "filepath": "tools/instructions/111_claude_git_guardrails.txt"
   },
   {
     "id": "112",
@@ -4073,7 +4073,7 @@
       "Append-only",
       "database.py"
     ],
-    "filepath": "tools/instructions/tools/instructions/112_claude_epic0_audit_trail.txt"
+    "filepath": "tools/instructions/112_claude_epic0_audit_trail.txt"
   },
   {
     "id": "113",
@@ -4110,7 +4110,7 @@
       "admin.html",
       "auth.js"
     ],
-    "filepath": "tools/instructions/tools/instructions/113_claude_frontend_esm.txt"
+    "filepath": "tools/instructions/113_claude_frontend_esm.txt"
   },
   {
     "id": "114",
@@ -4147,7 +4147,7 @@
       "nazokake_local.db",
       "revision"
     ],
-    "filepath": "tools/instructions/tools/instructions/114_claude_alembic_migration.txt"
+    "filepath": "tools/instructions/114_claude_alembic_migration.txt"
   },
   {
     "id": "115",
@@ -4184,7 +4184,7 @@
       "Ruff",
       "LibCST"
     ],
-    "filepath": "tools/instructions/tools/instructions/115_claude_epic2_benchmark_env.txt"
+    "filepath": "tools/instructions/115_claude_epic2_benchmark_env.txt"
   },
   {
     "id": "116",
@@ -4221,7 +4221,7 @@
       "ミッション",
       "物理インベントリ"
     ],
-    "filepath": "tools/instructions/tools/instructions/116_claude_inventory_audit.txt"
+    "filepath": "tools/instructions/116_claude_inventory_audit.txt"
   },
   {
     "id": "117",
@@ -4258,7 +4258,7 @@
       "指定",
       "Buildless"
     ],
-    "filepath": "tools/instructions/tools/instructions/117_claude_frontend_esm.txt"
+    "filepath": "tools/instructions/117_claude_frontend_esm.txt"
   },
   {
     "id": "118",
@@ -4295,7 +4295,7 @@
       "API",
       "Gemini/Claude"
     ],
-    "filepath": "tools/instructions/tools/instructions/118_claude_mlops_triggers_and_locks.txt"
+    "filepath": "tools/instructions/118_claude_mlops_triggers_and_locks.txt"
   },
   {
     "id": "119",
@@ -4332,7 +4332,7 @@
       "docker_available",
       "false"
     ],
-    "filepath": "tools/instructions/tools/instructions/119_claude_epic2_sandbox_hardening.txt"
+    "filepath": "tools/instructions/119_claude_epic2_sandbox_hardening.txt"
   },
   {
     "id": "120",
@@ -4369,7 +4369,7 @@
       "Ruff",
       "LibCST"
     ],
-    "filepath": "tools/instructions/tools/instructions/120_claude_epic2_benchmark_env.txt"
+    "filepath": "tools/instructions/120_claude_epic2_benchmark_env.txt"
   },
   {
     "id": "121",
@@ -4406,7 +4406,7 @@
       "command.upgrade",
       "config"
     ],
-    "filepath": "tools/instructions/tools/instructions/121_claude_alembic_infra_fix.txt"
+    "filepath": "tools/instructions/121_claude_alembic_infra_fix.txt"
   },
   {
     "id": "122",
@@ -4443,7 +4443,7 @@
       "EXISTS",
       "PRIMARY"
     ],
-    "filepath": "tools/instructions/tools/instructions/122_claude_epic3_coreset_and_experiments.txt"
+    "filepath": "tools/instructions/122_claude_epic3_coreset_and_experiments.txt"
   },
   {
     "id": "123",
@@ -4480,7 +4480,7 @@
       "mlops_metrics.json",
       "fetch"
     ],
-    "filepath": "tools/instructions/tools/instructions/123_claude_mlops_dashboard.txt"
+    "filepath": "tools/instructions/123_claude_mlops_dashboard.txt"
   },
   {
     "id": "124",
@@ -4517,7 +4517,7 @@
       "ENABLE_LOGPROBS_ENTROPY",
       "False"
     ],
-    "filepath": "tools/instructions/tools/instructions/124_claude_cto_escalation.txt"
+    "filepath": "tools/instructions/124_claude_cto_escalation.txt"
   },
   {
     "id": "125",
@@ -4554,7 +4554,7 @@
       "Node",
       "Draft"
     ],
-    "filepath": "tools/instructions/tools/instructions/125_claude_escalation_audit.txt"
+    "filepath": "tools/instructions/125_claude_escalation_audit.txt"
   },
   {
     "id": "126",
@@ -4591,7 +4591,7 @@
       "ドラフト",
       "ファイル"
     ],
-    "filepath": "tools/instructions/tools/instructions/126_claude_cto_sandbox_integration.txt"
+    "filepath": "tools/instructions/126_claude_cto_sandbox_integration.txt"
   },
   {
     "id": "127",
@@ -4628,7 +4628,7 @@
       "os.fsync",
       "os.replace"
     ],
-    "filepath": "tools/instructions/tools/instructions/127_claude_mlops_dashboard_static_dump.txt"
+    "filepath": "tools/instructions/127_claude_mlops_dashboard_static_dump.txt"
   },
   {
     "id": "128",
@@ -4665,7 +4665,7 @@
       "指定",
       "Coder"
     ],
-    "filepath": "tools/instructions/tools/instructions/128_claude_qwen_constrained_decoding.txt"
+    "filepath": "tools/instructions/128_claude_qwen_constrained_decoding.txt"
   },
   {
     "id": "129",
@@ -4702,7 +4702,7 @@
       "created_at",
       "DESC"
     ],
-    "filepath": "tools/instructions/tools/instructions/129_claude_audit_trail_ui.txt"
+    "filepath": "tools/instructions/129_claude_audit_trail_ui.txt"
   },
   {
     "id": "130",
@@ -4739,7 +4739,7 @@
       "hex",
       "escalation/issue-"
     ],
-    "filepath": "tools/instructions/tools/instructions/130_claude_worktree_refactoring.txt"
+    "filepath": "tools/instructions/130_claude_worktree_refactoring.txt"
   },
   {
     "id": "131",
@@ -4776,7 +4776,7 @@
       "subprocess.run",
       "timeout"
     ],
-    "filepath": "tools/instructions/tools/instructions/131_claude_sandbox_generalization.txt"
+    "filepath": "tools/instructions/131_claude_sandbox_generalization.txt"
   },
   {
     "id": "132",
@@ -4813,7 +4813,7 @@
       "QUALITY_GATE_COMPLEXITY_MAX",
       "float"
     ],
-    "filepath": "tools/instructions/tools/instructions/132_claude_mlops_alerts_and_thresholds.txt"
+    "filepath": "tools/instructions/132_claude_mlops_alerts_and_thresholds.txt"
   },
   {
     "id": "133",
@@ -4850,7 +4850,7 @@
       "指定",
       "mlops_experiments.db"
     ],
-    "filepath": "tools/instructions/tools/instructions/133_claude_mlops_dashboard.txt"
+    "filepath": "tools/instructions/133_claude_mlops_dashboard.txt"
   },
   {
     "id": "134",
@@ -4887,7 +4887,7 @@
       "動作",
       "エンドツーエンド"
     ],
-    "filepath": "tools/instructions/tools/instructions/134_claude_mlops_first_run.txt"
+    "filepath": "tools/instructions/134_claude_mlops_first_run.txt"
   },
   {
     "id": "135",
@@ -4924,7 +4924,7 @@
       "main",
       "try...except"
     ],
-    "filepath": "tools/instructions/tools/instructions/135_claude_mlops_observability_fix.txt"
+    "filepath": "tools/instructions/135_claude_mlops_observability_fix.txt"
   },
   {
     "id": "136",
@@ -4961,7 +4961,7 @@
       "インフラ",
       "起動不能"
     ],
-    "filepath": "tools/instructions/tools/instructions/136_claude_infra_exit_code_125.txt"
+    "filepath": "tools/instructions/136_claude_infra_exit_code_125.txt"
   },
   {
     "id": "137",
@@ -4998,7 +4998,7 @@
       "utf-8",
       "filelock.FileLock"
     ],
-    "filepath": "tools/instructions/tools/instructions/137_claude_alembic_infra_fix.txt"
+    "filepath": "tools/instructions/137_claude_alembic_infra_fix.txt"
   },
   {
     "id": "138",
@@ -5035,7 +5035,7 @@
       "ruff",
       "check"
     ],
-    "filepath": "tools/instructions/tools/instructions/138_claude_mlops_stateless_trigger.txt"
+    "filepath": "tools/instructions/138_claude_mlops_stateless_trigger.txt"
   },
   {
     "id": "139",
@@ -5072,7 +5072,7 @@
       "Docker",
       "run_step"
     ],
-    "filepath": "tools/instructions/tools/instructions/139_claude_custom_exceptions.txt"
+    "filepath": "tools/instructions/139_claude_custom_exceptions.txt"
   },
   {
     "id": "140",
@@ -5109,7 +5109,7 @@
       "CQRS",
       "SRE"
     ],
-    "filepath": "tools/instructions/tools/instructions/140_claude_mlops_dashboard_contract.txt"
+    "filepath": "tools/instructions/140_claude_mlops_dashboard_contract.txt"
   },
   {
     "id": "142",
@@ -5146,7 +5146,7 @@
       "指定",
       "mlops_experiments.db"
     ],
-    "filepath": "tools/instructions/tools/instructions/142_claude_mlops_dashboard.txt"
+    "filepath": "tools/instructions/142_claude_mlops_dashboard.txt"
   },
   {
     "id": "143",
@@ -5183,6 +5183,6 @@
       "Retrieval",
       "Claude"
     ],
-    "filepath": "tools/instructions/tools/instructions/143_claude_dynamic_experience_replay.txt"
+    "filepath": "tools/instructions/143_claude_dynamic_experience_replay.txt"
   }
 ]

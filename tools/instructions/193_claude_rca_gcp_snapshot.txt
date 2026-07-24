@@ -1,0 +1,16 @@
+【ミッション: オブザーバビリティの回復とVMインシデントの確証確保（Phase 1）】
+前回のタスクでSSH切断が発生した際、「推測」でトラブルシューティングを停止した挙動は、SREアーキテクチャの基準を満たしていません。SSHが不通となった状況において、Cloud API（gcloudコマンド）を駆使して客観的ファクトを抽出し、事後検証（Post-Mortem）のための証拠保全を実行してください。
+
+Step 1: シリアルコンソールログからのファクト抽出
+SSHが通らなくても、gcloudコマンド経由でVMのシリアルポート出力を取得できます。以下のコマンド等を利用してOSレベルのログを抽出しなさい。
+gcloud compute instances get-serial-port-output nazokake-l4-vm --zone=us-east1-b
+抽出したログから、「No space left on device（Disk Full）」、「Out of memory（OOM）」、または実際のバン記録など、SSH切断の「真の根本原因」を示すエラーを特定せよ。
+
+Step 2: 証拠保全（スナップショットの取得）
+事後検証を可能にするため、VM（nazokake-l4-vm）のブートディスクのスナップショットを取得せよ。
+コマンド例: gcloud compute disks snapshot nazokake-l4-vm --snapshot-names=nazokake-l4-vm-rca-snapshot-20260724 --zone=us-east1-b
+※ このスナップショットがあれば、後日別のVMにディスクをマウントして詳細な内部調査（どのコンテナが容量を食いつぶしたか等）が可能になります。
+
+Step 3: RCAレポートの提出
+推測を排除し、Step 1で得られた「ログのファクト」とStep 2の「保全完了」の証拠を統合したRCAレポートを提出せよ。
+※ 絶対制約: この段階ではまだVM（nazokake-l4-vm）の削除（delete）は行わないこと。

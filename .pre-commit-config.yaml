@@ -19,3 +19,12 @@ repos:
     hooks:
       - id: ruff
         args: ["--no-fix"]
+  - repo: local
+    hooks:
+      - id: check-instructions-layout
+        name: check-instructions-layout
+        description: tools/instructions/配下のtools/instructions/tools/...ネスト再発を検知する(instructions/194)
+        entry: uv run python tools/check_instructions_layout.py
+        language: system
+        pass_filenames: false
+        always_run: true

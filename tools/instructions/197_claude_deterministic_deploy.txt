@@ -1,0 +1,14 @@
+【ミッション: 決定論的環境の構築と1-Click Deployの貫通テスト】
+稼働中VMの「GPUアイドル監視による30分強制シャットダウン」を宣言的（Declarative）無効化し、決定論的な環境を担保した上で1-Click Deployの実機テストを完遂せよ。
+
+Step 1: スタートアップスクリプトによるタイマーの宣言的無効化
+gcloud compute instances add-metadata コマンドを使用し、nazokake-l4-vm (zone: us-east1-b) にメタデータを追加せよ。
+キーは startup-script とし、値には「takesユーザーのcrontabを一時的にクリアする（crontab -r -u takes 等）」、または「auto_shutdown.py の実行権限を剥奪する（chmod -x /home/takes/nazokake-evaluator/scripts/auto_shutdown.py）」処理を設定すること。
+
+Step 2: 状態のクリーンアップ（再起動）
+gcloud compute instances reset (または stop/start) を実行し、VMを再起動せよ。これによりStep 1のスタートアップスクリプトが発火し、時間制限のない決定的な環境が構築される。
+
+Step 3: 1-Click Deployの再キックと監査
+環境のタイムリミットが解除された状態で、ローカルから pwsh tools/deploy/deploy_to_vm.ps1 を実行（1-Click Deployをトリガー）せよ。
+VM側で deploy_pull.sh が非同期起動し、Pull型GitOpsのプロセスが正常に完遂するか確認すること。
+※ デプロイ完了後、VM側のログを回収し、Pull型デプロイの成否（およびサブモジュールの挙動）についてSREレポートを提出せよ。
