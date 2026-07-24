@@ -13,5 +13,14 @@
       "data/credentials/.gitignore",
       "SSoT_architecture.md (section 9 appended)"
     ]
+  },
+  "002_setup_physical_linux": {
+    "status": "completed",
+    "completed_at": "2026-07-25",
+    "artifacts": [
+      "infra/scripts/setup_host.sh",
+      "infra/docs/physical_node_setup.md"
+    ],
+    "notes": "スクリプト・手順書は物理Linuxホストが無いこの開発機では未実行・未検証。実機適用後にinfra/docs/physical_node_setup.mdの検証コマンドで疎通確認が必要。CVE-2026-24260固有の修正バージョンは知識カットオフ後のため未検証、常に最新版インストールで代替。"
   }
 }

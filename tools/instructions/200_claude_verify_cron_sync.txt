@@ -1,0 +1,12 @@
+【ミッション: IaCとランタイムの構成同期ギャップの解消】
+先のタスク（199）で auto_shutdown.py をリポジトリ管理下に置き、flock による排他制御を実装した点は評価する。しかし、SREの観点からインフラの同期フローに致命的な盲点が存在する可能性があるため、以下の要件（Must Fix）に基づき検証とコードの修正を行え。
+
+Step 1: Cron実行パスへのデプロイロジックの確認と実装
+deploy_pull.sh のコードを解析せよ。git fetch / reset を行った後、リポジトリ内の infra/verification_env/scripts/auto_shutdown.py を、VMのCronが実際に参照しているパス（/home/takes/nazokake-evaluator/scripts/auto_shutdown.py 等）へコピー（またはシンボリックリンクを作成）し、実行権限を付与する処理が存在するか確認せよ。
+存在しない場合、同期漏れによる旧タイマー発火（突然死）を防ぐため、確実な配置ロジックを deploy_pull.sh に追記せよ。
+
+Step 2: /tmp 名前空間の分離リスクの検証
+deploy_pull.sh と auto_shutdown.py が共に /tmp/deployment_in_progress.lock を参照しているが、これらがホストOSの同一名前空間で確実にファイルを共有できるか（PrivateTmp 等の影響を受けないか）検証せよ。もし分離のリスクがある場合は、双方のロックファイルパスをより決定論的な場所へ変更せよ。
+
+Step 3: 静的解析とコミット
+修正を加えた場合は構文チェックを実行し、対象ファイルのみを明示的に指定してコミットを行え。作業完了後、どのような同期ロジックを実装したかレポートせよ。
