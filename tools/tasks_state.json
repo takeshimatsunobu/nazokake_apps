@@ -22,5 +22,14 @@
       "infra/docs/physical_node_setup.md"
     ],
     "notes": "スクリプト・手順書は物理Linuxホストが無いこの開発機では未実行・未検証。実機適用後にinfra/docs/physical_node_setup.mdの検証コマンドで疎通確認が必要。CVE-2026-24260固有の修正バージョンは知識カットオフ後のため未検証、常に最新版インストールで代替。"
+  },
+  "003_implement_data_sync": {
+    "status": "completed",
+    "completed_at": "2026-07-25",
+    "artifacts": [
+      "infra/docker-compose.yml (gen-engineをCDI構文へ修正、data-sync-daemonのマウント先を/data/sqlite・/data/credentialsへ整合)",
+      "infra/data-sync-daemon/sync_daemon_entrypoint.py (Firestore aufheben_events -> ローカルflywheel.db のPull同期を本実装)"
+    ],
+    "notes": "SQLite側のスキーマ作成・アトミックトランザクション・冪等性(INSERT OR REPLACE)はin-memoryではない一時DBでの動的テストで確認済み。実際のFirestore接続(認証・ネットワーク・指数バックオフの実動作)は、この開発機にGCP認証情報が無いため未検証。gen-engineのCDI構文はinfra/scripts/setup_host.sh(instructions/002)がホスト側で/etc/cdi/nvidia.yamlを生成済みであることが前提。"
   }
 }

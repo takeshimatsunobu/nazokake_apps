@@ -80,14 +80,18 @@ services:
       - "8000"
     networks:
       - cleanroom-internal
-    # NVIDIA Container ToolkitによるGPUパススルー。
+    # CDI (Container Device Interface) によるGPUパススルー(instructions/003)。
+    # legacyの driver: nvidia / capabilities: [gpu] はRootless Docker環境の
+    # dockerdがcgroupデバイス制御を直接操作できないケースがあり、
+    # infra/scripts/setup_host.sh (instructions/002) が /etc/cdi/nvidia.yaml を
+    # 生成するCDI方式に統一する。ホスト側でCDI spec生成が未実施の場合、
+    # このサービスの起動時にdevice_ids解決エラーとなる。
     deploy:
       resources:
         reservations:
           devices:
-            - driver: nvidia
-              count: 1
-              capabilities: ["gpu"]
+            - driver: cdi
+              device_ids: ["nvidia.com/gpu=all"]
 
   # Firestore <-> ローカルSQLite間のデータ同期バッチ処理(SSoT_architecture.md 8.2節)。
   data-sync-daemon:
@@ -99,14 +103,19 @@ services:
       # SQLite(WALモード)は-wal/-shmサイドカーファイルを本体と同一ディレクトリへ
       # 作成するため、単一ファイルではなくディレクトリそのものをrwマウントする
       # (infra/verification_env/docker-compose.ymlのmlops-schedulerサービスと同じ理由)。
-      - ../data/sqlite:/app/data/sqlite
+      # マウント先は infra/data-sync-daemon/sync_daemon_entrypoint.py が
+      # ハードコードする絶対パス(/data/sqlite/flywheel.db, /data/credentials/)と
+      # 一致させる(instructions/003)。
+      - ../data/sqlite:/data/sqlite
       # GCPサービスアカウントキー等はread-onlyでマウントする。
-      - ../data/credentials:/app/data/credentials:ro
+      - ../data/credentials:/data/credentials:ro
     env_file:
       - ../.env
     environment:
-      - NAZOKAKE_DB_PATH=/app/data/sqlite/nazokake_local.db
-      - GOOGLE_APPLICATION_CREDENTIALS=/app/data/credentials/serviceAccountKey.json
+      # sync_daemon_entrypoint.pyは/data/credentials/配下の*.jsonを優先的に
+      # Certificateとして読み込むため、これは鍵ファイルが見つからない場合の
+      # フォールバック(Application Default Credentials)専用。
+      - GOOGLE_APPLICATION_CREDENTIALS=/data/credentials/serviceAccountKey.json
     # gen-engineへの到達は不要なため、外部API(Firestore)向けのegress網のみ接続する。
     networks:
       - cleanroom-egress
