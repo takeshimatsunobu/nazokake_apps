@@ -77,3 +77,5 @@ all_source_code.txt
 # ZIP圧縮+scp転送方式そのものがSRE監査でRejectされ、閉域GitOps(git push)方式の
 # tools/deploy/deploy_to_vm.ps1へ置き換えられた(source.zipを生成しない)。
 source.zip
+all_source_code.txt
+**/all_source_code.txt
