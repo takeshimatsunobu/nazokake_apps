@@ -27,6 +27,11 @@
 # という一行コマンド方式は、シェル履歴に平文の値が残る弱点があったため、本スクリプト
 # ではこの方式を採用しない。
 #
+# 【instructions/219での追加】末尾でWIF_PROVIDER・WIF_SERVICE_ACCOUNTの値を人間に
+# コピペさせるだけだった箇所を、`gh secret set`によるGitHub Secretsへの直接登録へ
+# 置き換えた。ghが未導入・未ログインの場合は元のコピペ用出力へフォールダウンする
+# (冪等性を保つ)。
+#
 # 使い方:
 #   bash infra/scripts/setup_gcp_wif_and_secrets.sh
 #   ROTATE_SECRETS=1 bash infra/scripts/setup_gcp_wif_and_secrets.sh   # 既存シークレットの値を更新する場合
@@ -179,10 +184,34 @@ create_or_rotate_secret() {
 create_or_rotate_secret "GEMINI_API_KEY"
 create_or_rotate_secret "ANTHROPIC_API_KEY"
 
-echo ""
-echo "GitHub Secrets へ以下を登録してください(Settings -> Secrets and variables -> Actions):"
-echo "  WIF_PROVIDER      = projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${WIF_POOL_ID}/providers/${WIF_PROVIDER_ID}"
-echo "  WIF_SERVICE_ACCOUNT = ${DEPLOYER_SA}"
+WIF_PROVIDER_VALUE="projects/${PROJECT_NUMBER}/locations/global/workloadIdentityPools/${WIF_POOL_ID}/providers/${WIF_PROVIDER_ID}"
+WIF_SERVICE_ACCOUNT_VALUE="${DEPLOYER_SA}"
+
+echo "=== [+] GitHub Secretsへの登録(instructions/219: gh CLIによる自動化) ==="
+# 【冪等性・フォールバック】ghが未導入・未ログイン、またリポジトリのpush権限が無い
+# 場合は、コピペ用の値を出力するだけに留める(人間が手動でSettings画面から登録できる
+# ようにする)。gh secret set自体は既存の値を上書きするだけであり、実行しても安全
+# (何度再実行しても収束する)。
+GH_SECRETS_REGISTERED=0
+if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+  if gh secret set WIF_PROVIDER --repo "${GITHUB_REPOSITORY_SLUG}" --body "${WIF_PROVIDER_VALUE}" \
+      && gh secret set WIF_SERVICE_ACCOUNT --repo "${GITHUB_REPOSITORY_SLUG}" --body "${WIF_SERVICE_ACCOUNT_VALUE}"; then
+    echo "[OK] gh secret set経由でWIF_PROVIDER / WIF_SERVICE_ACCOUNTを登録しました(${GITHUB_REPOSITORY_SLUG})。"
+    GH_SECRETS_REGISTERED=1
+  else
+    echo "[WARN] gh secret setが失敗しました(権限不足の可能性)。下記の値を手動で登録してください。" >&2
+  fi
+else
+  echo "[INFO] ghが未導入、または未ログインです(gh auth login未実行)。下記の値を手動で登録してください。"
+fi
+
+if [[ "${GH_SECRETS_REGISTERED}" != "1" ]]; then
+  echo ""
+  echo "GitHub Secrets へ以下を登録してください(Settings -> Secrets and variables -> Actions):"
+  echo "  WIF_PROVIDER        = ${WIF_PROVIDER_VALUE}"
+  echo "  WIF_SERVICE_ACCOUNT = ${WIF_SERVICE_ACCOUNT_VALUE}"
+fi
+
 echo ""
 echo "サービスアカウントキーJSON(credentials.json等)はGitHub Secretsに一切登録しないこと"
 echo "(WIFの目的そのものであり、登録してしまうとこの構成全体の意味が失われる)。"
