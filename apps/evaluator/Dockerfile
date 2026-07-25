@@ -16,8 +16,20 @@
 #
 # nazokake_core(packages/shared_core)は、uv.lockが記録する相対パス依存
 # (`{ path = "../../../packages/shared_core" }`、apps/evaluator/backend/pyproject.toml
-# 基準)をコンテナ内でも解決できるよう、リポジトリと同じ相対ディレクトリ構造
-# (/build/apps/evaluator/backend, /build/packages/shared_core)を再現してCOPYする。
+# 基準)を解決できるよう、pyproject.tomlを/app直下に置き、3階層上(=ルート)基準で
+# packages/shared_coreをコンテナのルート直下(/packages/shared_core)にCOPYする。
+#
+# 【instructions/224で判明した教訓】以前はbuilderステージのWORKDIRを/build配下の
+# 深い階層(/build/apps/evaluator/backend)にしていたため、そこで`uv sync`が作る
+# .venv内の各スクリプト(bin/uvicorn等)のshebangが絶対パス
+# (#!/build/apps/evaluator/backend/.venv/bin/python)で焼き込まれていた。
+# venvはPython venvの仕様上リロケータブルではないため、runtimeステージで
+# COPY --from=builderにより別の絶対パス(/app/.venv)へ配置すると、shebangが
+# 指す実行ファイルが存在せず`uvicorn: not found`(exit 127)でコンテナ起動に
+# 失敗する。これは初回の実デプロイ試行(instructions/220-224のE2E検証)で
+# 初めて到達したステップであり、Alpine移行以前から存在した潜在バグ。
+# 対策として、builderステージでも.venvを最終的な配置先と同じ絶対パス
+# (/app/.venv)に直接作成し、shebangが両ステージで有効であり続けるようにする。
 #
 # セキュリティ上の理由から、apps/evaluator/ 直下の .env・.venv_ai・data(データセット)・
 # models(LoRA成果物)・frontend 等はCOPYの対象を apps/evaluator/backend/ のみに限定
@@ -51,20 +63,20 @@ RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev
 ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never
 
-WORKDIR /build
+WORKDIR /app
 
-# uv.lockが記録する相対パス依存を解決できるよう、リポジトリと同じ相対ディレクトリ
-# 構造を再現してCOPYする(レイヤーキャッシュのため、依存関係マニフェスト類を
-# アプリ本体より先にコピーする)。
-COPY apps/evaluator/backend/pyproject.toml apps/evaluator/backend/uv.lock apps/evaluator/backend/
-COPY packages/shared_core packages/shared_core
-
-WORKDIR /build/apps/evaluator/backend
+# uv.lockが記録する相対パス依存(pyproject.toml基準で3階層上=ルート)を解決できる
+# よう、packages/shared_coreはコンテナのルート直下に配置する(レイヤーキャッシュの
+# ため、依存関係マニフェスト類をアプリ本体より先にコピーする)。
+COPY apps/evaluator/backend/pyproject.toml apps/evaluator/backend/uv.lock ./
+COPY packages/shared_core /packages/shared_core
 
 # --frozen: uv.lockと完全一致しない場合はビルドを失敗させる(ロック更新漏れの検知)。
 # --no-install-project: apps/evaluator/backend自体はpackage=false(配布用パッケージ
-# ではないアプリケーション)のため、依存関係のみを/build/apps/evaluator/backend/.venv
-# へインストールする。
+# ではないアプリケーション)のため、依存関係のみを/app/.venvへインストールする。
+# ここで.venvを最終配置先と同じ絶対パス(/app/.venv)に直接作ることで、
+# venv内スクリプトのshebangがruntimeステージへコピーした後も有効なままになる
+# (上記ヘッダーコメント参照)。
 RUN uv sync --frozen --no-install-project --no-dev
 
 
@@ -92,8 +104,10 @@ RUN adduser -D -u 1000 appuser
 WORKDIR /app
 
 # uvが解決した仮想環境のみを取り込む(uv/pip/コンパイラ等のビルドツールチェーンは
-# 含まれない)。
-COPY --from=builder /build/apps/evaluator/backend/.venv /app/.venv
+# 含まれない)。builderステージでも同じ絶対パス(/app/.venv)に作成しているため、
+# venv内スクリプトのshebang(例: bin/uvicornの#!/app/.venv/bin/python)が
+# このコピー後も有効なまま解決できる。
+COPY --from=builder /app/.venv /app/.venv
 
 # アプリケーション本体(apps/evaluator/backend/)のみをコピーする。--excludeにより、
 # 開発者のローカル環境限定で存在し得る機密ファイルが万一このディレクトリ配下にあっても
