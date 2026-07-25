@@ -32,11 +32,21 @@
 
 # ---- Builder: uvでロックファイル通りに依存関係を解決する(最終イメージにuv/ビルド
 #      ツールを残さない) ----
-FROM python:3.11-slim AS builder
+# instructions/224: python:3.11-slim(Debian)のperl-base/libattr1/libacl1が
+# CVE未パッチ(FIXED_VERSION空欄)かつperl/attr/aclという名前でのpurgeが
+# 効かない(essentialパッケージ/共有ライブラリで単純削除不可)ことが実機CIで
+# 判明したため、Attack Surfaceごと排除する目的でmusl/Alpineベースへ移行する。
+FROM python:3.11-alpine AS builder
 
 # uv公式配布バイナリを直接コピーする(pip経由でuv自身を導入すると、その解決自体が
-# 非決定論的になり本末転倒なため)。
+# 非決定論的になり本末転倒なため)。このイメージはmusl/glibc両対応の静的バイナリ。
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Alpineのpython公式イメージにはコンパイラ/ヘッダーが同梱されないため、
+# 依存関係の中にmusllinux向けの事前ビルド済みwheelが無いものがあった場合に
+# ソースビルドへフォールバックできるよう最小限のビルドツールチェーンを入れる
+# (このレイヤーはbuilderステージのみに存在し、最終イメージには含まれない)。
+RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never
@@ -59,24 +69,20 @@ RUN uv sync --frozen --no-install-project --no-dev
 
 
 # ---- Runtime: 軽量な実行専用イメージ ----
-FROM python:3.11-slim AS runtime
+# instructions/224: python:3.11-slim(Debian)のperl-base/libattr1/libacl1の
+# CVE(未パッチ、purgeも不可)を解消するためAlpineへ移行。Alpineの最小イメージには
+# そもそもperl/attr/acl相当のパッケージが標準で入っていない(Attack Surfaceの
+# 縮小そのもの)。
+FROM python:3.11-alpine AS runtime
 
-# instructions/223-224: 初回のE2Eデプロイ検証で検出されたCRITICAL/HIGH脆弱性(11件)への対応。
-# 内訳はいずれもアプリの依存関係(uv管理の.venv)ではなく、ベースイメージ付属のOS
-# パッケージ(perl/attr/acl等)およびシステムPythonのpip同梱物(wheel/jaraco-context)。
-# perl/attr/aclは前回のスキャン結果でFIXED_VERSIONが空欄(上流未パッチ)だったため、
-# apt upgradeでは解消しない。grepで確認した通りこのアプリ・ビルドはperl/setfattr/
-# getfattr/setfacl/getfaclのいずれも呼び出しておらず実行時に不要なため、Attack
-# Surface縮小の観点からpurgeで完全に排除する(instructions/224のハードニング方針)。
-RUN apt-get update && apt-get upgrade -y --no-install-recommends \
-    && apt-get purge -y --auto-remove perl attr acl \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/*
+# OSパッケージを最新のセキュリティパッチ状態にする。
+RUN apk update && apk upgrade --no-cache
 
 RUN python -m pip install --no-cache-dir --upgrade pip wheel jaraco-context
 
-# 非rootユーザーで実行する
-RUN useradd --create-home --uid 1000 appuser
+# 非rootユーザーで実行する(busybox adduserはAlpine標準、-Dでパスワード未設定、
+# ホームディレクトリはデフォルトで作成される)。
+RUN adduser -D -u 1000 appuser
 
 WORKDIR /app
 
