@@ -32,11 +32,21 @@
 
 # ---- Builder: uvでロックファイル通りに依存関係を解決する(最終イメージにuv/ビルド
 #      ツールを残さない) ----
-FROM python:3.11-slim AS builder
+# instructions/224: python:3.11-slim(Debian)のperl-base/libattr1/libacl1が
+# CVE未パッチ(FIXED_VERSION空欄)かつperl/attr/aclという名前でのpurgeが
+# 効かない(essentialパッケージ/共有ライブラリで単純削除不可)ことが実機CIで
+# 判明したため、Attack Surfaceごと排除する目的でmusl/Alpineベースへ移行する。
+FROM python:3.11-alpine AS builder
 
 # uv公式配布バイナリを直接コピーする(pip経由でuv自身を導入すると、その解決自体が
-# 非決定論的になり本末転倒なため)。
+# 非決定論的になり本末転倒なため)。このイメージはmusl/glibc両対応の静的バイナリ。
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+# Alpineのpython公式イメージにはコンパイラ/ヘッダーが同梱されないため、
+# 依存関係の中にmusllinux向けの事前ビルド済みwheelが無いものがあった場合に
+# ソースビルドへフォールバックできるよう最小限のビルドツールチェーンを入れる
+# (このレイヤーはbuilderステージのみに存在し、最終イメージには含まれない)。
+RUN apk add --no-cache gcc musl-dev libffi-dev openssl-dev
 
 ENV UV_COMPILE_BYTECODE=1 \
     UV_PYTHON_DOWNLOADS=never
@@ -59,10 +69,25 @@ RUN uv sync --frozen --no-install-project --no-dev
 
 
 # ---- Runtime: 軽量な実行専用イメージ ----
-FROM python:3.11-slim AS runtime
+# instructions/224: python:3.11-slim(Debian)のperl-base/libattr1/libacl1の
+# CVE(未パッチ、purgeも不可)を解消するためAlpineへ移行。Alpineの最小イメージには
+# そもそもperl/attr/acl相当のパッケージが標準で入っていない(Attack Surfaceの
+# 縮小そのもの)。
+FROM python:3.11-alpine AS runtime
 
-# 非rootユーザーで実行する
-RUN useradd --create-home --uid 1000 appuser
+# OSパッケージを最新のセキュリティパッチ状態にする。
+RUN apk update && apk upgrade --no-cache
+
+# instructions/224フォローアップ: CIのデバッグ実行(実機ファクト)で判明した通り、
+# 単純な`pip install --upgrade wheel jaraco-context`はトップレベルの新規インストール
+# を作るだけで、setuptoolsが内部に同梱するベンダリング版(setuptools/_vendor/
+# wheel-0.45.1, jaraco.context-5.3.0、いずれも旧脆弱バージョン)には届かない。
+# setuptools自体を最新へ上げることで、そのベンダリング内容ごと更新する。
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel jaraco-context
+
+# 非rootユーザーで実行する(busybox adduserはAlpine標準、-Dでパスワード未設定、
+# ホームディレクトリはデフォルトで作成される)。
+RUN adduser -D -u 1000 appuser
 
 WORKDIR /app
 
