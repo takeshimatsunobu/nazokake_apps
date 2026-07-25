@@ -124,9 +124,20 @@ COPY --from=builder /build/apps/evaluator/backend/.venv /build/apps/evaluator/ba
 COPY --exclude=serviceAccountKey.json --exclude=.env --exclude=.env.* \
     apps/evaluator/backend/ ./
 
+# instructions/224: main.pyはimport時に(1) apps.tactical_cic.webhook_api、
+# (2) StaticFiles用の <root>/public、(3) apps/evaluator/frontend/public を
+# 要求する(いずれもビルド未対応で初回の実デプロイ試行時にクラッシュを確認済み)。
+# StaticFilesはコンストラクタ時点でディレクトリ存在をチェックするため、
+# 欠けているとuvicorn起動前にRuntimeError/ModuleNotFoundErrorで即クラッシュする。
+# いずれもGit管理下の静的ファイル(ビルドステップ不要)のため、そのままCOPYする。
+COPY apps/tactical_cic ./apps/tactical_cic
+COPY public ./public
+COPY apps/evaluator/frontend/public ./apps/evaluator/frontend/public
+
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH=/app \
+    PROJECT_ROOT=/app \
     PATH="/build/apps/evaluator/backend/.venv/bin:${PATH}"
 
 USER appuser
