@@ -1,39 +1,46 @@
 <#
 .SYNOPSIS
-    Nazo-Agent検証サーバー(GCP L4 GPU VM)への閉域GitOps(Bareリポジトリ経由のPull型
-    デプロイ)キックスクリプト(instructions/187)。tools/deploy/run_verification_server.ps1
-    (ZIP圧縮+gcloud compute scp/pscp.exeによる直接ファイル転送)を完全に置き換える。
+    Nazo-Agent verification server (GCP L4 GPU VM) closed-network GitOps
+    (pull-style deploy via bare repo) kick script (instructions/187). Fully
+    replaces tools/deploy/run_verification_server.ps1 (ZIP compression +
+    direct file transfer via gcloud compute scp/pscp.exe).
 
 .DESCRIPTION
-    従来方式(instructions/164-167)は、git archiveでHEADをZIP化しgcloud compute scp
-    (内部でpscp.exeを使用)でVMへ転送、リモートでunzip -oするだけのClickOps運用だった。
-    この方式はVM上の稼働ディレクトリ(~/nazokake_apps)から.git履歴を物理的に喪失させ、
-    Nazo-Agentの自律エスカレーション(過去のコミットハッシュとの差分評価・自律ロールバック)
-    の前提を構造的に破壊するアンチパターンとしてSRE監査でRejectされた。
+    The legacy approach (instructions/164-167) ran ClickOps: git archive the
+    HEAD into a ZIP, transfer it to the VM with gcloud compute scp (which
+    uses pscp.exe internally), then just unzip -o remotely. This physically
+    destroyed the .git history on the VM's working directory (~/nazokake_apps),
+    which structurally breaks the prerequisites for Nazo-Agent's autonomous
+    escalation (diff evaluation against past commit hashes / autonomous
+    rollback). It was rejected in an SRE audit as an anti-pattern.
 
-    以下の手順に全面刷新する:
-      1. gcloud compute instances start によるVM起動(冪等、run_verification_server.ps1
-         のStep 1と同一実装)。
-      2. ポート22(SSH)開通待ちループ(同Step 2と同一実装)。
-      3. VM上にBareリポジトリ(~/nazokake_apps.git)が存在しなければ git init --bare で
-         初期化する(冪等)。
-      4. ローカル(Windows)からVM上のBareリポジトリへ、固定ブランチ名(既定"deploy")へ
-         git push --force する。実際のSSH接続はgcloud_ssh_wrapper.ps1経由でgcloud
-         compute ssh(IAPトンネル)へ橋渡しする(GIT_SSH_COMMANDのラップ)。
-      5. Push成功後、サーバー上のinfra/verification_env/deploy_pull.shをSSH経由で
-         非同期(nohup + disown)にキックする(git fetch/reset --hard→
-         setup_verification_env.sh→docker compose up --buildの一連のシーケンスは
-         deploy_pull.sh側の責務)。
+    This script replaces that flow end-to-end as follows:
+      1. Idempotent VM start via gcloud compute instances start (identical
+         implementation to Step 1 of run_verification_server.ps1).
+      2. Wait loop for port 22 (SSH) to open (identical to the same Step 2).
+      3. If a bare repo (~/nazokake_apps.git) does not exist on the VM,
+         initialize one with git init --bare (idempotent).
+      4. git push --force from local (Windows) to the VM's bare repo, to a
+         fixed branch name (default "deploy"). The actual SSH connection is
+         bridged through gcloud_ssh_wrapper.ps1 to gcloud compute ssh (IAP
+         tunnel), via a GIT_SSH_COMMAND wrapper.
+      5. After a successful push, kick infra/verification_env/deploy_pull.sh
+         on the server asynchronously over SSH (nohup + disown). The
+         sequence of git fetch/reset --hard -> setup_verification_env.sh ->
+         docker compose up --build is deploy_pull.sh's own responsibility.
 
-    【絶対制約】ZIP圧縮(git archive/Compress-Archive)およびpscp.exe等による直接ファイル
-    転送ロジックは一切含まない。転送はgitのネイティブなpush/fetchプロトコルのみに依る。
+    [ABSOLUTE CONSTRAINT] This script must never include ZIP compression
+    (git archive/Compress-Archive) or direct file transfer logic such as
+    pscp.exe. Transfer relies solely on git's native push/fetch protocol.
 
-    【既知の限界(instructions/187範囲外)】Step 5はVM側でdeploy_pull.shを非同期に
-    キックするのみで、その完了(docker compose up --buildの成否)をこのスクリプト自身は
-    待たない。したがって、このプロセスの標準出力をポーリングするダッシュボード
-    (apps/evaluator/backend/api/routers/admin.py: deploy.log)には「キックした」旨までしか
-    表示されず、VM側の実際のビルド進捗はVM上の~/nazokake_apps_deploy_pull.logにのみ
-    記録される。このログをダッシュボードへ中継する仕組みは別チケットの範囲とする。
+    [KNOWN LIMITATION (out of scope for instructions/187)] Step 5 only kicks
+    deploy_pull.sh asynchronously on the VM side; this script itself does
+    not wait for its completion (success/failure of docker compose up
+    --build). Therefore the dashboard that polls this process's stdout
+    (apps/evaluator/backend/api/routers/admin.py: deploy.log) will only show
+    that the kick happened, while the VM side's actual build progress is
+    recorded only in ~/nazokake_apps_deploy_pull.log on the VM. Relaying that
+    log to the dashboard is out of scope and tracked as a separate ticket.
 
 .EXAMPLE
     .\tools\deploy\deploy_to_vm.ps1
@@ -57,20 +64,26 @@ $ErrorActionPreference = "Stop"
 $ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $SshWrapperPath = Join-Path $PSScriptRoot "gcloud_ssh_wrapper.ps1"
 
-# 【instructions/201: ゾーン在庫枯渇(ZONE_RESOURCE_POOL_EXHAUSTED)への対処】
-# 当初案(起動失敗時に--zoneを切り替えて自動リトライ)は採用しなかった。GCEインスタンスは
-# 永続ディスクを含め作成時のゾーンに恒久的に固定されるため、$InstanceNameは$Zone以外の
-# ゾーンには実体が存在せず、--zoneを変えて`instances start`しても「リソースが見つかりません」
-# エラーになるだけで在庫枯渇を回避できない(自動フェイルオーバーには、各候補ゾーンへの
-# インスタンス複製、またはディスクのスナップショット化からの再作成が必要で、本スクリプトの
-# 責務を大きく超える)。そのため、在庫枯渇を検知した場合は下記$CandidateZonesを手動対応の
-# 選択肢として提示するにとどめ、自動での切り替えは行わない。
+# [instructions/201: handling ZONE_RESOURCE_POOL_EXHAUSTED]
+# The originally considered approach (auto-retry by switching --zone on
+# start failure) was not adopted. Because GCE instances (including their
+# persistent disks) are permanently pinned to the zone they were created in,
+# $InstanceName has no real instance in any zone other than $Zone, so
+# retrying `instances start` with a different --zone would just fail with
+# "resource not found" and would not work around pool exhaustion (real
+# failover would require replicating the instance into each candidate zone,
+# or recreating it from a disk snapshot, which is far beyond this script's
+# responsibility). So when pool exhaustion is detected, this script only
+# surfaces $CandidateZones below as a manual-response option; it does not
+# switch zones automatically.
 $CandidateZones = @('us-east1-b', 'us-east1-c', 'us-east1-d')
 
-# 【instructions/166: 自律的リトライ(Exponential Backoff)】GCPのOS Login/IAPの権限
-# プロビジョニングは、VM起動・SSH開通後もタイムラグを伴って反映されることがある。
-# run_verification_server.ps1と同一実装(この間の一時的な認証エラーを「本当の失敗」と
-# 区別せず即座に異常終了させる設計は「ワンタッチ・プロビジョニング」の要件に反するため)。
+# [instructions/166: autonomous retry (exponential backoff)] GCP's OS
+# Login/IAP permission provisioning can take effect with a time lag even
+# after the VM has started and SSH has opened. Same implementation as
+# run_verification_server.ps1 (treating this transient auth error the same
+# as a "real" failure and aborting immediately would violate the "one-touch
+# provisioning" requirement).
 function Invoke-GcloudWithRetry {
     param(
         [Parameter(Mandatory = $true)][scriptblock]$ScriptBlock,
@@ -87,33 +100,33 @@ function Invoke-GcloudWithRetry {
         }
 
         if ($attempt -eq $MaxAttempts) {
-            Write-Error ("$Description が $MaxAttempts 回試行しても成功しませんでした" +
-                "(最終exit code: $LASTEXITCODE)。OS Login/IAPの権限伝播タイムラグ以外の" +
-                "恒久的な問題である可能性があります。")
+            Write-Error ("$Description did not succeed after $MaxAttempts attempts " +
+                "(final exit code: $LASTEXITCODE). This may be a permanent problem " +
+                "unrelated to OS Login/IAP permission propagation lag.")
             exit 1
         }
 
-        Write-Host ("⚠️  $Description が失敗しました(exit code: $LASTEXITCODE, " +
-            "試行 $attempt/$MaxAttempts)。GCPの権限プロビジョニングのタイムラグを想定し、" +
-            "${delay}秒後に自動リトライします...") -ForegroundColor Yellow
+        Write-Host ("[WARN] $Description failed (exit code: $LASTEXITCODE, " +
+            "attempt $attempt/$MaxAttempts). Assuming this is GCP permission " +
+            "provisioning lag; retrying automatically in ${delay}s...") -ForegroundColor Yellow
         Start-Sleep -Seconds $delay
         $delay = $delay * 2
     }
 }
 
-# --- Step 1: VM起動(冪等) ---------------------------------------------------
-Write-Host "🔍 [1/5] VMの現在の状態を確認します: $InstanceName (zone=$Zone) ..." -ForegroundColor Cyan
+# --- Step 1: Start the VM (idempotent) --------------------------------------
+Write-Host "[1/5] Checking current status of VM: $InstanceName (zone=$Zone) ..." -ForegroundColor Cyan
 $currentStatus = (gcloud compute instances describe $InstanceName `
     --project=$ProjectId --zone=$Zone --format="get(status)").Trim()
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "VMの状態取得に失敗しました($InstanceName, zone=$Zone)。"
+    Write-Error "Failed to get VM status ($InstanceName, zone=$Zone)."
     exit 1
 }
 
 if ($currentStatus -eq "RUNNING") {
-    Write-Host "ℹ️  VMは既にRUNNING状態です。起動処理をスキップします(冪等性)。" -ForegroundColor Yellow
+    Write-Host "[INFO] VM is already in RUNNING state. Skipping start (idempotent)." -ForegroundColor Yellow
 } else {
-    Write-Host "🚀 VMを起動します(現在の状態: $currentStatus)..." -ForegroundColor Cyan
+    Write-Host "[INFO] Starting VM (current state: $currentStatus)..." -ForegroundColor Cyan
     $startOutput = gcloud compute instances start $InstanceName --project=$ProjectId --zone=$Zone 2>&1
     $startOutput | ForEach-Object { Write-Host $_ }
     if ($LASTEXITCODE -ne 0) {
@@ -121,43 +134,44 @@ if ($currentStatus -eq "RUNNING") {
         if ($startOutputText -match 'ZONE_RESOURCE_POOL_EXHAUSTED' -or $startOutputText -match 'is currently unavailable') {
             $otherZones = $CandidateZones | Where-Object { $_ -ne $Zone }
             Write-Error (
-                "🚨 [在庫枯渇] ゾーン '$Zone' で $InstanceName (L4 GPU) の物理的な在庫が" +
-                "枯渇しています(ZONE_RESOURCE_POOL_EXHAUSTED / is currently unavailable)。`n" +
-                "このVMは永続ディスクを含めゾーン '$Zone' に恒久的に固定されているため、" +
-                "-Zoneを変えるだけでの自動フェイルオーバーはできません" +
-                "(他ゾーンには$InstanceNameの実体が存在しないため)。`n" +
-                "手動対応の選択肢:`n" +
-                "  1. 時間をおいて再実行する(在庫枯渇は一時的な場合が多い)。`n" +
-                "  2. 恒久対応が必要な場合は、ディスクをスナップショット化した上で候補ゾーン" +
-                "($($otherZones -join ', '))のいずれかでインスタンスを再作成する" +
-                "(データ整合性・ダウンタイムを要検討、本スクリプトの範囲外)。"
+                "[POOL EXHAUSTED] Zone '$Zone' has no physical inventory available for " +
+                "$InstanceName (L4 GPU) (ZONE_RESOURCE_POOL_EXHAUSTED / is currently unavailable).`n" +
+                "This VM (including its persistent disk) is permanently pinned to zone '$Zone', " +
+                "so automatic failover by changing -Zone is not possible " +
+                "(no instance of $InstanceName exists in any other zone).`n" +
+                "Manual options:`n" +
+                "  1. Wait and retry later (pool exhaustion is often temporary).`n" +
+                "  2. For a permanent fix, snapshot the disk and recreate the instance in one of " +
+                "the candidate zones ($($otherZones -join ', ')) " +
+                "(requires evaluating data consistency/downtime; out of scope for this script)."
             )
             exit 1
         }
-        Write-Error "VMの起動に失敗しました($InstanceName, zone=$Zone)。"
+        Write-Error "Failed to start VM ($InstanceName, zone=$Zone)."
         exit 1
     }
 }
 
-# --- Step 2: SSH(ポート22)開通待ち ------------------------------------------
-Write-Host "🔍 [2/5] SSH(ポート22)の開通を待機します..." -ForegroundColor Cyan
+# --- Step 2: Wait for SSH (port 22) to open ---------------------------------
+Write-Host "[2/5] Waiting for SSH (port 22) to open..." -ForegroundColor Cyan
 
 $externalIp = (gcloud compute instances describe $InstanceName `
     --project=$ProjectId --zone=$Zone `
     --format="get(networkInterfaces[0].accessConfigs[0].natIP)").Trim()
 if ($LASTEXITCODE -ne 0) {
-    Write-Error "VMの外部IPアドレスの取得に失敗しました。"
+    Write-Error "Failed to get the VM's external IP address."
     exit 1
 }
 if (-not $externalIp) {
-    Write-Error ("VM '$InstanceName' に外部IPアドレスが割り当てられていません" +
-        "(IAP限定構成等でTest-NetConnectionによる直接到達確認ができない可能性があります)。")
+    Write-Error ("VM '$InstanceName' has no external IP address assigned " +
+        "(direct reachability check via Test-NetConnection may not be possible in an " +
+        "IAP-only configuration).")
     exit 1
 }
 
 $sshReady = $false
 for ($attempt = 1; $attempt -le $SshWaitMaxAttempts; $attempt++) {
-    Write-Host "    試行 $attempt/$SshWaitMaxAttempts`: ${externalIp}:22 ..."
+    Write-Host "    Attempt $attempt/$SshWaitMaxAttempts`: ${externalIp}:22 ..."
     $probe = Test-NetConnection -ComputerName $externalIp -Port 22 -WarningAction SilentlyContinue
     if ($probe.TcpTestSucceeded) {
         $sshReady = $true
@@ -168,28 +182,31 @@ for ($attempt = 1; $attempt -le $SshWaitMaxAttempts; $attempt++) {
 
 if (-not $sshReady) {
     $totalWaitSec = $SshWaitMaxAttempts * $SshWaitDelaySeconds
-    Write-Error "タイムアウト: ${totalWaitSec}秒待機してもポート22が開通しませんでした。"
+    Write-Error "Timeout: port 22 did not open after waiting ${totalWaitSec}s."
     exit 1
 }
-Write-Host "✅ SSHが開通しました。" -ForegroundColor Green
+Write-Host "[OK] SSH is open." -ForegroundColor Green
 
-# --- Step 3: Bareリポジトリの初期化(冪等) -----------------------------------
-Write-Host "🔍 [3/5] VM上のBareリポジトリ(~/nazokake_apps.git)の存在を確認します..." -ForegroundColor Cyan
+# --- Step 3: Initialize the bare repo (idempotent) --------------------------
+Write-Host "[3/5] Checking for the bare repo (~/nazokake_apps.git) on the VM..." -ForegroundColor Cyan
 
 $bareRepoInitCommand = 'test -d ~/nazokake_apps.git || git init --bare ~/nazokake_apps.git'
-Invoke-GcloudWithRetry -Description "Bareリポジトリの初期化確認" -ScriptBlock {
+Invoke-GcloudWithRetry -Description "Bare repo initialization check" -ScriptBlock {
     gcloud compute ssh $InstanceName --project=$ProjectId --zone=$Zone `
         --tunnel-through-iap --command=$bareRepoInitCommand
 }
 
-# --- Step 4: BareリポジトリへのGit Push(IAPトンネル経由) ---------------------
-Write-Host "📤 [4/5] ブランチ '$DeployBranch' をVM上のBareリポジトリへpushします..." -ForegroundColor Cyan
+# --- Step 4: Git push to the bare repo (via IAP tunnel) ---------------------
+Write-Host "[4/5] Pushing branch '$DeployBranch' to the VM's bare repo..." -ForegroundColor Cyan
 
-# 【instructions/187】このVMはIAP完全閉域環境であり素のsshクライアントでは到達できない
-# ため、GIT_SSH_COMMANDをgcloud_ssh_wrapper.ps1(gcloud compute ssh --tunnel-through-iap
-# への橋渡し)へ差し替える。remote URLに書くホスト名(下記$InstanceName)自体はラッパー内
-# では使われない(接続先は-InstanceName/-Zone/-ProjectId引数で固定済み)が、git remote
-# 一覧上での可読性のために実際のインスタンス名をそのまま使う。
+# [instructions/187] This VM lives in a fully closed IAP-only network and is
+# unreachable with a plain ssh client, so GIT_SSH_COMMAND is redirected to
+# gcloud_ssh_wrapper.ps1 (which bridges to gcloud compute ssh
+# --tunnel-through-iap). The hostname written into the remote URL below
+# ($InstanceName) is not actually used by the wrapper itself (the connection
+# target is already fixed via the -InstanceName/-Zone/-ProjectId arguments);
+# it is kept as the real instance name purely for readability in `git remote`
+# listings.
 $env:GIT_SSH_COMMAND = "powershell -NoProfile -ExecutionPolicy Bypass -File " +
     "`"$SshWrapperPath`" -InstanceName $InstanceName -ProjectId $ProjectId -Zone $Zone"
 
@@ -197,8 +214,9 @@ $remoteUrl = "${RemoteUser}@${InstanceName}:~/nazokake_apps.git"
 
 Push-Location $ProjectRoot
 try {
-    # 【決定論的なリモート名】GitHub等の将来の実ソース管理リモート("origin")との名前
-    # 衝突を避けるため、この検証VM専用のリモート名を明示的に分離する。
+    # [Deterministic remote name] Use a remote name dedicated to this
+    # verification VM, explicitly separate from any future real source
+    # control remote (e.g. "origin"), to avoid name collisions.
     $existingRemote = git remote get-url verification-vm 2>$null
     if ($LASTEXITCODE -ne 0) {
         git remote add verification-vm $remoteUrl
@@ -206,10 +224,11 @@ try {
         git remote set-url verification-vm $remoteUrl
     }
 
-    # 【instructions/166を継承】OS Login/IAPの権限プロビジョニングのタイムラグに
-    # 起因する一時的な認証エラーを想定し、pushも自動リトライの対象とする。デプロイ専用の
-    # 固定ブランチ($DeployBranch)へのforce pushは、開発者間で共有されるブランチではない
-    # ため、再実行(冪等な同一コミットの再push)も安全。
+    # [Inherited from instructions/166] Push is also subject to automatic
+    # retry, anticipating transient auth errors caused by OS Login/IAP
+    # permission provisioning lag. Force-pushing to the fixed deploy branch
+    # ($DeployBranch) is safe to re-run (idempotent re-push of the same
+    # commit) since it is not a branch shared between developers.
     Invoke-GcloudWithRetry -Description "git push (verification-vm)" -ScriptBlock {
         git push --force verification-vm "HEAD:refs/heads/$DeployBranch"
     }
@@ -218,24 +237,25 @@ try {
     Remove-Item Env:\GIT_SSH_COMMAND -ErrorAction SilentlyContinue
 }
 
-Write-Host "✅ Pushが完了しました。" -ForegroundColor Green
+Write-Host "[OK] Push complete." -ForegroundColor Green
 
-# --- Step 5: サーバー上のdeploy_pull.shを非同期にキック ------------------------
-Write-Host "🚀 [5/5] deploy_pull.sh を非同期でキックします..." -ForegroundColor Cyan
+# --- Step 5: Asynchronously kick deploy_pull.sh on the server ---------------
+Write-Host "[5/5] Kicking deploy_pull.sh asynchronously..." -ForegroundColor Cyan
 
-# nohup + disownで、このSSHコマンド自身の終了(=このgcloud compute sshプロセスの終了)
-# を待たずにVM側で継続実行させる(「非同期キック」、instructions/187)。deploy_pull.sh
-# 自身の標準出力/標準エラー出力は、VM上の~/nazokake_apps_deploy_pull.logへ蓄積される
-# (このダッシュボードのdeploy.logへは中継されない、既知の限界は.SYNOPSISに記載)。
+# Using nohup + disown lets this run continue on the VM side without waiting
+# for this SSH command itself (i.e. the gcloud compute ssh process) to exit
+# ("asynchronous kick", instructions/187). deploy_pull.sh's own stdout/stderr
+# accumulates in ~/nazokake_apps_deploy_pull.log on the VM (not relayed to
+# this dashboard's deploy.log; see the known limitation in .SYNOPSIS).
 $kickCommand = 'nohup bash ~/nazokake_apps/infra/verification_env/deploy_pull.sh ' +
     '> ~/nazokake_apps_deploy_pull.log 2>&1 < /dev/null & disown; ' +
-    'echo "🚀 deploy_pull.sh をバックグラウンドでキックしました(PID: $!)"'
+    'echo "Kicked deploy_pull.sh in the background (PID: $!)"'
 
-Invoke-GcloudWithRetry -Description "deploy_pull.shの非同期キック" -ScriptBlock {
+Invoke-GcloudWithRetry -Description "Asynchronous kick of deploy_pull.sh" -ScriptBlock {
     gcloud compute ssh $InstanceName --project=$ProjectId --zone=$Zone `
         --tunnel-through-iap --command=$kickCommand
 }
 
-Write-Host "🎉 GitOpsデプロイのキックが完了しました。VM側の進捗は " -ForegroundColor Green -NoNewline
+Write-Host "[DONE] GitOps deploy kick complete. See VM-side progress at " -ForegroundColor Green -NoNewline
 Write-Host "~/nazokake_apps_deploy_pull.log" -ForegroundColor Green -NoNewline
-Write-Host " を参照してください。" -ForegroundColor Green
+Write-Host " on the VM." -ForegroundColor Green
