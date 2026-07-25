@@ -1,0 +1,17 @@
+【ミッション: FastAPIへのStaticFilesマウントによるフロントエンド一元配信とCORSエラーの排除】
+
+SREからの監査結果に基づき、フロントエンドを別ポート（8080等）で立ち上げる運用はCORSエラーおよびトイルの温床となるため即座に Reject（却下）します。
+以下の要件（Must Fix）に基づき、バックエンド（FastAPI）側からフロントエンドの静的ファイルを直接ホスティングする「一元配信アーキテクチャ」へ改修してください。
+
+Step 1: FastAPI (main.py) への静的ファイルマウント
+apps/evaluator/backend/main.py を改修し、fastapi.staticfiles の StaticFiles をインポートしてください。
+APIのルーティング設定（include_router）より「後」の処理として、以下のエンドポイントを追加マウントしてください。
+パスの指定: app.mount("/", StaticFiles(directory=フロントエンドのpublicディレクトリへの絶対パス, html=True), name="static")
+※ディレクトリパスは、main.py の位置から pathlib を用いて決定論的に解決すること（例: Path(__file__).resolve().parents[2] / "frontend" / "public"）。
+
+Step 2: 競合の確認と調整
+ルートパス（/）へのマウントが、既存のAPIエンドポイント（/api/... 等）やヘルスチェックエンドポイントと競合してパースエラーにならないよう、ルーティングの順序や定義をAST解析して必要に応じて適切に調整してください。
+
+Step 3: 静的解析とコミット
+実装後、FastAPIの構文エラーがないことを確認し、変更した main.py をコミットしてください。
+※絶対制約: git add . は厳禁です。変更したファイルのみを明示的に指定すること。
