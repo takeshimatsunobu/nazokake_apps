@@ -1,23 +1,27 @@
 <#
 .SYNOPSIS
-    git(GIT_SSH_COMMAND)がsshバイナリ互換のインターフェースとして呼び出すことを前提に、
-    実際の接続をgcloud compute ssh(IAPトンネル経由)へ橋渡しするラッパー
-    (instructions/187)。
+    Wrapper that git (via GIT_SSH_COMMAND) invokes as an ssh-binary-compatible
+    interface, bridging the actual connection to gcloud compute ssh (over an
+    IAP tunnel) (instructions/187).
 
 .DESCRIPTION
-    このVM(nazokake-l4-vm)はIAP完全閉域環境であり、素のsshクライアントでは到達できない
-    (直接到達可能な固定IP/ポート開放のSSHエンドポイントが無い)。gitのssh transportは
-    `<GIT_SSH_COMMAND> [-p <port>] <host> "<remote-command>"` という固定インターフェース
-    でしか外部のsshクライアントを呼び出せないため、このラッパー自身を「sshバイナリの
-    代わり」としてGIT_SSH_COMMANDへ登録し、gitが渡す引数のうち末尾(実際のリモートコマンド、
-    例: git-receive-pack '~/nazokake_apps.git')だけを取り出してgcloud compute sshへ
-    そのまま橋渡しする。
+    This VM (nazokake-l4-vm) lives in a fully closed IAP-only network and is
+    unreachable with a plain ssh client (there is no directly reachable
+    fixed IP/open-port SSH endpoint). Git's ssh transport can only invoke an
+    external ssh client through the fixed interface
+    `<GIT_SSH_COMMAND> [-p <port>] <host> "<remote-command>"`, so this
+    wrapper registers itself as GIT_SSH_COMMAND (standing in for the ssh
+    binary), pulls out only the trailing argument git passes (the actual
+    remote command, e.g. git-receive-pack '~/nazokake_apps.git'), and
+    forwards it as-is to gcloud compute ssh.
 
-    先頭側の引数(ユーザー@ホスト、-p <port>等)はgitのURLパース都合で必ず渡されるが、
-    接続先自体は-InstanceName/-ProjectId/-Zoneで明示的に固定されているため意図的に無視する
-    (git remoteのURLに書くホスト名文字列は実際には使われない。これがこのラッパーの
-    唯一の非直感的な点であり、この理由をgit remoteのURL自体には表現できないため、
-    ここに明示的に記録する)。
+    The leading arguments (user@host, -p <port>, etc.) are always passed
+    because of how git parses its URL, but the actual connection target is
+    already fixed explicitly via -InstanceName/-ProjectId/-Zone, so they are
+    intentionally ignored (the hostname string written into the git remote
+    URL is not actually used. This is the one non-obvious aspect of this
+    wrapper, and since that reasoning cannot be expressed in the git remote
+    URL itself, it is recorded explicitly here instead).
 
 .EXAMPLE
     $env:GIT_SSH_COMMAND = "powershell -NoProfile -ExecutionPolicy Bypass -File " + `
@@ -31,15 +35,17 @@ param(
     [Parameter(Mandatory = $true)][string]$InstanceName,
     [Parameter(Mandatory = $true)][string]$ProjectId,
     [Parameter(Mandatory = $true)][string]$Zone,
-    # gitが末尾に付加する実際の引数列(例: "user@host", "git-receive-pack '~/nazokake_apps.git'")。
-    # 先頭側(ホスト/ポート)は無視し、最後の要素だけをリモートコマンドとして使う。
+    # The actual trailing argument list git appends (e.g. "user@host",
+    # "git-receive-pack '~/nazokake_apps.git'"). The leading elements
+    # (host/port) are ignored; only the last element is used as the remote
+    # command.
     [Parameter(ValueFromRemainingArguments = $true)][string[]]$RemainingArgs
 )
 
 $ErrorActionPreference = "Stop"
 
 if (-not $RemainingArgs -or $RemainingArgs.Count -eq 0) {
-    Write-Error "gcloud_ssh_wrapper.ps1: gitから渡されるリモートコマンド引数がありません。"
+    Write-Error "[ERROR] gcloud_ssh_wrapper.ps1: no remote command argument was passed by git."
     exit 1
 }
 
