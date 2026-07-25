@@ -78,6 +78,29 @@ $SshWrapperPath = Join-Path $PSScriptRoot "gcloud_ssh_wrapper.ps1"
 # switch zones automatically.
 $CandidateZones = @('us-east1-b', 'us-east1-c', 'us-east1-d')
 
+# [instructions/208: root cause of the NativeCommandError crashes] With
+# $ErrorActionPreference = "Stop" above, PowerShell promotes ANY line an
+# external command (git/gcloud, including gcloud.ps1's own internal
+# python.exe invocation) writes to its real stderr into a terminating
+# error -- independent of exit code, and even when the call site redirects
+# that stream (2>&1/2>$null only controls where the resulting object ends
+# up, not whether $ErrorActionPreference fires on it in the first place).
+# This script already checks $LASTEXITCODE explicitly after every external
+# command, so termination-on-stderr is a false positive here; external
+# commands are run with $ErrorActionPreference relaxed to avoid it.
+function Invoke-ExternalCommand {
+    param(
+        [Parameter(Mandatory = $true)][scriptblock]$ScriptBlock
+    )
+    $previousEap = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        & $ScriptBlock
+    } finally {
+        $ErrorActionPreference = $previousEap
+    }
+}
+
 # [instructions/166: autonomous retry (exponential backoff)] GCP's OS
 # Login/IAP permission provisioning can take effect with a time lag even
 # after the VM has started and SSH has opened. Same implementation as
@@ -94,7 +117,7 @@ function Invoke-GcloudWithRetry {
 
     $delay = $InitialDelaySeconds
     for ($attempt = 1; $attempt -le $MaxAttempts; $attempt++) {
-        & $ScriptBlock
+        Invoke-ExternalCommand -ScriptBlock $ScriptBlock
         if ($LASTEXITCODE -eq 0) {
             return
         }
@@ -116,8 +139,10 @@ function Invoke-GcloudWithRetry {
 
 # --- Step 1: Start the VM (idempotent) --------------------------------------
 Write-Host "[1/5] Checking current status of VM: $InstanceName (zone=$Zone) ..." -ForegroundColor Cyan
-$currentStatus = gcloud compute instances describe $InstanceName `
-    --project=$ProjectId --zone=$Zone --format="get(status)" 2>&1
+$currentStatus = Invoke-ExternalCommand -ScriptBlock {
+    gcloud compute instances describe $InstanceName `
+        --project=$ProjectId --zone=$Zone --format="get(status)" 2>&1
+}
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to get VM status ($InstanceName, zone=$Zone)."
     exit 1
@@ -128,7 +153,9 @@ if ($currentStatus -eq "RUNNING") {
     Write-Host "[INFO] VM is already in RUNNING state. Skipping start (idempotent)." -ForegroundColor Yellow
 } else {
     Write-Host "[INFO] Starting VM (current state: $currentStatus)..." -ForegroundColor Cyan
-    $startOutput = gcloud compute instances start $InstanceName --project=$ProjectId --zone=$Zone 2>&1
+    $startOutput = Invoke-ExternalCommand -ScriptBlock {
+        gcloud compute instances start $InstanceName --project=$ProjectId --zone=$Zone 2>&1
+    }
     $startOutput | ForEach-Object { Write-Host $_ }
     if ($LASTEXITCODE -ne 0) {
         $startOutputText = ($startOutput | Out-String)
@@ -156,9 +183,11 @@ if ($currentStatus -eq "RUNNING") {
 # --- Step 2: Wait for SSH (port 22) to open ---------------------------------
 Write-Host "[2/5] Waiting for SSH (port 22) to open..." -ForegroundColor Cyan
 
-$externalIp = gcloud compute instances describe $InstanceName `
-    --project=$ProjectId --zone=$Zone `
-    --format="get(networkInterfaces[0].accessConfigs[0].natIP)" 2>&1
+$externalIp = Invoke-ExternalCommand -ScriptBlock {
+    gcloud compute instances describe $InstanceName `
+        --project=$ProjectId --zone=$Zone `
+        --format="get(networkInterfaces[0].accessConfigs[0].natIP)" 2>&1
+}
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to get the VM's external IP address."
     exit 1
@@ -219,11 +248,14 @@ try {
     # [Deterministic remote name] Use a remote name dedicated to this
     # verification VM, explicitly separate from any future real source
     # control remote (e.g. "origin"), to avoid name collisions.
-    $existingRemote = git remote get-url verification-vm 2>$null
+    $existingRemote = Invoke-ExternalCommand -ScriptBlock { git remote get-url verification-vm 2>&1 }
     if ($LASTEXITCODE -ne 0) {
-        git remote add verification-vm $remoteUrl
-    } elseif ($existingRemote -ne $remoteUrl) {
-        git remote set-url verification-vm $remoteUrl
+        Invoke-ExternalCommand -ScriptBlock { git remote add verification-vm $remoteUrl }
+    } else {
+        $existingRemote = ($existingRemote -join "").Trim()
+        if ($existingRemote -ne $remoteUrl) {
+            Invoke-ExternalCommand -ScriptBlock { git remote set-url verification-vm $remoteUrl }
+        }
     }
 
     # [Inherited from instructions/166] Push is also subject to automatic
