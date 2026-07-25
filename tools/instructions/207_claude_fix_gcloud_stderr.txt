@@ -1,0 +1,13 @@
+【ミッション: gcloud CLIのstderr（標準エラー出力）によるPowerShell誤認クラッシュの排除】
+
+tools/deploy/deploy_to_vm.ps1 内で gcloud コマンドを実行した際、gcloudが正常な進捗メッセージをstderrに出力する仕様により、PowerShellが NativeCommandError をスローしてスクリプトが強制終了しました。以下の要件（Must Fix）でスクリプトを修正してください。
+
+Step 1: gcloudコマンドのエラーハンドリング修正
+スクリプト内のすべての gcloud コマンド呼び出し箇所を特定し、コマンドの末尾に 2>&1 を付与して、stderrをstdoutにリダイレクト（マージ）させてください。
+例: gcloud compute instances start $VmName ...
+修正後: gcloud compute instances start $VmName ... 2>&1
+※結果を変数に格納している箇所（$status = gcloud ...）も同様に 2>&1 を付与し、文字列として正しく処理できるように必要に応じて $status -join "" などで配列化を防いでください。
+
+Step 2: 静的解析とコミット
+修正内容に構文エラーがないことを確認し、変更した deploy_to_vm.ps1 のみをコミットしてください。
+※絶対制約: git add . は厳禁です。変更したファイルのみを明示的に指定すること。
