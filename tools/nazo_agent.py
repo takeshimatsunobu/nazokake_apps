@@ -77,6 +77,7 @@ if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
 from tools import shadow_mode  # noqa: E402
+from tools import context_manager  # noqa: E402
 from tools.config import settings  # noqa: E402
 
 # フロントエンドのバックグラウンド起動タスク(fire-and-forget)を GC から守るための保持先。
@@ -2263,27 +2264,49 @@ async def main_flow(user_instruction: str, engine: str = "ollama"):
         print("🚨 致命的エラー: ANTHROPIC_API_KEY が .env に設定されていません。")
         sys.exit(1)
 
+    # [instructions/212] Agent起動時に外部コンテキスト(前回までの合意事項・
+    # バックログ・システムステート)を自動ロードする(決定論的な長期記憶)。
+    context = context_manager.load_context()
+    print(
+        f"🧠 [Context] 前回までの合意事項{len(context['agreements'])}件・"
+        f"バックログ{len(context['backlog'])}件をロードしました。"
+    )
+
     global TARGET_APP_DIR, TARGET_CODE_DIR, TARGET_PYTHON
     TARGET_APP_DIR, TARGET_CODE_DIR, TARGET_PYTHON = _route_target_domain(
         user_instruction
     )
 
-    await startup_local_services()
-
-    await phase0_ruff_autofix()
-
-    # --- 共通前処理: エラーログ抽出 + 認知負荷監視(どちらのエンジンでも必須) ---
-    log_path = await phase1_audit(is_final=False)
-    if not log_path or not log_path.exists():
-        return
-
+    # [instructions/212] タスクの完了時(成功・早期return・例外いずれの経路でも)に
+    # 最新のステートを必ず保存する。呼び出し元への例外の伝播はfinally節では妨げない。
     try:
-        await _process_target(user_instruction, engine, log_path)
-    except CognitiveLoadExceededError as e:
-        print(f"\n🚨 Cognitive Overload: {e}。タスクを分割（Split）してください。")
-        return
+        await startup_local_services()
 
-    await phase1_audit(is_final=True)
+        await phase0_ruff_autofix()
+
+        # --- 共通前処理: エラーログ抽出 + 認知負荷監視(どちらのエンジンでも必須) ---
+        log_path = await phase1_audit(is_final=False)
+        if not log_path or not log_path.exists():
+            context["system_state"]["last_outcome"] = "audit_log_missing"
+            return
+
+        try:
+            await _process_target(user_instruction, engine, log_path)
+        except CognitiveLoadExceededError as e:
+            print(f"\n🚨 Cognitive Overload: {e}。タスクを分割（Split）してください。")
+            context["system_state"]["last_outcome"] = "cognitive_overload"
+            context["backlog"].append(
+                f"[{datetime.datetime.now().isoformat()}] 認知負荷超過のため分割が必要: {user_instruction}"
+            )
+            return
+
+        await phase1_audit(is_final=True)
+        context["system_state"]["last_outcome"] = "completed"
+    finally:
+        context["system_state"]["last_instruction"] = user_instruction
+        context["system_state"]["last_engine"] = engine
+        context["system_state"]["last_target_app_dir"] = str(TARGET_APP_DIR)
+        context_manager.save_context(context)
 
     print(
         "\n🔄 [Post-flight] 修正を適用した状態で、サービス群のオートヒール(自動復旧)を試みます..."

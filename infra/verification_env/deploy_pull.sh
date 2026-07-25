@@ -112,10 +112,41 @@ else
     echo "ℹ️  setup_verification_env.sh は既に適用済みのためスキップします(冪等性)。"
 fi
 
-echo "=== [4/4] mlops-schedulerサイドカーの再起動 ==="
+echo "=== [4/5] mlops-schedulerサイドカーの再起動 ==="
 # docker compose up --buildはVM状態に関わらず毎回実行する(コードの再デプロイ自体は
 # 毎回反映させる必要があり、Compose自体は冪等かつtools/scheduler_daemon.pyの
 # Graceful Shutdown対応済みのため安全、instructions/165と同じ方針)。
 docker compose -f infra/verification_env/docker-compose.yml up -d --build mlops-scheduler
 
-echo "🎉 [deploy_pull] Pull型デプロイが完了しました($(git rev-parse --short HEAD))。"
+DEPLOYED_COMMIT="$(git rev-parse --short HEAD)"
+
+echo "=== [5/5] デプロイ状態をFirestoreへ記録(instructions/212: SSH無しのDoD検証用) ==="
+# 【絶対制約に抵触しない範囲でのFail-Open】ここでの失敗(firebase_admin未導入、
+# サービスアカウント権限不足等)は、直前まで成功していたデプロイ自体を無効化すべき
+# ではない(観測性の記録が、デプロイという実体のある成功を覆い隠してはならない)。
+# そのため他のステップと異なりexit 1で全体を止めず、警告のみ出して継続する。
+CONTAINER_STATUS_JSON="$(docker compose -f infra/verification_env/docker-compose.yml ps --format json 2>/dev/null || echo '[]')"
+"${REPO_DIR}/.venv/bin/python" - "${DEPLOYED_COMMIT}" "${CONTAINER_STATUS_JSON}" <<'PYEOF' || echo "⚠️  [WARN] デプロイ状態のFirestore記録に失敗しました(デプロイ自体は完了済み)。" >&2
+import json
+import sys
+
+sys.path.insert(0, "packages/shared_core")
+from nazokake_core.deploy_status_sync import write_deploy_status
+
+commit_hash, container_status_json = sys.argv[1], sys.argv[2]
+try:
+    containers = json.loads(container_status_json)
+except json.JSONDecodeError:
+    containers = {"raw": container_status_json}
+
+write_deploy_status(
+    instance_name="nazokake-l4-vm",
+    commit_hash=commit_hash,
+    status="deployed",
+    message="docker compose up -d --build mlops-scheduler succeeded",
+    containers={"mlops_scheduler": containers},
+)
+print(f"✅ デプロイ状態をFirestoreへ記録しました(commit={commit_hash})。")
+PYEOF
+
+echo "🎉 [deploy_pull] Pull型デプロイが完了しました(${DEPLOYED_COMMIT})。"
