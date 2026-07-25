@@ -15,6 +15,7 @@ dependencies = [
     "loguru",
     "nazokake-core",
     "filelock",
+    "mcp",
 ]
 
 # 【instructions/218: 決定論的ビルドの確立】以前はrequirements.txtへ全パッケージを
