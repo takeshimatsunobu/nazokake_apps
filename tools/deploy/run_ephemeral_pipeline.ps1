@@ -48,6 +48,19 @@
     理由により延長済み)と時間軸を揃えており、正常に稼働中の長時間学習を誤って
     強制停止しないようにしている。
 
+    【instructions/214での改修: メタデータキー衝突の解消】以前はこのステップが
+    使い捨ての2行スクリプト(`#!/bin/bash\nsudo shutdown -h +N\n`)を`startup-script`
+    メタデータへ直接書き込んでいたが、tools/deploy/register_startup_script.ps1
+    (instructions/214、GitOpsデプロイ用のBareリポジトリ初期化・依存関係解決を行う
+    永続的なブートストラップスクリプト)も同じ`startup-script`キーへ書き込むため、
+    どちらが最後に実行したかでもう一方の内容を消してしまう構造的な衝突があった。
+    これを解消するため、本ステップはinfra/verification_env/startup-script.sh
+    (両スクリプトで共有される、デッドマンズスイッチの再設定を自身の最優先ステップ
+    として無条件に含む)を`startup-script`として登録し、TTL値だけを別のメタデータ
+    属性(`deadman-switch-minutes`)経由で渡すよう変更した。これにより、どちらの
+    スクリプトが最後に書き込んでも、デッドマンズスイッチ・ブートストラップ処理の
+    いずれも消えることがない。
+
 .EXAMPLE
     .\tools\deploy\run_ephemeral_pipeline.ps1 -PipelineScript mlops_pipeline_nazo.py
     .\tools\deploy\run_ephemeral_pipeline.ps1 -PipelineScript mlops_pipeline_agent.py -Zone us-east1-b
@@ -128,15 +141,24 @@ try {
     Write-Host ("🕐 [1/5] デッドマンズスイッチ(起動から${DeadmanSwitchMinutes}分後の" +
         "自動シャットダウン)をメタデータへ設定します...") -ForegroundColor Cyan
 
-    $DeadmanSwitchScript = "#!/bin/bash`nsudo shutdown -h +$DeadmanSwitchMinutes`n"
-    $DeadmanSwitchLocalPath = Join-Path $env:TEMP "nazokake_deadman_switch_startup.sh"
-    $DeadmanSwitchScriptLf = $DeadmanSwitchScript.Replace("`r`n", "`n").Replace("`r", "`n")
-    $Utf8NoBom = [System.Text.UTF8Encoding]::new($false)
-    [System.IO.File]::WriteAllText($DeadmanSwitchLocalPath, $DeadmanSwitchScriptLf, $Utf8NoBom)
+    # 【instructions/214】register_startup_script.ps1と同じ共有スクリプトを登録する
+    # (使い捨ての2行スクリプトではない)。デッドマンズスイッチの再設定はこの共有
+    # スクリプト自身の最優先・無条件ステップとして実装されているため、TTL値のみを
+    # 別のメタデータ属性経由で渡す(startup-scriptキー衝突の詳細は上記【設計上の
+    # 注記】参照)。
+    $SharedStartupScriptPath = Join-Path $ProjectRoot "infra\verification_env\startup-script.sh"
+    if (-not (Test-Path $SharedStartupScriptPath)) {
+        Write-Error "共有startup-scriptが見つかりません: $SharedStartupScriptPath"
+        exit 1
+    }
 
-    Invoke-GcloudWithRetry -Description "gcloud compute instances add-metadata (デッドマンズスイッチ)" -ScriptBlock {
+    Invoke-GcloudWithRetry -Description "gcloud compute instances add-metadata (startup-script)" -ScriptBlock {
         gcloud compute instances add-metadata $InstanceName --project=$ProjectId --zone=$Zone `
-            --metadata-from-file startup-script=$DeadmanSwitchLocalPath
+            --metadata-from-file startup-script=$SharedStartupScriptPath
+    }
+    Invoke-GcloudWithRetry -Description "gcloud compute instances add-metadata (deadman-switch-minutes)" -ScriptBlock {
+        gcloud compute instances add-metadata $InstanceName --project=$ProjectId --zone=$Zone `
+            --metadata "deadman-switch-minutes=$DeadmanSwitchMinutes"
     }
 
     Write-Host "🔍 VMの現在の状態を確認します: $InstanceName (zone=$Zone) ..." -ForegroundColor Cyan

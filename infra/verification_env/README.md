@@ -47,6 +47,22 @@ README上の文章のみで説明しており、実行環境(Pythonバージョ�
 
 ## セットアップ手順
 
+0. **(一度だけ、インフラ管理者が実行)** `tools/deploy/register_startup_script.ps1` を
+   実行し、`infra/verification_env/startup-script.sh` を本VMのGCEメタデータ
+   `startup-script` として登録する(instructions/214)。
+   登録内容はVMの次回起動(create/start/reset)から有効になり、既に起動中のVMには
+   即時反映されない。登録後は、VM起動ごとにroot権限で自動的に以下が冪等に実行される:
+   - デッドマンズスイッチ(TTL自動シャットダウン、instructions/178)の再設定。
+     `tools/deploy/run_ephemeral_pipeline.ps1` も同じ`startup-script`メタデータキーへ
+     この共有スクリプトを登録するため(TTL値のみ別属性`deadman-switch-minutes`経由)、
+     どちらが最後に実行してもこの安全装置が消えることはない。
+   - Bareリポジトリ(`~/nazokake_apps.git`)の初期化(`tools/deploy/deploy_to_vm.ps1`
+     からの`git push --force`の受け先。下記ステップ1のクローンより前に必要)。
+   - `packages/shared_core/pyproject.toml` をSSoTとした、Firestore監視
+     (`deploy_status_sync.py`)に必要な`firebase-admin`等の依存関係解決
+     (`~/nazokake_apps/.venv`へ)。作業ディレクトリが未クローンの間はスキップし、
+     下記ステップ1のクローン後、次回起動時に収束する。
+
 1. 検証サーバー上で本リポジトリをクローンする(`REPO_DIR`、既定は
    `$HOME/nazokake_apps`。上書きする場合は環境変数で指定)。
 2. NVIDIA Driver + NVIDIA Container Toolkit + Rootless Docker(`dockerd-rootless-setuptool.sh`
@@ -65,6 +81,11 @@ README上の文章のみで説明しており、実行環境(Pythonバージョ�
    - `docker compose -f infra/verification_env/docker-compose.yml build
      benchmark-sandbox` を実行し、ベンチマークサンドボックスイメージをビルドする。
 4. `uv sync` 等で依存関係をインストールする(このスクリプトの範囲外)。
+   ただし、Firestore監視(`deploy_status_sync.py`)に必要な`firebase-admin`等、
+   `packages/shared_core/pyproject.toml` が宣言する依存関係については、上記ステップ0で
+   登録した `infra/verification_env/startup-script.sh`(instructions/214、GCE起動時に
+   root権限で自動実行)がVM起動ごとに解決する。それ以外の依存関係のフルインストールは
+   引き続き本手順の範囲外。
 
 ## VRAM決定論的制御についての技術的前提
 
