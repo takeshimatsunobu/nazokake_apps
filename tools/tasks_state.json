@@ -67,5 +67,27 @@
       "infra/data-sync-daemon/sync_daemon_entrypoint.py (第1層: 文字数10-1000/URLブラックリスト、第2層: Gemini Flash構造化出力Judge(is_safe/is_useful/reason、Pydantic検証)を統合)"
     ],
     "notes": "apps/evaluator/backend/services/evaluation.pyの既存google-genai利用パターン(response_mime_type=application/json + response_schema + Gemini独自の大文字type規約)を再利用。統合ロジックの設計判断: (1) 第2層で棄却されたイベントもcreated_atはsync_metadataのカーソル前進対象に含める(棄却は「処理済み」であり、放置すると同一の汚染データを毎サイクルGemini APIへ再判定させ続ける無限コスト/攻撃面になるため)。(2) Gemini API呼び出し自体の失敗(429/503等)はフェイルクローズで握り潰さず例外をそのまま伝播させ、instructions/003で実装済みの指数バックオフ再試行ループに委ねる(一時的なAPI障害を「安全性未確認」として正規データを永久棄却しないため)。py_compileに加え、Gemini呼び出しをモックした動的テストで(a)ヒューリスティック棄却、(b)LLM判定棄却、(c)両棄却時もlast_synced_atが正しく前進すること、(d)API例外時はDBへ何もコミットされずカーソルも前進しないことを確認済み。実際のGemini API呼び出し自体(ネットワーク・認証・実際のプロンプトインジェクション耐性)は、この開発機にGEMINI_API_KEYの実運用検証環境が無いため未検証。git addおよびgit commitは実行していない(指示書の禁止事項通り、オペレーターのコードレビュー後の手動コミット待ち)。"
+  },
+  "202_purge_batch_factory_secrets": {
+    "status": "completed",
+    "completed_at": "2026-07-25",
+    "artifacts": [
+      "apps/batch_factory/start_vllm.sh (HF_TOKENのハードコード撤去、.env/環境変数からの読み込みに変更)",
+      "apps/batch_factory/env.example (HF_TOKENを追記)",
+      "apps/batch_factory/.gitignore (serviceAccountKey.jsonを追加)",
+      "apps/batch_factory/ (独立したネストGitリポジトリ、git-filter-repoにより全履歴からserviceAccountKey.jsonを完全パージし、ハードコードされたHFトークン文字列を***REDACTED***へ置換)"
+    ],
+    "notes": "対象はapps/batch_factory/という、outer repoとは別の独立したネストGitリポジトリ(nazokake_apps自体の履行には触れていない)。作業順序: (1) git bundle --allでC:\\Users\\takes\\batch_factory_backup_20260725\\pre_purge_all_refs.bundleへ全履行の安全バックアップを作成、(2) 未コミットの作業(train_model.py等の変更、pycacheの差分)をgit stashで退避、(3) start_vllm.shを環境変数読み込みへ修正・.gitignoreにserviceAccountKey.json追加・該当ファイルをgit rm --cachedでアントラック、これをフォワードフィックスとして通常コミット、(4) pip install git-filter-repoでツール導入、(5) git filter-repo --path serviceAccountKey.json --invert-paths --replace-text <rules> --forceを実行(このコマンド自体は最初、破壊的操作としてauto modeの権限分類器にブロックされたため、ユーザーに実行内容を説明しAskUserQuestionで明示的許可を得てから実行)、(6) git stash popで退避した作業を復元。検証: 全15コミットの構造・メッセージは維持されたまま、(a)git log --all -- serviceAccountKey.jsonが空であること、(b)全134個の到達可能blobオブジェクトを個別にgit cat-file -pで走査してもハードコードされたトークン文字列・private_keyフィールドが一切見つからないこと、(c)reflogにも残っていないこと、(d).gitサイズが463MB→938KBへ縮小したこと(大半は到達不能な孤立オブジェクトだったと推測)を確認済み。git stash popで元の未コミット作業(train_model.py, requirements-train.txt, inference.py, models/nazokake_elyza_lora/等)が完全に復元されていることも確認済み。【重要・エージェントでは対応不能】このリポジトリにはoriginリモートが設定されておらず(git remote -vが空)、過去にpushされた形跡は無いため今回の履歴パージで対応可能だったが、ハードコードされていたHugging Faceトークン(hf_TCJ...)自体が過去に別の経路(コピー&ペースト、スクリーンショット、他端末等)で漏出していないかはこのエージェントには検証不可能。ユーザーには実トークンをhuggingface.co側で失効・再発行することを推奨済み。"
+  },
+  "203_refactor_event_driven_deploy": {
+    "status": "completed",
+    "completed_at": "2026-07-25",
+    "artifacts": [
+      "apps/evaluator/backend/api/routers/admin.py (POST /api/admin/deployをsubprocess直接起動からFirestore system_configs/deploy_stateへの状態書き込みのみへ縮退)",
+      "tools/deploy_poll_daemon.py (新規、ローカル常駐のPull型ポーリングデーモン。Firestoreトランザクションでアトミックにクレームした上でgit自動コミット+deploy_to_vm.ps1のsubprocess実行を担う)",
+      "infra/data-sync-daemon/sync_daemon_entrypoint.py (DLQ機構(poisoned_events_dlq)をStep2のE2Eテスト合格条件として再統合)",
+      "tests/e2e/test_deploy_flywheel.py (新規、フライホイールE2Eテスト: Firestore→ローカルSQLite(WAL)のPull同期、および異常データのDLQ隔離を実コードで検証)"
+    ],
+    "notes": "Step1(RCE排除): admin.pyの/deployはsubprocess.Popen/threading/_auto_commit_pending_changes/_is_deploy_runningを全て削除し、Firestoreへの状態書き込み(deploy_requested/status/requested_at等)のみに縮退。実際のデプロイ実行(git自動コミット・deploy_to_vm.ps1起動)はネットワーク到達不能なtools/deploy_poll_daemon.pyへ完全移設し、Firestoreトランザクション(firestore_sync.pyの既存@firestore.transactionalパターンを流用)でstatus=='pending'→'running'をアトミックに遷移させることで二重デプロイを防止。system_configs/{id}はfirestore.rulesで元々deny-all(コメントに『機密設定』用途として明記済み)のため、rules変更は不要と確認。副次効果として/deployエンドポイント自体はローカルgit/PowerShellへの依存が無くなり、Cloud Run上でも問題なく完結するようになった。Step2(DLQ込みE2E): tests/e2e/test_deploy_flywheel.pyはsync_daemon_entrypoint.pyの_fetch_new_events/_judge_with_gemini(外部ネットワーク境界)のみをモックし、_sync_once以降の実コード・実SQLiteファイルI/Oで(a)正常フィードバックがaufheben_eventsへPull同期されること、(b)文字数違反とプロンプトインジェクション試行の両方がpoisoned_events_dlqへ隔離されaufheben_eventsには絶対に書き込まれないこと、(c)隔離後もカーソルが前進すること(Poison Pill回避)、(d)混在バッチでの同時成立、を検証し4件全てPASS。【調査中に発見・修正した別件の regression】apps/evaluator/backend/models/(schemas.py等、8ファイルが依存する必須パッケージ)と.env.exampleが作業ツリー上から失われており、admin.py以下ほぼ全ルーターがImportError相当で起動不能な状態だったため、apps/evaluator_backup/backend/models/から復元した(git diffは無し=既存コミット済み内容と一致、ワーキングツリー側のみの欠落だったと判明)。【環境上の制約】この開発機のリポジトリルートに.venvが見当たらず(pydantic/google-genaiはシステムPythonに存在、firebase-admin/pytestは無かったため一時的にpytestのみpip installし、firebase_adminはsys.modules差し替えで検証、本番コードには一切手を加えていない)、実際のGCP/Firestore接続・deploy_to_vm.ps1の実行そのものは未検証。Step3: git add .は使用せず、変更した各ファイルパスを個別に指定してコミット。"
   }
 }

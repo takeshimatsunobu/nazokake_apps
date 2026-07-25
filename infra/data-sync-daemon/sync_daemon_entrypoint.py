@@ -1,5 +1,6 @@
 """data-sync-daemon の起動エントリポイント(instructions/003、品質サーキットブレーカーは
-instructions/007)。
+instructions/007、DLQ(Dead Letter Queue)はinstructions/203でE2Eテストの合格条件として
+再統合)。
 
 Firestoreの aufheben_events コレクション(本番Cloud Runで収集された、SNS上の
 不毛な争いをユーモアでアウフヘーベンさせた成否データ。SSoT_architecture.md 9節の
@@ -27,6 +28,7 @@ import os
 import sqlite3
 import sys
 import time
+from datetime import datetime, timezone
 
 import firebase_admin
 from firebase_admin import credentials, firestore
@@ -117,6 +119,15 @@ def _init_schema(conn: sqlite3.Connection) -> None:
         "event_id TEXT PRIMARY KEY, riddle_id TEXT, context_text TEXT, "
         "aufheben_status INTEGER, created_at TEXT)"
     )
+    # 品質サーキットブレーカーで棄却されたイベントの隔離先(Dead Letter Queue)。
+    # 単純にドロップせずここへ保存することで、誤検知(フォールスポジティブ)の
+    # 事後救済とプロンプトインジェクション攻撃の事後監査を可能にする
+    # (instructions/203のE2Eテストがこのテーブルへの隔離を合格条件とする)。
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS poisoned_events_dlq ("
+        "id TEXT PRIMARY KEY, original_payload TEXT, failure_stage TEXT, "
+        "reason TEXT, blocked_at TIMESTAMP)"
+    )
     conn.execute(
         "INSERT OR IGNORE INTO sync_metadata (id, last_synced_at) VALUES (1, ?)",
         (EPOCH_DEFAULT,),
@@ -183,21 +194,31 @@ def _fetch_new_events(last_synced_at: str) -> list[dict]:
                 "context_text": data.get("context_text"),
                 "aufheben_status": data.get("aufheben_status"),
                 "created_at": created_at,
+                # DLQへ隔離する際、クラウドから受信した生のペイロードをそのまま
+                # 保存するため、doc.to_dict()をJSON文字列化して保持する
+                # (default=strはFirestoreのタイムスタンプ型等、標準のjson.dumpsでは
+                # シリアライズできない型のフォールバック)。
+                "raw_payload_json": json.dumps(data, ensure_ascii=False, default=str),
             }
         )
     return events
 
 
-def _passes_static_heuristics(context_text: "str | None") -> bool:
-    """第1層: 静的・ヒューリスティックフィルター(Gateway、instructions/007要件)。"""
+def _static_heuristic_failure_reason(context_text: "str | None") -> "str | None":
+    """第1層: 静的・ヒューリスティックフィルター(Gateway、instructions/007要件)。
+
+    通過した場合はNone、棄却する場合はDLQへ記録するための具体的な理由文字列を返す。
+    """
     if context_text is None:
-        return False
+        return "context_textが欠損しています。"
     length = len(context_text)
-    if length < HEURISTIC_MIN_LENGTH or length > HEURISTIC_MAX_LENGTH:
-        return False
+    if length < HEURISTIC_MIN_LENGTH:
+        return f"文字数が{length}文字で下限({HEURISTIC_MIN_LENGTH}文字)未満です。"
+    if length > HEURISTIC_MAX_LENGTH:
+        return f"文字数が{length}文字で上限({HEURISTIC_MAX_LENGTH}文字)を超えています。"
     if "http://" in context_text or "https://" in context_text:
-        return False
-    return True
+        return "URLブラックリスト(http(s)://を含む)に抵触しました。"
+    return None
 
 
 def _judge_with_gemini(context_text: str) -> AufhebenGateVerdict:
@@ -222,18 +243,19 @@ def _judge_with_gemini(context_text: str) -> AufhebenGateVerdict:
     return AufhebenGateVerdict.model_validate(data)
 
 
-def _passes_quality_gate(event: dict) -> bool:
+def _evaluate_event(event: dict) -> "tuple[bool, str | None, str | None]":
     """第1層(静的) -> 第2層(Gemini動的Judge)の順に評価する統合ロジック
-    (instructions/007要件C)。両層を通過した場合のみTrueを返す。"""
+    (instructions/007要件C)。戻り値は (受理されたか, failure_stage, reason)。
+    受理された場合は (True, None, None)。棄却された場合、failure_stageは
+    "static_filter" または "llm_judge"、reasonはDLQへの記録に使う具体的な理由文字列。
+    """
     event_id = event["event_id"]
     context_text = event.get("context_text")
 
-    if not _passes_static_heuristics(context_text):
-        _log(
-            f"[Layer1:Heuristic] event_id={event_id} を破棄しました"
-            "(文字数制限またはURLブラックリストに抵触)。"
-        )
-        return False
+    heuristic_failure = _static_heuristic_failure_reason(context_text)
+    if heuristic_failure is not None:
+        _log(f"[Layer1:Heuristic] event_id={event_id} を破棄しました({heuristic_failure})")
+        return False, "static_filter", heuristic_failure
 
     verdict = _judge_with_gemini(context_text)
     if not (verdict.is_safe and verdict.is_useful):
@@ -242,25 +264,35 @@ def _passes_quality_gate(event: dict) -> bool:
             f"(is_safe={verdict.is_safe}, is_useful={verdict.is_useful}, "
             f"reason={verdict.reason!r})。"
         )
-        return False
-    return True
+        return False, "llm_judge", verdict.reason
+    return True, None, None
 
 
 def _apply_events(conn: sqlite3.Connection, events: list[dict]) -> str:
-    # 品質サーキットブレーカーを通過したイベントのみをINSERT対象とする
-    # (instructions/007要件C)。棄却されたイベントもcreated_atはlast_synced_atの
-    # 算出対象に含める(棄却=処理済みであり、次回サイクルで同じデータを何度も
-    # Gemini APIへ再判定させ続けるコスト・攻撃面を避けるため)。
-    accepted_rows = [
-        (e["event_id"], e["riddle_id"], e["context_text"], e["aufheben_status"], e["created_at"])
-        for e in events
-        if _passes_quality_gate(e)
-    ]
+    # 品質サーキットブレーカーを通過したイベントのみをaufheben_eventsへのINSERT対象
+    # とする(instructions/007要件C)。棄却されたイベントは単純にドロップせず、
+    # poisoned_events_dlqへ隔離する(instructions/203、Poison Pill回避のため
+    # created_atはlast_synced_atの算出対象に含める点は既存ロジックを維持)。
+    blocked_at = datetime.now(timezone.utc).isoformat()
+    accepted_rows = []
+    dlq_rows = []
+    for e in events:
+        accepted, failure_stage, reason = _evaluate_event(e)
+        if accepted:
+            accepted_rows.append(
+                (e["event_id"], e["riddle_id"], e["context_text"], e["aufheben_status"], e["created_at"])
+            )
+        else:
+            dlq_rows.append(
+                (e["event_id"], e["raw_payload_json"], failure_stage, reason, blocked_at)
+            )
+
     new_last_synced_at = max(e["created_at"] for e in events)
-    # INSERT OR REPLACEによる書き込みとsync_metadataの更新を同一トランザクション
-    # (`with conn:`はsqlite3のBEGIN...COMMIT/ROLLBACKを自動化する)でコミットし、
-    # 途中失敗時に「イベントは書けたがlast_synced_atが進んでいない」半端な状態を防ぐ
-    # (instructions/003の「アトミックトランザクション」要件)。
+    # INSERT OR REPLACEによる書き込み(受理分・DLQ隔離分の両方)とsync_metadataの
+    # 更新を同一トランザクション(`with conn:`はsqlite3のBEGIN...COMMIT/ROLLBACKを
+    # 自動化する)でコミットし、途中失敗時に「イベントは書けたがlast_synced_atが
+    # 進んでいない」半端な状態を防ぐ(instructions/003の「アトミックトランザクション」
+    # 要件、instructions/203の「カーソル前進ロジックの保護」)。
     with conn:
         if accepted_rows:
             conn.executemany(
@@ -269,13 +301,19 @@ def _apply_events(conn: sqlite3.Connection, events: list[dict]) -> str:
                 "VALUES (?, ?, ?, ?, ?)",
                 accepted_rows,
             )
+        if dlq_rows:
+            conn.executemany(
+                "INSERT OR REPLACE INTO poisoned_events_dlq "
+                "(id, original_payload, failure_stage, reason, blocked_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                dlq_rows,
+            )
         conn.execute(
             "UPDATE sync_metadata SET last_synced_at = ? WHERE id = 1",
             (new_last_synced_at,),
         )
-    rejected_count = len(events) - len(accepted_rows)
-    if rejected_count:
-        _log(f"品質サーキットブレーカーにより{rejected_count}件を遮断しました。")
+    if dlq_rows:
+        _log(f"品質サーキットブレーカーにより{len(dlq_rows)}件をDLQへ隔離しました。")
     return new_last_synced_at
 
 
