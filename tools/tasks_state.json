@@ -89,5 +89,13 @@
       "tests/e2e/test_deploy_flywheel.py (新規、フライホイールE2Eテスト: Firestore→ローカルSQLite(WAL)のPull同期、および異常データのDLQ隔離を実コードで検証)"
     ],
     "notes": "Step1(RCE排除): admin.pyの/deployはsubprocess.Popen/threading/_auto_commit_pending_changes/_is_deploy_runningを全て削除し、Firestoreへの状態書き込み(deploy_requested/status/requested_at等)のみに縮退。実際のデプロイ実行(git自動コミット・deploy_to_vm.ps1起動)はネットワーク到達不能なtools/deploy_poll_daemon.pyへ完全移設し、Firestoreトランザクション(firestore_sync.pyの既存@firestore.transactionalパターンを流用)でstatus=='pending'→'running'をアトミックに遷移させることで二重デプロイを防止。system_configs/{id}はfirestore.rulesで元々deny-all(コメントに『機密設定』用途として明記済み)のため、rules変更は不要と確認。副次効果として/deployエンドポイント自体はローカルgit/PowerShellへの依存が無くなり、Cloud Run上でも問題なく完結するようになった。Step2(DLQ込みE2E): tests/e2e/test_deploy_flywheel.pyはsync_daemon_entrypoint.pyの_fetch_new_events/_judge_with_gemini(外部ネットワーク境界)のみをモックし、_sync_once以降の実コード・実SQLiteファイルI/Oで(a)正常フィードバックがaufheben_eventsへPull同期されること、(b)文字数違反とプロンプトインジェクション試行の両方がpoisoned_events_dlqへ隔離されaufheben_eventsには絶対に書き込まれないこと、(c)隔離後もカーソルが前進すること(Poison Pill回避)、(d)混在バッチでの同時成立、を検証し4件全てPASS。【調査中に発見・修正した別件の regression】apps/evaluator/backend/models/(schemas.py等、8ファイルが依存する必須パッケージ)と.env.exampleが作業ツリー上から失われており、admin.py以下ほぼ全ルーターがImportError相当で起動不能な状態だったため、apps/evaluator_backup/backend/models/から復元した(git diffは無し=既存コミット済み内容と一致、ワーキングツリー側のみの欠落だったと判明)。【環境上の制約】この開発機のリポジトリルートに.venvが見当たらず(pydantic/google-genaiはシステムPythonに存在、firebase-admin/pytestは無かったため一時的にpytestのみpip installし、firebase_adminはsys.modules差し替えで検証、本番コードには一切手を加えていない)、実際のGCP/Firestore接続・deploy_to_vm.ps1の実行そのものは未検証。Step3: git add .は使用せず、変更した各ファイルパスを個別に指定してコミット。"
+  },
+  "204_mount_staticfiles": {
+    "status": "completed",
+    "completed_at": "2026-07-25",
+    "artifacts": [
+      "apps/evaluator/backend/main.py (StaticFilesを/へマウントしフロントエンドを一元配信、旧`@app.get(\"/\")`のJSONプレースホルダーは削除)"
+    ],
+    "notes": "Step1: StaticFilesは既にimport済みだったため追加importは不要。マウント先ディレクトリは指示書の例(Path(__file__).resolve().parents[2] / 'frontend' / 'public')をそのまま使うとapps/frontend/publicという誤ったパスになる(実際の構造はapps/evaluator/frontend/public)ため、代わりに既存の_PROJECT_ROOT(parents[3]、/cicマウントで実績のある同じ基準)を使い _PROJECT_ROOT / 'apps' / 'evaluator' / 'frontend' / 'public' として決定論的に解決した。include_router群・/api/health・既存の/cicマウントより後に配置。Step2: 旧`@app.get(\"/\")`(素朴なJSON応答)は登録順で常にStaticFilesマウントより先に一致し、html=Trueによるindex.html配信を妨げるため削除した。FastAPI TestClientで実際にapp本体を起動し(firebase_adminはこの開発機に無いため検証専用のフェイクモジュールをsys.modulesへ注入、本番コードは無改変)、/api/health(200、JSON、無変化)・/(200、text/html、実際のindex.htmlの内容が返る=旧JSONプレースホルダーではないことを確認)・/admin.js(200、静的JS配信)・/api/存在しないパス(404、静的側へフォールスルーしても適切に404)を動的に検証した。/cic(末尾スラッシュ無し)が404を返す挙動は本タスク着手前から存在する既存動作でありStaticFilesマウントの追加とは無関係(/cic/publicディレクトリ自体は存在しStaticFiles初期化時にクラッシュしていないことを確認済み)。実際のGCP/Firestore接続・本番Cloud Run環境での動作は未検証(環境上の制約は203と同様)。"
   }
 }

@@ -102,6 +102,27 @@ async def health_check():
     return {"status": "ok"}
 
 
-@app.get("/")
-async def root():
-    return {"message": "Backend is cleanly structured and running!"}
+# 【instructions/204: フロントエンド一元配信】フロントエンドを別ポートで立ち上げる
+# 運用はCORSエラー・トイルの温床としてSRE監査でRejectされた。バックエンド(FastAPI)
+# 自身がフロントエンドの静的ファイルを直接配信する。
+#
+# 【Step2: ルーティング競合の確認】Starletteはルート/マウントを登録順に評価する。
+# このマウントは include_router(85-96行目)・/api/health(99-102行目)・/cic(66-68行目)
+# の「後」に登録するため、/api/*・/cic/*・/api/healthへのリクエストはそれぞれの
+# 専用ルートが先に一致し、このStaticFilesマウントへは到達しない。
+# 以前ここに存在した`@app.get("/")`(素朴なJSONメッセージを返すだけの動作確認用
+# ルート)は、登録順で常にこの静的ファイルマウントより先に一致してしまい
+# `index.html`の配信を妨げるため削除した(html=Trueにより"/"はindex.htmlへ
+# フォールバックする、StaticFiles標準の挙動)。
+#
+# directoryはuvicornの実行cwd(apps/evaluator/backend)に依存しない絶対パスで指定する
+# 必要があるため、既存の/cicマウント(66-68行目)と同じ_PROJECT_ROOT基準で解決する
+# (pathlibによる決定論的解決、instructions/204 Step1要件)。
+app.mount(
+    "/",
+    StaticFiles(
+        directory=str(_PROJECT_ROOT / "apps" / "evaluator" / "frontend" / "public"),
+        html=True,
+    ),
+    name="static",
+)
