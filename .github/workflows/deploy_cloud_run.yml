@@ -80,18 +80,16 @@ jobs:
 
       # Container Analysis (On-Demand Scanning API) によるCRITICAL/HIGH脆弱性の
       # ハード・フェイルゲート(instructions/005でプレースホルダーから本実装へ格上げ)。
-      # 【未検証事項】`gcloud artifacts docker images scan` / `list-vulnerabilities`
-      # のフィールド名・出力形式は、この開発機にGCPアクセスが無く動的に検証できていない
-      # (infra/docs/gcp_wif_artifact_registry_setup.mdと同じ位置づけ)。初回の実運用時に
-      # `gcloud artifacts docker images list-vulnerabilities --help` で
-      # 実際のフィールド名(vulnerability.effectiveSeverity)を確認すること。
+      # instructions/220-221での初回E2E実行で判明: `gcloud artifacts docker images
+      # scan --location` はArtifact Registryのリージョン(asia-northeast1)ではなく、
+      # Container Analysisのマルチリージョン(asia/europe/us)のみを受け付ける。
       - name: Scan image for CRITICAL/HIGH vulnerabilities (hard-fail gate)
         run: |
           set -euo pipefail
           IMAGE_REF="${{ env.IMAGE }}:${{ github.sha }}"
 
           SCAN_NAME=$(gcloud artifacts docker images scan "${IMAGE_REF}" \
-            --location="${{ env.REGION }}" \
+            --location="asia" \
             --format='value(response.scan)')
           echo "scan resource: ${SCAN_NAME}"
 
