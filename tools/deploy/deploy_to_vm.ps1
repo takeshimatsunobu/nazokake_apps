@@ -57,7 +57,12 @@ param(
     [int]$SshWaitMaxAttempts = 30,
     [int]$SshWaitDelaySeconds = 10,
     [int]$GcloudRetryMaxAttempts = 5,
-    [int]$GcloudRetryInitialDelaySeconds = 5
+    [int]$GcloudRetryInitialDelaySeconds = 5,
+    # [instructions/210] Candidate CA bundle used to adapt gcloud's trust
+    # chain for this machine's TLS-inspecting AV/proxy (e.g. Norton Web/Mail
+    # Shield) in front of the IAP tunnel endpoint. Only ever used to add
+    # trust for this script's own IAP calls -- never to bypass verification.
+    [string]$CaCertBundlePath = (Join-Path $env:USERPROFILE ".certs\custom_ca_bundle.pem")
 )
 
 $ErrorActionPreference = "Stop"
@@ -107,6 +112,68 @@ function Invoke-ExternalCommand {
 # run_verification_server.ps1 (treating this transient auth error the same
 # as a "real" failure and aborting immediately would violate the "one-touch
 # provisioning" requirement).
+# [instructions/210] IAP tunnel TLS trust adaptation. On a machine where a
+# TLS-inspecting AV/proxy (e.g. Norton Web/Mail Shield) sits in front of
+# tunnel.cloudproxy.app, gcloud's IAP websocket layer fails the handshake
+# because gcloud only trusts the CA named in the *gcloud config* property
+# core/custom_ca_certs_file (env vars like SSL_CERT_FILE have no effect on
+# this specific path). This function adapts that trust chain for the
+# duration of this script only, and Restore-IapTlsTrust below puts the
+# config property back exactly as it was found. Bypassing verification
+# (e.g. nulling the property or disabling checks) is explicitly prohibited.
+$script:IapTlsTrustPreviousValue = $null
+$script:IapTlsTrustWasChanged = $false
+
+function Set-IapTlsTrust {
+    param([string]$CaBundlePath)
+
+    $script:IapTlsTrustPreviousValue = (Invoke-ExternalCommand -ScriptBlock {
+        gcloud config get-value core/custom_ca_certs_file 2>$null
+    } | Out-String).Trim()
+
+    if ($script:IapTlsTrustPreviousValue -and (Test-Path $script:IapTlsTrustPreviousValue)) {
+        Write-Host ("[OK] IAP tunnel TLS trust already configured " +
+            "(core/custom_ca_certs_file = $($script:IapTlsTrustPreviousValue)).") -ForegroundColor Green
+        return
+    }
+
+    if (-not (Test-Path $CaBundlePath)) {
+        Write-Error (
+            "[ERROR] The IAP tunnel's TLS handshake could not be verified, and no trusted CA " +
+            "bundle was found at '$CaBundlePath' either.`n" +
+            "This script will NOT bypass TLS verification (fail-open is prohibited).`n" +
+            "Fix options:`n" +
+            "  1. Ask your network/security team to register IAP's IP range " +
+            "(35.235.240.0/20) as a TLS-inspection exclusion, OR`n" +
+            "  2. Export the inspecting proxy/AV's root CA to a PEM file and either place it " +
+            "at '$CaBundlePath' or pass -CaCertBundlePath <path>, then re-run this script."
+        )
+        exit 1
+    }
+
+    Invoke-ExternalCommand -ScriptBlock { gcloud config set core/custom_ca_certs_file $CaBundlePath } | Out-Null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "[ERROR] Failed to set core/custom_ca_certs_file to '$CaBundlePath'."
+        exit 1
+    }
+    $script:IapTlsTrustWasChanged = $true
+    Write-Host "[OK] Trusted the TLS-inspecting proxy's CA for this deploy session: $CaBundlePath" -ForegroundColor Green
+}
+
+function Restore-IapTlsTrust {
+    if (-not $script:IapTlsTrustWasChanged) {
+        return
+    }
+    if ($script:IapTlsTrustPreviousValue) {
+        Invoke-ExternalCommand -ScriptBlock {
+            gcloud config set core/custom_ca_certs_file $script:IapTlsTrustPreviousValue
+        } | Out-Null
+    } else {
+        Invoke-ExternalCommand -ScriptBlock { gcloud config unset core/custom_ca_certs_file } | Out-Null
+    }
+    Write-Host "[INFO] Restored core/custom_ca_certs_file to its pre-script value." -ForegroundColor DarkGray
+}
+
 function Invoke-GcloudWithRetry {
     param(
         [Parameter(Mandatory = $true)][scriptblock]$ScriptBlock,
@@ -218,76 +285,85 @@ if (-not $sshReady) {
 }
 Write-Host "[OK] SSH is open." -ForegroundColor Green
 
-# --- Step 3: Initialize the bare repo (idempotent) --------------------------
-Write-Host "[3/5] Checking for the bare repo (~/nazokake_apps.git) on the VM..." -ForegroundColor Cyan
-
-$bareRepoInitCommand = 'test -d ~/nazokake_apps.git || git init --bare ~/nazokake_apps.git'
-Invoke-GcloudWithRetry -Description "Bare repo initialization check" -ScriptBlock {
-    gcloud compute ssh $InstanceName --project=$ProjectId --zone=$Zone `
-        --tunnel-through-iap --command=$bareRepoInitCommand 2>&1
-}
-
-# --- Step 4: Git push to the bare repo (via IAP tunnel) ---------------------
-Write-Host "[4/5] Pushing branch '$DeployBranch' to the VM's bare repo..." -ForegroundColor Cyan
-
-# [instructions/187] This VM lives in a fully closed IAP-only network and is
-# unreachable with a plain ssh client, so GIT_SSH_COMMAND is redirected to
-# gcloud_ssh_wrapper.ps1 (which bridges to gcloud compute ssh
-# --tunnel-through-iap). The hostname written into the remote URL below
-# ($InstanceName) is not actually used by the wrapper itself (the connection
-# target is already fixed via the -InstanceName/-Zone/-ProjectId arguments);
-# it is kept as the real instance name purely for readability in `git remote`
-# listings.
-$env:GIT_SSH_COMMAND = "powershell -NoProfile -ExecutionPolicy Bypass -File " +
-    "`"$SshWrapperPath`" -InstanceName $InstanceName -ProjectId $ProjectId -Zone $Zone"
-
-$remoteUrl = "${RemoteUser}@${InstanceName}:~/nazokake_apps.git"
-
-Push-Location $ProjectRoot
+# [instructions/210] Everything from here on uses gcloud compute ssh over the
+# IAP tunnel, which needs a trusted CA for this machine's TLS-inspecting
+# proxy/AV. Establish that trust now, and always restore the prior gcloud
+# config state afterwards, regardless of how this block exits.
+Set-IapTlsTrust -CaBundlePath $CaCertBundlePath
 try {
-    # [Deterministic remote name] Use a remote name dedicated to this
-    # verification VM, explicitly separate from any future real source
-    # control remote (e.g. "origin"), to avoid name collisions.
-    $existingRemote = Invoke-ExternalCommand -ScriptBlock { git remote get-url verification-vm 2>&1 }
-    if ($LASTEXITCODE -ne 0) {
-        Invoke-ExternalCommand -ScriptBlock { git remote add verification-vm $remoteUrl }
-    } else {
-        $existingRemote = ($existingRemote -join "").Trim()
-        if ($existingRemote -ne $remoteUrl) {
-            Invoke-ExternalCommand -ScriptBlock { git remote set-url verification-vm $remoteUrl }
-        }
+    # --- Step 3: Initialize the bare repo (idempotent) ----------------------
+    Write-Host "[3/5] Checking for the bare repo (~/nazokake_apps.git) on the VM..." -ForegroundColor Cyan
+
+    $bareRepoInitCommand = 'test -d ~/nazokake_apps.git || git init --bare ~/nazokake_apps.git'
+    Invoke-GcloudWithRetry -Description "Bare repo initialization check" -ScriptBlock {
+        gcloud compute ssh $InstanceName --project=$ProjectId --zone=$Zone `
+            --tunnel-through-iap --command=$bareRepoInitCommand 2>&1
     }
 
-    # [Inherited from instructions/166] Push is also subject to automatic
-    # retry, anticipating transient auth errors caused by OS Login/IAP
-    # permission provisioning lag. Force-pushing to the fixed deploy branch
-    # ($DeployBranch) is safe to re-run (idempotent re-push of the same
-    # commit) since it is not a branch shared between developers.
-    Invoke-GcloudWithRetry -Description "git push (verification-vm)" -ScriptBlock {
-        git push --force verification-vm "HEAD:refs/heads/$DeployBranch"
+    # --- Step 4: Git push to the bare repo (via IAP tunnel) -----------------
+    Write-Host "[4/5] Pushing branch '$DeployBranch' to the VM's bare repo..." -ForegroundColor Cyan
+
+    # [instructions/187] This VM lives in a fully closed IAP-only network and is
+    # unreachable with a plain ssh client, so GIT_SSH_COMMAND is redirected to
+    # gcloud_ssh_wrapper.ps1 (which bridges to gcloud compute ssh
+    # --tunnel-through-iap). The hostname written into the remote URL below
+    # ($InstanceName) is not actually used by the wrapper itself (the connection
+    # target is already fixed via the -InstanceName/-Zone/-ProjectId arguments);
+    # it is kept as the real instance name purely for readability in `git remote`
+    # listings.
+    $env:GIT_SSH_COMMAND = "powershell -NoProfile -ExecutionPolicy Bypass -File " +
+        "`"$SshWrapperPath`" -InstanceName $InstanceName -ProjectId $ProjectId -Zone $Zone"
+
+    $remoteUrl = "${RemoteUser}@${InstanceName}:~/nazokake_apps.git"
+
+    Push-Location $ProjectRoot
+    try {
+        # [Deterministic remote name] Use a remote name dedicated to this
+        # verification VM, explicitly separate from any future real source
+        # control remote (e.g. "origin"), to avoid name collisions.
+        $existingRemote = Invoke-ExternalCommand -ScriptBlock { git remote get-url verification-vm 2>&1 }
+        if ($LASTEXITCODE -ne 0) {
+            Invoke-ExternalCommand -ScriptBlock { git remote add verification-vm $remoteUrl }
+        } else {
+            $existingRemote = ($existingRemote -join "").Trim()
+            if ($existingRemote -ne $remoteUrl) {
+                Invoke-ExternalCommand -ScriptBlock { git remote set-url verification-vm $remoteUrl }
+            }
+        }
+
+        # [Inherited from instructions/166] Push is also subject to automatic
+        # retry, anticipating transient auth errors caused by OS Login/IAP
+        # permission provisioning lag. Force-pushing to the fixed deploy branch
+        # ($DeployBranch) is safe to re-run (idempotent re-push of the same
+        # commit) since it is not a branch shared between developers.
+        Invoke-GcloudWithRetry -Description "git push (verification-vm)" -ScriptBlock {
+            git push --force verification-vm "HEAD:refs/heads/$DeployBranch"
+        }
+    } finally {
+        Pop-Location
+        Remove-Item Env:\GIT_SSH_COMMAND -ErrorAction SilentlyContinue
+    }
+
+    Write-Host "[OK] Push complete." -ForegroundColor Green
+
+    # --- Step 5: Asynchronously kick deploy_pull.sh on the server -----------
+    Write-Host "[5/5] Kicking deploy_pull.sh asynchronously..." -ForegroundColor Cyan
+
+    # Using nohup + disown lets this run continue on the VM side without waiting
+    # for this SSH command itself (i.e. the gcloud compute ssh process) to exit
+    # ("asynchronous kick", instructions/187). deploy_pull.sh's own stdout/stderr
+    # accumulates in ~/nazokake_apps_deploy_pull.log on the VM (not relayed to
+    # this dashboard's deploy.log; see the known limitation in .SYNOPSIS).
+    $kickCommand = 'nohup bash ~/nazokake_apps/infra/verification_env/deploy_pull.sh ' +
+        '> ~/nazokake_apps_deploy_pull.log 2>&1 < /dev/null & disown; ' +
+        'echo "Kicked deploy_pull.sh in the background (PID: $!)"'
+
+    Invoke-GcloudWithRetry -Description "Asynchronous kick of deploy_pull.sh" -ScriptBlock {
+        gcloud compute ssh $InstanceName --project=$ProjectId --zone=$Zone `
+            --tunnel-through-iap --command=$kickCommand 2>&1
     }
 } finally {
-    Pop-Location
-    Remove-Item Env:\GIT_SSH_COMMAND -ErrorAction SilentlyContinue
-}
-
-Write-Host "[OK] Push complete." -ForegroundColor Green
-
-# --- Step 5: Asynchronously kick deploy_pull.sh on the server ---------------
-Write-Host "[5/5] Kicking deploy_pull.sh asynchronously..." -ForegroundColor Cyan
-
-# Using nohup + disown lets this run continue on the VM side without waiting
-# for this SSH command itself (i.e. the gcloud compute ssh process) to exit
-# ("asynchronous kick", instructions/187). deploy_pull.sh's own stdout/stderr
-# accumulates in ~/nazokake_apps_deploy_pull.log on the VM (not relayed to
-# this dashboard's deploy.log; see the known limitation in .SYNOPSIS).
-$kickCommand = 'nohup bash ~/nazokake_apps/infra/verification_env/deploy_pull.sh ' +
-    '> ~/nazokake_apps_deploy_pull.log 2>&1 < /dev/null & disown; ' +
-    'echo "Kicked deploy_pull.sh in the background (PID: $!)"'
-
-Invoke-GcloudWithRetry -Description "Asynchronous kick of deploy_pull.sh" -ScriptBlock {
-    gcloud compute ssh $InstanceName --project=$ProjectId --zone=$Zone `
-        --tunnel-through-iap --command=$kickCommand 2>&1
+    Restore-IapTlsTrust
 }
 
 Write-Host "[DONE] GitOps deploy kick complete. See VM-side progress at " -ForegroundColor Green -NoNewline
