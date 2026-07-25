@@ -62,27 +62,6 @@ jobs:
       - name: Push image to Artifact Registry (temp tag)
         run: docker push "${{ env.IMAGE }}:pr-${{ github.event.pull_request.number }}"
 
-      # 【一時的な調査用ステップ、instructions/224フォローアップ】
-      # wheel/jaraco-contextがpip install --upgradeで解消しない原因をファクトで
-      # 特定するためのデバッグ出力。原因判明後に削除する(推測でのコード修正を
-      # 避けるため、apps/evaluator/PROJECT_CORE.md 7節の方針に従う)。
-      - name: DEBUG - locate wheel/jaraco-context in the built image
-        run: |
-          docker run --rm --entrypoint sh "${{ env.IMAGE }}:pr-${{ github.event.pull_request.number }}" -c '
-            echo "--- pip list ---";
-            python -m pip list 2>&1;
-            echo "--- pip show wheel ---";
-            python -m pip show wheel 2>&1;
-            echo "--- pip show jaraco-context ---";
-            python -m pip show jaraco-context 2>&1;
-            echo "--- apk info (if any) ---";
-            apk info 2>/dev/null | grep -i "wheel\|jaraco" || echo "no apk match";
-            echo "--- find wheel ---";
-            find / -xdev -iname "*wheel*" 2>/dev/null;
-            echo "--- find jaraco ---";
-            find / -xdev -iname "*jaraco*" 2>/dev/null;
-          '
-
       # deploy_cloud_run.ymlと同一ロジック(instructions/220-222で判明した
       # --location/--quietの制約を含む)。ここで検出された場合、PRのステータス
       # チェックが失敗し、マージ前にブロックされる。

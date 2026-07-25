@@ -78,7 +78,12 @@ FROM python:3.11-alpine AS runtime
 # OSパッケージを最新のセキュリティパッチ状態にする。
 RUN apk update && apk upgrade --no-cache
 
-RUN python -m pip install --no-cache-dir --upgrade pip wheel jaraco-context
+# instructions/224フォローアップ: CIのデバッグ実行(実機ファクト)で判明した通り、
+# 単純な`pip install --upgrade wheel jaraco-context`はトップレベルの新規インストール
+# を作るだけで、setuptoolsが内部に同梱するベンダリング版(setuptools/_vendor/
+# wheel-0.45.1, jaraco.context-5.3.0、いずれも旧脆弱バージョン)には届かない。
+# setuptools自体を最新へ上げることで、そのベンダリング内容ごと更新する。
+RUN python -m pip install --no-cache-dir --upgrade pip setuptools wheel jaraco-context
 
 # 非rootユーザーで実行する(busybox adduserはAlpine標準、-Dでパスワード未設定、
 # ホームディレクトリはデフォルトで作成される)。
