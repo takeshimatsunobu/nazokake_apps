@@ -9,7 +9,16 @@ from loguru import logger
 # ルート直下の apps.tactical_cic を import するにはプロジェクトルートを明示的に
 # sys.pathへ追加する必要がある(未追加だと ModuleNotFoundError: No module named 'apps'
 # で起動時に即クラッシュする)。
-_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+#
+# 【instructions/224で判明】ローカル開発時はmain.pyがリポジトリの実際の階層
+# (apps/evaluator/backend/main.py)に存在するため parents[3] がリポジトリルートに
+# 一致するが、DockerイメージはCOPYでこの階層を平坦化して/app/main.pyへ配置する
+# ため、parents[3] が存在せず IndexError で起動即クラッシュする(初回の実デプロイ
+# 試行で発覚)。コンテナ内ではDockerfileが明示的にPROJECT_ROOT環境変数(/app)を
+# 設定するため、それを優先し、未設定時(ローカル開発)のみ既存のparents[3]へ
+# フォールバックする。
+_env_project_root = os.environ.get("PROJECT_ROOT")
+_PROJECT_ROOT = Path(_env_project_root) if _env_project_root else Path(__file__).resolve().parents[3]
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
