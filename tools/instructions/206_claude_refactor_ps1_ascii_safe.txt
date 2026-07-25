@@ -1,0 +1,15 @@
+【ミッション: PowerShellスクリプトのASCII Safe化（文字化け・パースエラーの構造的排除）】
+
+tools/deploy/deploy_to_vm.ps1 の実行時、BOMなしUTF-8環境のPowerShell v5.1において、絵文字やマルチバイト文字が原因で ParserError: UnexpectedToken が発生しました。SRE監査の要請に基づき、以下の要件（Must Fix）でスクリプトをリファクタリングしてください。
+
+Step 1: 非ASCII文字の完全排除
+tools/deploy/deploy_to_vm.ps1 のコードを解析し、スクリプト内のすべての絵文字（⚠、ℹ など）および日本語のログメッセージ（Write-Host, Write-Error, コメント等）を、完全に英語および標準的なASCII表現に書き換えてください。
+例: ℹ️ VMは既にRUNNING状態です -> [INFO] VM is already in RUNNING state.
+例: ⚠ エラーが発生しました -> [WARN] An error occurred.
+
+Step 2: ロジックの保護
+ログの出力表現のみを変更し、GCPへの接続処理、デプロイ実行プロセス、リトライ制御などのインフラストラクチャロジックは一切変更しないでください。
+
+Step 3: 静的解析とコミット
+スクリプトが完全にASCII文字のみで構成されていることを確認の上、変更した deploy_to_vm.ps1 をコミットしてください。
+※絶対制約: git add . は厳禁です。変更したファイルのみを明示的に指定すること。
