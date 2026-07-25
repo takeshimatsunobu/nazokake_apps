@@ -1,0 +1,27 @@
+# リポジトリルート .dockerignore
+# =================================
+# apps/evaluator/Dockerfile 等、ビルドコンテキストをリポジトリルート(`.`)とする
+# Dockerビルドに対して実際に適用される除外設定(instructions/218で発見)。
+#
+# 【背景】apps/evaluator/.dockerignore は、Docker/BuildKitがビルドコンテキストの
+# ルート(ここでは repo root)、または `<Dockerfileの相対パス>.dockerignore`
+# (例: apps/evaluator/Dockerfile.dockerignore)のみを参照する仕様のため、
+# ビルドコンテキストが repo root の本リポジトリでは実際には一切適用されない
+# (apps/evaluator/Dockerfileのヘッダーコメントも参照)。apps/evaluator/backend/
+# 配下にローカル開発用の serviceAccountKey.json が実在することを確認しており、
+# この除外が空文であることは実害のあるギャップだった。
+
+# 機密ファイル(絶対にイメージへ含めない)
+**/serviceAccountKey.json
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+
+# ビルドコンテキストの肥大化・ビルド時間増大の防止
+.git/
+**/.venv/
+**/.venv_*/
+**/__pycache__/
+**/*.pyc

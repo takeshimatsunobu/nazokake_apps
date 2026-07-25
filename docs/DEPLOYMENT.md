@@ -1,8 +1,16 @@
-# デプロイ手順書 (nazo-agent-api / Cloud Run)
+# デプロイ手順書 (nazokake-backend / Cloud Run)
 
 `apps/evaluator/backend`(なぞかけディスカバリー API)を Google Cloud Run へ
-デプロイするための手順。ビルドは `cloudbuild.yaml`(リポジトリルート)、
-コンテナ定義は `apps/evaluator/Dockerfile` を使用する。
+デプロイするための手順。コンテナ定義は `apps/evaluator/Dockerfile`、依存関係の
+ロックは `apps/evaluator/backend/uv.lock` を使用する。
+
+**Canonical(正)なデプロイ手順は `.github/workflows/deploy_cloud_run.yml`
+(GitHub Actions、Workload Identity Federation)である。** `apps/**` への
+`main`ブランチへのpushをトリガーに、ビルド→Artifact Registryへのpush→
+CRITICAL/HIGH脆弱性のハード・フェイルゲート→Cloud Runへのデプロイが自動実行される
+(instructions/218)。`cloudbuild.yaml`(リポジトリルート、`gcloud builds submit`)は
+脆弱性スキャンゲートを経由しないため、本番への正規のデプロイ手段としては使用しない
+(5節参照)。
 
 ---
 
@@ -11,95 +19,81 @@
 - GCPプロジェクトが作成済みであること(既存のFirebaseプロジェクト
   `nazokakeapp-137e5` を想定。`main.py`の`firebase_admin.initialize_app`が
   このプロジェクトIDを直接参照している)。
-- `gcloud` CLIがインストール・認証済みであること(`gcloud auth login`)。
-- 対象プロジェクトが選択されていること: `gcloud config set project <PROJECT_ID>`
+- GitHubリモートが設定済みであること(`takeshimatsunobu/nazokake_apps`)。
+- `gcloud` CLIがインストール・認証済みであること(`gcloud auth login`)。初回セットアップ
+  (下記2節)を人間のオペレーターが手元で実行する場合のみ必要で、日常のデプロイ自体は
+  GitHub Actions側で完結する(ローカルの`gcloud`認証には依存しない)。
 
-## 2. 必要なGCP APIの有効化
+## 2. 初回セットアップ(WIF・Artifact Registry・Secret Manager) — 一度だけ
 
-```bash
-gcloud services enable \
-  run.googleapis.com \
-  cloudbuild.googleapis.com \
-  artifactregistry.googleapis.com \
-  secretmanager.googleapis.com \
-  firestore.googleapis.com
-```
-
-## 3. Artifact Registry リポジトリの作成
+必要なGCP側リソース(API有効化・Artifact Registryリポジトリ・Workload Identity
+Federation・CI/CD用サービスアカウント・IAM権限・Secret Manager)は、人間のための
+チェックリストではなく、コピペして実行可能なIaCスクリプトとして
+`infra/scripts/setup_gcp_wif_and_secrets.sh` に用意している(instructions/218)。
 
 ```bash
-gcloud artifacts repositories create nazo-agent \
-  --repository-format=docker \
-  --location=asia-northeast1 \
-  --description="Nazo-Agent コンテナイメージ"
+# GEMINI_API_KEY / ANTHROPIC_API_KEY の実際の値を対話的に入力してから実行する
+# (スクリプト自体に秘密値はハードコードされていない)
+bash infra/scripts/setup_gcp_wif_and_secrets.sh
 ```
 
-## 4. Secret Manager でのAPIキー登録
-
-`.env`に平文で保存している`GEMINI_API_KEY`・`ANTHROPIC_API_KEY`は、
-イメージには一切含めず(Dockerfile参照)、Secret Managerへ登録した上で
-Cloud Runの`--set-secrets`経由で実行時に注入する。
-
-```bash
-# GEMINI_API_KEY を登録(既存の.envの値を使う場合。改行を含めないよう -n を推奨)
-printf '%s' "<実際のGEMINI_API_KEYの値>" | gcloud secrets create GEMINI_API_KEY --data-file=-
-
-# ANTHROPIC_API_KEY も同様に登録
-printf '%s' "<実際のANTHROPIC_API_KEYの値>" | gcloud secrets create ANTHROPIC_API_KEY --data-file=-
-
-# 既存シークレットの値を更新する場合は create の代わりに versions add を使う
-# printf '%s' "<新しい値>" | gcloud secrets versions add GEMINI_API_KEY --data-file=-
-```
-
-Cloud Buildの実行サービスアカウント、およびCloud Runの実行サービスアカウントの
-両方に、これらシークレットへの`Secret Manager のシークレット アクセサー`
-(`roles/secretmanager.secretAccessor`)ロールを付与すること:
-
-```bash
-PROJECT_NUMBER=$(gcloud projects describe <PROJECT_ID> --format='value(projectNumber)')
-
-for SECRET in GEMINI_API_KEY ANTHROPIC_API_KEY; do
-  gcloud secrets add-iam-policy-binding "$SECRET" \
-    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
-    --role="roles/secretmanager.secretAccessor"
-done
-```
+このスクリプトは冪等(既存リソースがあればスキップ)であり、実行後に必要な
+GitHub Secrets(`WIF_PROVIDER`・`WIF_SERVICE_ACCOUNT`)の値を最後に出力する。
+設計・IAMロールの根拠は `infra/docs/gcp_wif_artifact_registry_setup.md` を参照。
 
 > **`serviceAccountKey.json`について**: Cloud Run上では登録しない。
 > `firebase_admin.initialize_app(options={'projectId': ...})`は明示的な鍵ファイル
 > 無しで呼ばれており、Application Default Credentials(Cloud Runの実行サービス
 > アカウント自身のIAM権限)でFirestore/Firebase Admin SDKを認証する設計になって
-> いる。実行サービスアカウントに`roles/datastore.user`等、Firestoreアクセスに
-> 必要なロールを付与しておくこと。
+> いる。実行サービスアカウントには`roles/datastore.user`等、Firestoreアクセスに
+> 必要なロールが上記スクリプトにより付与される。
 
-## 5. ビルド・デプロイの実行
+## 3. 依存関係の決定論的ロック(uv)
 
-リポジトリルートから実行する(`cloudbuild.yaml`はリポジトリルート基準の
-ビルドコンテキストを前提としている):
+`apps/evaluator/backend`の依存関係は`uv`で管理し、`uv.lock`(Git管理対象)へ
+推移的依存を含めて全バージョンを固定している(instructions/218)。
+`apps/evaluator/Dockerfile`のビルドステージは`uv sync --frozen`のみでインストール
+するため、`uv.lock`を更新しない限りビルド結果は変わらない。
+
+依存関係を追加・変更した場合は、必ずロックファイルを再生成してコミットすること:
 
 ```bash
-gcloud builds submit --config=cloudbuild.yaml .
+cd apps/evaluator/backend
+uv lock
 ```
 
-必要に応じてリージョン・サービス名を上書きできる:
+`uv sync --frozen`はロックファイルと`pyproject.toml`の定義が一致しない場合、
+ビルド自体を失敗させる(ロック更新漏れの検知)。
+
+## 4. デプロイの実行(自動・Canonical経路)
+
+`apps/`配下に変更を加えたコミットを`main`へpushするだけでよい。GitHub Actions
+(`.github/workflows/deploy_cloud_run.yml`)が自動的に:
+
+1. WIF経由でGCPへ認証(サービスアカウントキーJSONは使用しない)
+2. `apps/evaluator/Dockerfile`をビルド(`uv sync --frozen`で決定論的に依存解決)
+3. Artifact Registryへpush
+4. CRITICAL/HIGH脆弱性のハード・フェイルゲート(検出時はデプロイを中止)
+5. Cloud Runへ`nazokake-backend`としてデプロイ
+
+進行状況はGitHubリポジトリのActionsタブで確認する。
+
+## 5. ローカルでのビルド確認(本番デプロイの代替手段ではない)
+
+`cloudbuild.yaml`はDockerfileの変更をCIを待たずに素早く確認したい場合のローカル
+ビルド確認用であり、**脆弱性スキャンゲートを経由せずに本番Cloud Runサービスへ直接
+デプロイしてしまう**ため、日常のデプロイ手段としては使用しないこと。動作確認のみが
+目的なら、別のサービス名を明示的に指定して本番サービスへの誤デプロイを避けること:
 
 ```bash
 gcloud builds submit --config=cloudbuild.yaml \
-  --substitutions=_REGION=asia-northeast1,_SERVICE_NAME=nazo-agent-api .
+  --substitutions=_SERVICE_NAME=nazokake-backend-canary .
 ```
-
-初回実行時、`cloudbuild.yaml`のDeployステップが自動的に:
-1. `apps/evaluator/Dockerfile`をリポジトリルートをビルドコンテキストとして、
-   `--build-context sharedcore=packages/shared_core`でnazokake_coreを取り込みつつ
-   ビルド
-2. Artifact Registryへpush
-3. Cloud Runへ`nazo-agent-api`としてデプロイ(Secret Managerから
-   `GEMINI_API_KEY`/`ANTHROPIC_API_KEY`を環境変数として注入)
 
 ## 6. デプロイ後の確認
 
 ```bash
-gcloud run services describe nazo-agent-api --region=asia-northeast1 --format='value(status.url)'
+gcloud run services describe nazokake-backend --region=asia-northeast1 --format='value(status.url)'
 ```
 
 得られたURLに対して、ヘルスチェックエンドポイントを叩いて起動確認する:
@@ -127,3 +121,7 @@ curl https://<デプロイされたURL>/api/health
   このCloud Runイメージには含まれるが自動起動はされない(FastAPIアプリとは
   独立したエントリポイントのため)。外部AIクライアントから利用する場合は、
   別途起動方法を検討すること。
+- GitHub Actionsワークフロー自体が実際にpush-to-deployまで通ることは、GCP/GitHub
+  側のWIF設定(2節のスクリプト実行結果)が確定するまでこの開発機では動的に検証
+  できていない。初回運用時は`main`への軽微な`apps/**`変更で一度通し、
+  Actionsのログと本節6の確認コマンドの両方で成功を確認すること。

@@ -1,0 +1,33 @@
+[project]
+name = "nazokake-backend"
+version = "0.1.0"
+description = "なぞかけディスカバリー API (apps/evaluator/backend) - 本番デプロイ用のuvロック管理プロジェクト(instructions/218)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[standard]",
+    "uvicorn[standard]",
+    "pydantic",
+    "firebase-admin",
+    "google-cloud-firestore",
+    "google-genai",
+    "httpx",
+    "python-dotenv",
+    "loguru",
+    "nazokake-core",
+]
+
+# 【instructions/218: 決定論的ビルドの確立】以前はrequirements.txtへ全パッケージを
+# バージョン指定無しで列挙していたため(fastapi[standard]等)、`pip install -r`が
+# ビルドのたびに異なる依存関係グラフへ解決される可能性があった(非決定論的ビルド)。
+# uvへ移行し、`uv lock`で生成するuv.lock(このディレクトリ配下、Git管理対象)へ
+# 推移的依存を含めて全バージョンをハッシュ付きで固定する。apps/evaluator/Dockerfile
+# のビルドステージは`uv sync --frozen`でこのuv.lockのみを参照してインストールする
+# ため、ロックファイルを更新しない限りビルド結果が変わることはない。
+[tool.uv.sources]
+nazokake-core = { path = "../../../packages/shared_core" }
+
+# このディレクトリ自体はアプリケーション(main.pyをuvicornで直接起動)であり、配布用の
+# Pythonパッケージではないため、uvに自己ビルド/自己インストールを行わせない
+# (依存関係のみをvenvへ解決させる)。
+[tool.uv]
+package = false

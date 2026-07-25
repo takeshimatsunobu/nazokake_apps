@@ -6,34 +6,56 @@
 #
 #   docker build -f apps/evaluator/Dockerfile -t nazo-agent-api .
 #
-# (Cloud Build の docker builder は BuildKit の --build-context をサポートしない
-#  ため、素直な COPY で nazokake_core (packages/shared_core、リポジトリルート直下)
-#  を取り込む。backend/ 各所はこれを `pip install -e` で参照しているが、これは
-#  開発環境限定のパス依存であり、コンテナ内では実体をコピーして通常インストール
-#  し直す必要がある。)
+# 【instructions/218: uvによる決定論的ビルドの確立】以前はrequirements.txtを
+# バージョン指定無しで`pip install -r`していたため、ビルドのたびに異なる依存関係
+# グラフへ解決される可能性があった(非決定論的ビルド)。apps/evaluator/backend/に
+# uv管理のpyproject.toml/uv.lock(Git管理対象、`uv lock`で生成・更新)を導入し、
+# `uv sync --frozen`のみでインストールする。--frozenはuv.lockと依存関係の定義が
+# 完全一致しない場合にビルド自体を失敗させるため、「ロックファイルの更新漏れ」が
+# 決定論性を静かに破ることを構造的に防ぐ。
 #
-# セキュリティ上の理由から、apps/evaluator/ 直下の .env・serviceAccountKey.json・
-# .venv_ai・data(データセット)・models(LoRA成果物)・frontend 等は
-# COPYの対象を apps/evaluator/backend/ のみに限定することで構造的に一切イメージへ
-# 含めない(機密情報はビルド時に埋め込まず、実行時に環境変数/シークレットマウントで
-# 注入する)。apps/evaluator/.dockerignore はビルドコンテキストがリポジトリルートの
-# 場合Dockerには自動適用されない(Docker/BuildKitが.dockerignoreを探すのはコンテキスト
-# ルート、またはDockerfileと同名の<Dockerfile>.dockerignore)。ただし上記の
-# 限定COPYにより、機密ファイルの混入防止自体はこの挙動に依存しない。
+# nazokake_core(packages/shared_core)は、uv.lockが記録する相対パス依存
+# (`{ path = "../../../packages/shared_core" }`、apps/evaluator/backend/pyproject.toml
+# 基準)をコンテナ内でも解決できるよう、リポジトリと同じ相対ディレクトリ構造
+# (/build/apps/evaluator/backend, /build/packages/shared_core)を再現してCOPYする。
+#
+# セキュリティ上の理由から、apps/evaluator/ 直下の .env・.venv_ai・data(データセット)・
+# models(LoRA成果物)・frontend 等はCOPYの対象を apps/evaluator/backend/ のみに限定
+# することで一切イメージへ含めない(機密情報はビルド時に埋め込まず、実行時に環境変数/
+# シークレットマウントで注入する)。加えて、apps/evaluator/backend/ 配下に開発者の
+# ローカル環境限定でserviceAccountKey.json等の機密ファイルが実在し得ることを
+# instructions/218で確認した(限定COPYだけではこのケースを構造的に防げない)ため、
+# 最終COPYへ `--exclude` を明示し、かつリポジトリルート直下に.dockerignore
+# (Docker/BuildKitがビルドコンテキスト=リポジトリルートの場合に実際に読む場所)を
+# 新設して二重に防止する(apps/evaluator/.dockerignoreはこのビルド構成では
+# Dockerに読まれないため、実効性のある除外はこの2点に一本化した)。
 
-# ---- Builder: 依存関係の解決のみを行う(最終イメージにビルドツールを残さない) ----
+# ---- Builder: uvでロックファイル通りに依存関係を解決する(最終イメージにuv/ビルド
+#      ツールを残さない) ----
 FROM python:3.11-slim AS builder
+
+# uv公式配布バイナリを直接コピーする(pip経由でuv自身を導入すると、その解決自体が
+# 非決定論的になり本末転倒なため)。
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+
+ENV UV_COMPILE_BYTECODE=1 \
+    UV_PYTHON_DOWNLOADS=never
 
 WORKDIR /build
 
-# 依存関係マニフェストのみを先にコピーし、レイヤーキャッシュを効かせる
-COPY apps/evaluator/backend/requirements.txt .
-RUN pip install --no-cache-dir --prefix=/install -r requirements.txt
+# uv.lockが記録する相対パス依存を解決できるよう、リポジトリと同じ相対ディレクトリ
+# 構造を再現してCOPYする(レイヤーキャッシュのため、依存関係マニフェスト類を
+# アプリ本体より先にコピーする)。
+COPY apps/evaluator/backend/pyproject.toml apps/evaluator/backend/uv.lock apps/evaluator/backend/
+COPY packages/shared_core packages/shared_core
 
-# nazokake_core をリポジトリルート(ビルドコンテキスト)から直接コピーし、
-# 通常インストールする(editable installではなく、コンテナ内で完結するインストール)
-COPY packages/shared_core ./shared_core
-RUN pip install --no-cache-dir --prefix=/install ./shared_core
+WORKDIR /build/apps/evaluator/backend
+
+# --frozen: uv.lockと完全一致しない場合はビルドを失敗させる(ロック更新漏れの検知)。
+# --no-install-project: apps/evaluator/backend自体はpackage=false(配布用パッケージ
+# ではないアプリケーション)のため、依存関係のみを/build/apps/evaluator/backend/.venv
+# へインストールする。
+RUN uv sync --frozen --no-install-project --no-dev
 
 
 # ---- Runtime: 軽量な実行専用イメージ ----
@@ -44,16 +66,20 @@ RUN useradd --create-home --uid 1000 appuser
 
 WORKDIR /app
 
-# ビルド済み依存関係のみを取り込む(pip/コンパイラ等のビルドツールチェーンは含まれない)
-COPY --from=builder /install /usr/local
+# uvが解決した仮想環境のみを取り込む(uv/pip/コンパイラ等のビルドツールチェーンは
+# 含まれない)。
+COPY --from=builder /build/apps/evaluator/backend/.venv /app/.venv
 
-# アプリケーション本体(apps/evaluator/backend/)のみをコピーする(apps/evaluator直下の
-# 秘密情報・大容量ファイルはCOPY対象に含まれないため構造的に混入し得ない)
-COPY apps/evaluator/backend/ ./
+# アプリケーション本体(apps/evaluator/backend/)のみをコピーする。--excludeにより、
+# 開発者のローカル環境限定で存在し得る機密ファイルが万一このディレクトリ配下にあっても
+# 構造的にイメージへ含めない(上記ヘッダー参照)。
+COPY --exclude=serviceAccountKey.json --exclude=.env --exclude=.env.* \
+    apps/evaluator/backend/ ./
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH=/app
+    PYTHONPATH=/app \
+    PATH="/app/.venv/bin:${PATH}"
 
 USER appuser
 

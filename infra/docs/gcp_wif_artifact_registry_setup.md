@@ -1,22 +1,30 @@
-# GCP事前構築手順書: WIF + Artifact Registry + Container Analysis (instructions/004)
+# GCP事前構築手順書: WIF + Artifact Registry + Container Analysis (instructions/004/218)
 
 `.github/workflows/deploy_cloud_run.yml` がGitHub Actionsから安全にGCPへデプロイ
 できるようにするため、人間のオペレーターがGCPコンソールまたは`gcloud` CLIで
-**事前に一度だけ**実行しておくべき手順。このドキュメントの手順自体はAIエージェントが
-自律実行しない(GCP IAM・課金に影響する変更のため、人間の実行を前提とする)。
+**事前に一度だけ**実行しておくべき手順。
+
+**instructions/218での更新:** 以下の手順は`infra/scripts/setup_gcp_wif_and_secrets.sh`
+として、コピペして実行可能な単一の冪等スクリプトへ既に落とし込んである。このドキュメントは
+そのスクリプトが何を・なぜ行うかの設計根拠(IAMロールの最小権限根拠等)を説明する
+リファレンスとして残し、実行そのものはスクリプトに一本化する(手順書とスクリプトの
+二重メンテナンスによるドリフトを避けるため)。このドキュメント自体の手順・スクリプトの
+いずれもAIエージェントは自律実行しない(GCP IAM・課金に影響する変更のため、人間の
+実行を前提とする)。
 
 **このセッションでの検証範囲についての正直な注記:** この開発機にはGCPへの認証済み
-アクセスが無く、以下の`gcloud`コマンド群はこのセッション内で実行・動的検証していない
-(`infra/verification_env/README.md`と同じ位置づけ)。実行後は必ず
-[動作確認](#動作確認)の節でパイプラインが実際に通ることを確認すること。
+アクセスが無く、以下の`gcloud`コマンド群(および上記スクリプト)はこのセッション内で
+実行・動的検証していない(`infra/verification_env/README.md`と同じ位置づけ)。実行後は
+必ず[動作確認](#動作確認)の節でパイプラインが実際に通ることを確認すること。
 
 ## 0. 前提
 
 - 対象プロジェクト: `nazokakeapp-137e5`(既存、`docs/DEPLOYMENT.md`参照)。
 - `gcloud auth login` 済み、かつ `gcloud config set project nazokakeapp-137e5` 済み。
-- 以下の`<GITHUB_ORG>/<GITHUB_REPO>`は実際のGitHubリポジトリのowner/repo名に
-  置き換えること(このリポジトリには現在GitHubリモートが設定されていないため、
-  本手順書では実在するリポジトリ名を断定的に記載しない)。
+- GitHubリポジトリ: `takeshimatsunobu/nazokake_apps`(`git remote -v`で確認済み、
+  instructions/218時点で確定)。以下の`<GITHUB_ORG>/<GITHUB_REPO>`は
+  `takeshimatsunobu/nazokake_apps`を指す(`infra/scripts/setup_gcp_wif_and_secrets.sh`
+  では既にこの値をハードコードしてある)。
 
 ## 1. 必要なAPIの有効化
 
@@ -78,7 +86,7 @@ gcloud iam workload-identity-pools providers update-oidc "github-actions-provide
   --project="${PROJECT_ID}" \
   --location="global" \
   --workload-identity-pool="github-actions-pool" \
-  --attribute-condition="assertion.repository == '<GITHUB_ORG>/<GITHUB_REPO>' && assertion.ref == 'refs/heads/main'"
+  --attribute-condition="assertion.repository == 'takeshimatsunobu/nazokake_apps' && assertion.ref == 'refs/heads/main'"
 ```
 
 ## 4. CI/CD用サービスアカウントの作成と、なりすまし(impersonation)許可
@@ -97,7 +105,7 @@ WORKLOAD_IDENTITY_POOL_ID="projects/${PROJECT_NUMBER}/locations/global/workloadI
 gcloud iam service-accounts add-iam-policy-binding "${DEPLOYER_SA}" \
   --project="${PROJECT_ID}" \
   --role="roles/iam.workloadIdentityUser" \
-  --member="principalSet://iam.googleapis.com/${WORKLOAD_IDENTITY_POOL_ID}/attribute.repository/<GITHUB_ORG>/<GITHUB_REPO>"
+  --member="principalSet://iam.googleapis.com/${WORKLOAD_IDENTITY_POOL_ID}/attribute.repository/takeshimatsunobu/nazokake_apps"
 ```
 
 `google-github-actions/auth@v2` の `workload_identity_provider` 入力には、以下の
@@ -170,10 +178,15 @@ done
 
 ## 既知の制約・フォローアップ事項
 
-- `.github/workflows/deploy_cloud_run.yml`のワークフロー内コメントに記載の通り、
-  現状`apps/evaluator/`はこのスーパープロジェクトの`.gitignore`で除外されており、
-  `actions/checkout`では取得されない。本パイプラインを実運用する前に、対象アプリを
-  このリポジトリのgit管理下に含めるか、`DOCKERFILE_PATH`をgit管理下の別アプリ
-  (例: 将来`apps/tactical_cic`にDockerfileが追加された場合)へ向け直す必要がある。
-- 属性条件(`assertion.repository == '<GITHUB_ORG>/<GITHUB_REPO>'`)の実際の値は、
-  リポジトリのGitHubリモートが確定してから設定すること。
+- (instructions/218で解消済み、記録として残す)本ドキュメント執筆当初は
+  `apps/evaluator/`がこのスーパープロジェクトの`.gitignore`で除外されており
+  `actions/checkout`では取得されない制約があったが、commit 39de1ef
+  (「physically integrate apps/evaluator into monorepo」)で物理統合済み。
+  `git ls-files apps/evaluator/Dockerfile`で追跡対象であることを確認済み。
+- (instructions/218で解消済み)属性条件の実際の値は、GitHubリモートが
+  `takeshimatsunobu/nazokake_apps`に確定したため、上記0節・
+  `infra/scripts/setup_gcp_wif_and_secrets.sh`双方で確定値を使用している。
+- 未解決: 実際にこのパイプラインがpush-to-deployまで通ることは、この開発機に
+  認証済みGCP/GitHubアクセスが無いため動的に検証できていない。初回運用時は
+  `main`への軽微な`apps/**`変更で一度通し、[動作確認](#動作確認)の節に従って
+  確認すること。
