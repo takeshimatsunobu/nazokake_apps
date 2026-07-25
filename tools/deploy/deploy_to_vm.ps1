@@ -116,12 +116,13 @@ function Invoke-GcloudWithRetry {
 
 # --- Step 1: Start the VM (idempotent) --------------------------------------
 Write-Host "[1/5] Checking current status of VM: $InstanceName (zone=$Zone) ..." -ForegroundColor Cyan
-$currentStatus = (gcloud compute instances describe $InstanceName `
-    --project=$ProjectId --zone=$Zone --format="get(status)").Trim()
+$currentStatus = gcloud compute instances describe $InstanceName `
+    --project=$ProjectId --zone=$Zone --format="get(status)" 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to get VM status ($InstanceName, zone=$Zone)."
     exit 1
 }
+$currentStatus = ($currentStatus -join "").Trim()
 
 if ($currentStatus -eq "RUNNING") {
     Write-Host "[INFO] VM is already in RUNNING state. Skipping start (idempotent)." -ForegroundColor Yellow
@@ -155,13 +156,14 @@ if ($currentStatus -eq "RUNNING") {
 # --- Step 2: Wait for SSH (port 22) to open ---------------------------------
 Write-Host "[2/5] Waiting for SSH (port 22) to open..." -ForegroundColor Cyan
 
-$externalIp = (gcloud compute instances describe $InstanceName `
+$externalIp = gcloud compute instances describe $InstanceName `
     --project=$ProjectId --zone=$Zone `
-    --format="get(networkInterfaces[0].accessConfigs[0].natIP)").Trim()
+    --format="get(networkInterfaces[0].accessConfigs[0].natIP)" 2>&1
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to get the VM's external IP address."
     exit 1
 }
+$externalIp = ($externalIp -join "").Trim()
 if (-not $externalIp) {
     Write-Error ("VM '$InstanceName' has no external IP address assigned " +
         "(direct reachability check via Test-NetConnection may not be possible in an " +
@@ -193,7 +195,7 @@ Write-Host "[3/5] Checking for the bare repo (~/nazokake_apps.git) on the VM..."
 $bareRepoInitCommand = 'test -d ~/nazokake_apps.git || git init --bare ~/nazokake_apps.git'
 Invoke-GcloudWithRetry -Description "Bare repo initialization check" -ScriptBlock {
     gcloud compute ssh $InstanceName --project=$ProjectId --zone=$Zone `
-        --tunnel-through-iap --command=$bareRepoInitCommand
+        --tunnel-through-iap --command=$bareRepoInitCommand 2>&1
 }
 
 # --- Step 4: Git push to the bare repo (via IAP tunnel) ---------------------
@@ -253,7 +255,7 @@ $kickCommand = 'nohup bash ~/nazokake_apps/infra/verification_env/deploy_pull.sh
 
 Invoke-GcloudWithRetry -Description "Asynchronous kick of deploy_pull.sh" -ScriptBlock {
     gcloud compute ssh $InstanceName --project=$ProjectId --zone=$Zone `
-        --tunnel-through-iap --command=$kickCommand
+        --tunnel-through-iap --command=$kickCommand 2>&1
 }
 
 Write-Host "[DONE] GitOps deploy kick complete. See VM-side progress at " -ForegroundColor Green -NoNewline
