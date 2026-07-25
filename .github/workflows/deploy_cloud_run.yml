@@ -86,6 +86,9 @@ jobs:
       # instructions/220-221での初回E2E実行で判明: `gcloud artifacts docker images
       # scan --location` はArtifact Registryのリージョン(asia-northeast1)ではなく、
       # Container Analysisのマルチリージョン(asia/europe/us)のみを受け付ける。
+      # instructions/222での2回目のE2E実行で判明: 初回のscan実行時、
+      # `local-extract`コンポーネントの追加インストール確認プロンプトが出るが、
+      # GitHub Actionsの非対話セッションでは応答できずエラーになるため --quiet が必要。
       - name: Scan image for CRITICAL/HIGH vulnerabilities (hard-fail gate)
         run: |
           set -euo pipefail
@@ -93,6 +96,7 @@ jobs:
 
           SCAN_NAME=$(gcloud artifacts docker images scan "${IMAGE_REF}" \
             --location="asia" \
+            --quiet \
             --format='value(response.scan)')
           echo "scan resource: ${SCAN_NAME}"
 
