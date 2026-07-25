@@ -61,13 +61,15 @@ RUN uv sync --frozen --no-install-project --no-dev
 # ---- Runtime: 軽量な実行専用イメージ ----
 FROM python:3.11-slim AS runtime
 
-# instructions/223: 初回のE2Eデプロイ検証で検出されたCRITICAL/HIGH脆弱性(11件)への対応。
+# instructions/223-224: 初回のE2Eデプロイ検証で検出されたCRITICAL/HIGH脆弱性(11件)への対応。
 # 内訳はいずれもアプリの依存関係(uv管理の.venv)ではなく、ベースイメージ付属のOS
 # パッケージ(perl/attr/acl等)およびシステムPythonのpip同梱物(wheel/jaraco-context)。
-# OS側はDebianリポジトリの最新パッチへ、システムPython側は既知の修正バージョンへ
-# 明示的に上げる。perl/attr/aclは今回のスキャン結果でFIXED_VERSIONが空欄(上流未パッチ)
-# だったため、apt upgradeで解消しない可能性がある。次回スキャンで残存有無を確認すること。
+# perl/attr/aclは前回のスキャン結果でFIXED_VERSIONが空欄(上流未パッチ)だったため、
+# apt upgradeでは解消しない。grepで確認した通りこのアプリ・ビルドはperl/setfattr/
+# getfattr/setfacl/getfaclのいずれも呼び出しておらず実行時に不要なため、Attack
+# Surface縮小の観点からpurgeで完全に排除する(instructions/224のハードニング方針)。
 RUN apt-get update && apt-get upgrade -y --no-install-recommends \
+    && apt-get purge -y --auto-remove perl attr acl \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
