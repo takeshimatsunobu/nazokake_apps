@@ -113,6 +113,18 @@ async def health_check():
     return {"status": "ok"}
 
 
+# instructions/232: Cloud Runの各インスタンスは永続ボリュームを持たず、コンテナ起動の
+# たびにSQLiteファイルが空の状態から始まる(NAZOKAKE_DB_PATHを/tmpへ切り替えた
+# Dockerfile側の修正と対になる)。テーブル作成(CREATE TABLE IF NOT EXISTS)を
+# 呼び出す経路がこれまでアプリ内に存在しなかったため、起動時に明示的に実行する。
+from nazokake_core.database import init_db  # noqa: E402
+
+
+@app.on_event("startup")
+async def _init_db_on_startup() -> None:
+    await init_db()
+
+
 # 【instructions/204: フロントエンド一元配信】フロントエンドを別ポートで立ち上げる
 # 運用はCORSエラー・トイルの温床としてSRE監査でRejectされた。バックエンド(FastAPI)
 # 自身がフロントエンドの静的ファイルを直接配信する。

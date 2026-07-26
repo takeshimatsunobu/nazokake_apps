@@ -140,6 +140,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PROJECT_ROOT=/app \
     PATH="/build/apps/evaluator/backend/.venv/bin:${PATH}"
 
+# nazokake_core/database.pyのDEFAULT_DB_PATH("nazokake_local.db")は相対パスのため、
+# uvicornのcwd(=WORKDIR /app、root:root・755所有)を起点に解決され、非rootの
+# appuserには書き込み権限が無くsqlite3.OperationalError: unable to open database
+# fileでリクエストのたびにcrashする(tactical_cicのDB(instructions/225-229)と
+# 同一原因)。書き込み保証のある/tmp(ephemeral)を明示指定する。永続化は別途
+# 対応が必要な既知の制約であり、現時点ではまず動かすことを優先する。
+ENV NAZOKAKE_DB_PATH=/tmp/nazokake_local.db
+
 USER appuser
 
 EXPOSE 8080
