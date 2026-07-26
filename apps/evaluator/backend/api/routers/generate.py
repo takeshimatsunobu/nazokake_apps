@@ -20,7 +20,7 @@ import uuid
 from datetime import datetime, timezone
 from loguru import logger
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 
 from api.deps import get_db, handle_exceptions
 from api.routers.admin_costs import is_budget_exceeded
@@ -28,6 +28,7 @@ from models.schemas import GenerateRequest
 from services.generation import generate_via_gemini, generate_via_llmjp
 from services.evaluation import run_evaluation, AXES
 from nazokake_core.database import async_get_item, async_upsert_item
+from nazokake_core.firestore_sync import sync_once_safe
 from nazokake_core.quality_circuit_breaker import async_record_evaluation_score
 from nazokake_core.schemas import Result, Scores
 
@@ -196,7 +197,12 @@ async def _guarded_progressive(db, doc_id: str, odai: str, pair_id: str):
 
 @router.get("/status/{doc_id}")
 @handle_exceptions
-async def get_status(doc_id: str):
+async def get_status(doc_id: str, background_tasks: BackgroundTasks):
+    # instructions/239: progressive_generate()自体はasyncio.create_taskで発火される
+    # 検出不能なバックグラウンドタスク(FastAPIのリクエストコンテキストを持たない)ため、
+    # "all_completed"等の後続状態のFirestoreバックアップは、フロントが完了まで繰り返す
+    # このポーリング呼び出しに便乗させて拾う。
+    background_tasks.add_task(sync_once_safe)
     data = await async_get_item(doc_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Not found")
@@ -225,7 +231,7 @@ async def get_status(doc_id: str):
 
 @router.post("/generate")
 @handle_exceptions
-async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
+async def generate_ai(req: GenerateRequest, background_tasks: BackgroundTasks, db=Depends(get_db)):
     doc_id = uuid.uuid4().hex
     # バッチ工場(batch/main.py)と同一フォーマットのDPOペアID。Gemini/ELYZA両パスの
     # ローカルDB更新へ記録し、抽出スクリプトがバッチ由来・アプリ由来を同一ロジックで
@@ -242,6 +248,9 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
         "random_weight": random.random(),  # noqa: S311 (無限スクロール用シーク乱数。暗号用途ではない)
         "dpo_pair_id": pair_id,
     })
+    # instructions/239: Cloud Run上のSQLiteはエフェメラルなため、書き込み直後に
+    # Firestoreへのバックアップ同期をBackgroundTasksで試みる(レスポンスをブロックしない)。
+    background_tasks.add_task(sync_once_safe)
     # 背景で生成パイプラインを発火し、即座にレスポンスを返す（HTTPをブロックしない）
     task = asyncio.create_task(_guarded_progressive(db, doc_id, req.odai, pair_id))
     _bg_tasks.add(task)

@@ -1,0 +1,18 @@
+【ミッション: クリーンアップ機構の有効化とFirestoreバックアップ同期の実装】
+
+前回のセッションでスタックした2つの課題（237, 238）を、あなたの優れた分析に基づいて安全かつ確実に解決します。
+
+Step 1: 既存クリーンアップスクリプトの定期実行化（旧237）
+あなたは既に `tools/cleanup_git_resources.py` がマージ状態に基づく安全な削除を行っていることを発見しました。新しいスクリプトは作成せず、この既存スクリプトをGitHub Actionsのスケジュール実行（Cron）で定期的に走らせるワークフローファイル（例: `.github/workflows/cron_cleanup.yml`）を新規作成してください。
+- 実行頻度: 毎日深夜（例: `cron: '0 18 * * *'` ※UTC）
+- 処理内容: リポジトリをチェックアウトし、`uv run python tools/cleanup_git_resources.py` を実行する。
+
+Step 2: Cloud RunからFirestoreへの非同期バックアップ（旧238）
+Cloud Run上のSQLite（`/tmp`）は揮発性ですが、GCS FUSEはロック問題があり、Cloud SQLはコスト面で採用できません。
+そこで、既存の `firestore_sync_worker.py` のロジックを活用し、FastAPIのバックエンド（`apps/evaluator/backend/main.py` 等）でデータが作成・更新された際に、FastAPIの `BackgroundTasks` を用いてFirestoreへ非同期でデータをPush（バックアップ）する仕組みを実装してください。
+- SSoTの原則（SQLiteが正、Firestoreはレプリカ）は維持されます。
+- Cloud Runインスタンスが再起動してSQLiteが空になっても、Firestoreにはデータが残る状態を作ります。
+
+Step 3: コミットと報告
+実装が完了したら、変更をコミットし、リモートへPushしてデプロイをトリガーしてください。
+完了後、実装したバックアップの仕組みについて簡潔に報告してください。

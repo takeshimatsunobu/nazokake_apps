@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime, timezone
 from typing import Union
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from firebase_admin import firestore
 from api.deps import verify_admin_token, handle_exceptions
 from models.schemas import (
@@ -24,6 +24,7 @@ from nazokake_core.database import (
     async_retry_dlq_item,
     async_upsert_item,
 )
+from nazokake_core.firestore_sync import sync_once_safe
 
 router = APIRouter()
 
@@ -83,6 +84,7 @@ def _resolve_statuses(data: dict) -> tuple:
 @handle_exceptions
 async def apply_human_action(
     req: HumanActionRequest,
+    background_tasks: BackgroundTasks,
     admin_token: dict = Depends(verify_admin_token),
 ):
     """管理者キュレーション: 対象なぞかけの gemini_status / elyza_status を更新する。
@@ -99,6 +101,9 @@ async def apply_human_action(
         raise HTTPException(status_code=404, detail="対象のなぞかけが見つかりません")
 
     await async_upsert_item({"doc_id": req.target_slug, status_field: new_status})
+    # instructions/239: Cloud Run上のSQLiteはエフェメラルなため、キュレーター操作の
+    # 書き込み直後にFirestoreへのバックアップ同期をBackgroundTasksで試みる。
+    background_tasks.add_task(sync_once_safe)
     updated = await async_get_item(req.target_slug)
     # 【絶対制約】sync_status(クラウド同期状態)はUI向けレスポンスに含めない。
     ui_updated = {k: v for k, v in updated.items() if k not in ("sync_status", "last_sync_error")}
