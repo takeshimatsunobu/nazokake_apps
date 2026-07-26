@@ -1,0 +1,513 @@
+[
+  {
+    "file": "tools/file_reader.py",
+    "module_docstring": "tools/file_reader.py\n======================\nTool-Augmented Agent 用: ファイルの指定行範囲だけを行番号付きで読み込むツール。",
+    "classes": [],
+    "functions": [
+      {
+        "name": "read_file_section",
+        "is_async": false,
+        "signature": "read_file_section(file_path: Path | str, start_line: int, end_line: int) -> str",
+        "docstring": "file_pathのstart_line〜end_line(1始まり・両端含む)を行番号付きで返す。\n\nファイル未存在・範囲外指定に対するフェイルセーフを備える。",
+        "lineno": 9,
+        "decorators": []
+      }
+    ]
+  },
+  {
+    "file": "tools/ast_modifier.py",
+    "module_docstring": "tools/ast_modifier.py\n======================\nNazo-Agent ローカルファースト化(Epic 1) / Feature 1.2:\nLLMによる非決定的な全文書き換え(Aiderへの過剰依存)を廃し、libcstによる\nASTベースの安全なピンポイント置換(関数/クラス単位)を行う基礎エンジン。\n\nlibcstはコメント・空白・インデント等の具象構文情報を保持したまま構文木を\n編集できるため、対象外のコード(前後の関数・import・モジュールレベルの\nコメント等)を一切破壊せずに、指定した関数/クラスのノードだけを新しい\nコードで置き換えられる。\n\n修正指示はJSON形式で受け取る:\n{\n    \"file_path\": \"apps/evaluator/backend/main.py\",\n    \"target_name\": \"health_check\",\n    \"new_code\": \"async def health_check():\n    return {\"status\": \"ok\"}\n\"\n}",
+    "classes": [
+      {
+        "name": "AstModificationInstruction",
+        "bases": [
+          "BaseModel"
+        ],
+        "docstring": "修正指示の厳格なスキーマ。Claude API の Tool Calling(構造化出力)でも\nこのモデルと同一の入力スキーマ(model_json_schema())を用いることで、\nAPIレベルで型を保証する(Single Source of Truth)。",
+        "lineno": 43,
+        "methods": []
+      },
+      {
+        "name": "TargetNodeReplacer",
+        "bases": [
+          "cst.CSTTransformer"
+        ],
+        "docstring": "target_nameに完全一致する関数/クラス定義ノードのみを、new_nodeに\n差し替えるTransformer。\n\nそれ以外のノード(前後の関数・import・モジュールレベルのコメント等)には\n一切触れない。同名ノードが複数存在する場合は最初に見つかった1件のみを\n置換する(意図しない全置換を避けるため)。",
+        "lineno": 70,
+        "methods": [
+          {
+            "name": "__init__",
+            "is_async": false,
+            "signature": "__init__(self, target_name: str, new_node: cst.CSTNode) -> None",
+            "docstring": null,
+            "lineno": 79,
+            "decorators": []
+          },
+          {
+            "name": "leave_FunctionDef",
+            "is_async": false,
+            "signature": "leave_FunctionDef(self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef) -> cst.BaseStatement",
+            "docstring": null,
+            "lineno": 84,
+            "decorators": []
+          },
+          {
+            "name": "leave_ClassDef",
+            "is_async": false,
+            "signature": "leave_ClassDef(self, original_node: cst.ClassDef, updated_node: cst.ClassDef) -> cst.BaseStatement",
+            "docstring": null,
+            "lineno": 96,
+            "decorators": []
+          }
+        ]
+      }
+    ],
+    "functions": [
+      {
+        "name": "_get_top_level_names",
+        "is_async": false,
+        "signature": "_get_top_level_names(code_str: str) -> set[str]",
+        "docstring": "ソース全体をASTでパースし、トップレベルの関数/クラス/import/定数の\n識別子名の集合を返す。\n\n行数ヒューリスティック(is_mass_deletion等)は「行数を維持したまま無関係な\nコード要素を消し去る」ケースを検知できない。この関数はノード単位の名前集合を\n比較するためのセマンティック差分の基礎データを提供する。",
+        "lineno": 107,
+        "decorators": []
+      },
+      {
+        "name": "_atomic_write_text",
+        "is_async": false,
+        "signature": "_atomic_write_text(path: Path, content: str) -> None",
+        "docstring": "対象ファイルを不可分(アトミック)に上書きする。\n\n対象ファイルと同一ディレクトリ(同一ドライブ・パーティション)に一時ファイルを\n作成して書き込み、fsyncで物理ディスクへ確実に同期した後、os.replaceで元ファイルを\nすげ替える。os.replaceはOS側で不可分な操作として保証されるため、書き込み中に\nプロセスが強制終了(OOM等)しても、対象ファイルが空(0バイト)や中途半端な内容の\nまま残ることはない(残るのは書き込み前の旧内容か、書き込み後の新内容のみ)。\n\n書き込み~すげ替えの一連の操作は `f\"{path}.lock\"` に対するファイルロック\n(filelock, タイムアウト付き)で保護し、複数プロセス/スレッドからの同時書き込みを\n排他制御する。タイムアウト(規定10秒)以内にロックを獲得できない場合、\n複数ワーカーからの一過性の競合を即座のフェイルファストにしないため、\ntenacityによる指数的バックオフ(1,2,4,8,10秒...最大5回試行)で再試行する。\n5回試行してもなお獲得できない場合のみ、filelock.Timeout が最終的に伝播する。\n\nトランザクション(ロック区間)を抜けた直後、ロックファイル自身\n(`f\"{path}.lock\"`)を物理的に破棄する。filelockはロック解放後もこの\nファイル自体を残すため、放置するとDockerサンドボックス側のBlast Radius検知\n(Epic 2 5次元評価ゲート、instructions/158)が意図した書き込み対象以外の\nファイル変更として誤検知(偽陽性)する。書き込み自体が失敗した場合でも\nロックファイルだけは残さないよう、finallyで確実に破棄する。",
+        "lineno": 140,
+        "decorators": [
+          "retry(retry=retry_if_exception_type(filelock.Timeout), wait=wait_exponential(multiplier=1, min=1, max=10), stop=stop_after_attempt(5), reraise=True)"
+        ]
+      },
+      {
+        "name": "_parse_new_node",
+        "is_async": false,
+        "signature": "_parse_new_node(new_code: str) -> cst.CSTNode",
+        "docstring": "new_code(関数/クラス定義1個ぶんのソース断片)をパースし、\n先頭の関数/クラス定義ノードを取り出す。",
+        "lineno": 190,
+        "decorators": []
+      },
+      {
+        "name": "_string_based_fallback_replace",
+        "is_async": false,
+        "signature": "_string_based_fallback_replace(source: str, target_name: str, new_code: str) -> str | None",
+        "docstring": "対象ファイル自体が構文エラーを含みlibcstでパースできない場合の最終手段。\n\nASTノード単位の置換は「元のファイル全体がまず構文的に妥当である」ことを前提と\nするため、対象ファイル自身の構文エラーそのものが修正対象であるケース(既存の\nsyntax_error Fixture等)を原理的に扱えない。この関数は`target_name`で始まる\n定義行を先頭が非空白文字の次の行(=次のトップレベル定義、またはEOF)まで\n「その関数/クラスのおおよその範囲」とみなし、行単位の文字列置換で丸ごと\n差し替える。target_nameの定義行が見つからない場合はNoneを返す(呼び出し元は\nフォールバックそのものの失敗として安全側に倒す)。",
+        "lineno": 203,
+        "decorators": []
+      },
+      {
+        "name": "_apply_string_fallback",
+        "is_async": false,
+        "signature": "_apply_string_fallback(path: Path, source: str, target_name: str, new_code: str, parse_error: Exception) -> str",
+        "docstring": "libcstによる対象ファイルのパースが失敗した場合のString-basedフォールバック\n(instructions/164)。\n\nこの経路は、通常経路が持つ安全網(セマンティック差分検証・大量削除/挿入\nヒューリスティック)のいずれも適用できない(それらは元ファイルをASTとして\n解釈できることが前提のため)。唯一の安全網として、置換後の全文をPython標準の\nast.parseで検証し、それでも構文エラーが残る場合は書き込みを行わずエラーを返す\n(フォールバック自体が失敗した場合の安全側フェイル)。",
+        "lineno": 236,
+        "decorators": []
+      },
+      {
+        "name": "apply_modification",
+        "is_async": false,
+        "signature": "apply_modification(instruction: dict) -> str",
+        "docstring": "1件の修正指示を適用し、結果メッセージを返す(ファイルは成功時のみ上書き)。",
+        "lineno": 272,
+        "decorators": []
+      },
+      {
+        "name": "main",
+        "is_async": false,
+        "signature": "main() -> None",
+        "docstring": null,
+        "lineno": 359,
+        "decorators": []
+      }
+    ]
+  },
+  {
+    "file": "tools/pyright_tool.py",
+    "module_docstring": "tools/pyright_tool.py\n=======================\nTool-Augmented Agent 用: Pyrightで対象ファイルを型検査し、診断結果を\n簡潔な文字列で返すツール。Claudeが推測で型エラーを「直したつもり」になる\nハルシネーションを防ぎ、正確な型情報(エラー箇所・メッセージ・ルール)に基づいて\n判断させるためのファクト取得口。",
+    "classes": [],
+    "functions": [
+      {
+        "name": "get_type_info",
+        "is_async": false,
+        "signature": "get_type_info(target_file: str) -> str",
+        "docstring": "target_file をPyrightで型検査し、致命的な診断結果のみを簡潔な文字列で返す。\n\n`uv run pyright --outputjson <target_file>` を実行し、標準出力のJSONを\nパースする。IGNORED_RULES に該当するruleと、severityが\"information\"の指摘は\nフィルタリングして除外し、残った致命的なエラーのみを1行ずつの人間可読な形式へ\n変換する。Pyright自体の実行に失敗した場合や出力がJSONとして解釈できない場合は\nError文字列を返す(呼び出し元のツールループを止めない)。",
+        "lineno": 30,
+        "decorators": []
+      }
+    ]
+  },
+  {
+    "file": "tools/nazo_agent.py",
+    "module_docstring": null,
+    "classes": [
+      {
+        "name": "TokenCircuitBreaker",
+        "bases": [],
+        "docstring": "セッション(デーモン起動中)全体のClaude APIトークン消費を追跡する安全装置。",
+        "lineno": 29,
+        "methods": [
+          {
+            "name": "add",
+            "is_async": false,
+            "signature": "add(cls, tokens: int)",
+            "docstring": null,
+            "lineno": 36,
+            "decorators": [
+              "classmethod"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "AiderTask",
+        "bases": [
+          "BaseModel"
+        ],
+        "docstring": null,
+        "lineno": 98,
+        "methods": []
+      },
+      {
+        "name": "CognitiveLoadExceededError",
+        "bases": [
+          "Exception"
+        ],
+        "docstring": "認知負荷(エラーログ行数・プロンプト文字数)が閾値を超過したことを示す例外。\n\nsys.exit(1)によるプロセス即死ではなく、呼び出し元(main_flow)が捕捉して\n警告を出力した上でGraceful Shutdown(タスクのスキップ)へ落とし込むために使う。",
+        "lineno": 649,
+        "methods": []
+      }
+    ],
+    "functions": [
+      {
+        "name": "acd_mask_noise",
+        "is_async": false,
+        "signature": "acd_mask_noise(line: str) -> str",
+        "docstring": null,
+        "lineno": 117,
+        "decorators": []
+      },
+      {
+        "name": "acd_phase1_dedup",
+        "is_async": false,
+        "signature": "acd_phase1_dedup(error_log: str) -> str",
+        "docstring": null,
+        "lineno": 124,
+        "decorators": []
+      },
+      {
+        "name": "acd_extract_symbols",
+        "is_async": false,
+        "signature": "acd_extract_symbols(file_path: Path) -> list[str]",
+        "docstring": null,
+        "lineno": 146,
+        "decorators": []
+      },
+      {
+        "name": "acd_extract_function_blocks",
+        "is_async": false,
+        "signature": "acd_extract_function_blocks(file_path: Path) -> list[tuple[int, int, str, str]]",
+        "docstring": "AST解析により、ファイル内の関数/クラス単位の(開始行, 終了行, 名前, ソース)を抽出する",
+        "lineno": 159,
+        "decorators": []
+      },
+      {
+        "name": "acd_find_enclosing_block",
+        "is_async": false,
+        "signature": "acd_find_enclosing_block(blocks: list[tuple[int, int, str, str]], line_no: int)",
+        "docstring": "指定行を含む最小(最も内側)のブロックを返す",
+        "lineno": 182,
+        "decorators": []
+      },
+      {
+        "name": "acd_parse_error_locations",
+        "is_async": false,
+        "signature": "acd_parse_error_locations(log_text: str) -> list[tuple[str, int, str]]",
+        "docstring": "エラーログから (ファイルパス, 行番号, 該当行全文) を抽出する",
+        "lineno": 190,
+        "decorators": []
+      },
+      {
+        "name": "_acd_format_block_section",
+        "is_async": false,
+        "signature": "_acd_format_block_section(header: str, start: int, end: int, source: str, messages: list[str]) -> str",
+        "docstring": null,
+        "lineno": 200,
+        "decorators": []
+      },
+      {
+        "name": "acd_ast_compress",
+        "is_async": false,
+        "signature": "acd_ast_compress(error_log: str, project_root: Path, max_chars: int = ACD_MAX_SAFE_CHARS) -> str",
+        "docstring": "正規表現/固定行数窓によるラフな切り出しを廃し、AST解析で\n「エラーが発生している関数/クラスのブロックのみ」を正確に抽出して圧縮する。\nブロックを特定できない行はメッセージ1行のみ残す。全体が安全閾値を超える場合は\nセクション単位で安全に切り捨てる(フェイルセーフ)。",
+        "lineno": 209,
+        "decorators": []
+      },
+      {
+        "name": "acd_ast_context_for_file",
+        "is_async": false,
+        "signature": "acd_ast_context_for_file(deduped_log: str, target_file: Path) -> str",
+        "docstring": "指定ファイルに関するエラーのみ、AST抽出したブロック単位のコンテキストを返す(Phase 3用)",
+        "lineno": 268,
+        "decorators": []
+      },
+      {
+        "name": "build_static_context",
+        "is_async": false,
+        "signature": "build_static_context() -> Path",
+        "docstring": null,
+        "lineno": 305,
+        "decorators": []
+      },
+      {
+        "name": "check_http_alive",
+        "is_async": true,
+        "signature": "check_http_alive(url: str, timeout: float = 2.0) -> bool",
+        "docstring": "汎用ヘルスチェック（200系レスポンスで生存判定）",
+        "lineno": 327,
+        "decorators": []
+      },
+      {
+        "name": "check_ollama",
+        "is_async": true,
+        "signature": "check_ollama() -> bool",
+        "docstring": "Ollamaサーバーのヘルスチェック",
+        "lineno": 337,
+        "decorators": []
+      },
+      {
+        "name": "kill_process_by_port",
+        "is_async": false,
+        "signature": "kill_process_by_port(port: int) -> list[str]",
+        "docstring": "指定ポートをLISTENしているプロセスを検出し、Gracefulに終了する(ゾンビプロセス対策)。\n\nhealth_urlが応答しないにもかかわらずポートを掴んだままの子プロセス(クラッシュ後の\n残骸等)が残ると、後続のPopenがアドレス使用中で失敗し続ける。起動直前にこれを\n自動的に一掃する。psutilによるクロスプラットフォーム実装(Windows固有の\nnetstat/taskkillへの依存を排除)。まずterminate()で穏やかな終了を試み、\nタイムアウトした場合のみkill()で強制終了する。OSの権限モデルにより対象プロセスの\n情報取得・終了操作が拒否される場合(psutil.AccessDenied)や、対象プロセスが\nスキャン後に既に終了していた場合(psutil.NoSuchProcess)は、それぞれ個別に捕捉して\n警告ログを出力し、システムをクラッシュさせず後続処理へ安全に引き継ぐ\n(ベストエフォートで、終了させたPIDのリストを返す)。",
+        "lineno": 342,
+        "decorators": []
+      },
+      {
+        "name": "_get_service_lock",
+        "is_async": false,
+        "signature": "_get_service_lock(key: str) -> asyncio.Lock",
+        "docstring": null,
+        "lineno": 409,
+        "decorators": []
+      },
+      {
+        "name": "_ensure_service_alive",
+        "is_async": true,
+        "signature": "_ensure_service_alive(name: str, emoji: str, health_url: str, start_cmd: list[str], start_cwd: Path, already_ok_msg: str, log_path: Path, extra_env: dict | None = None, retries: int = 15, interval: float = 2.0, kill_port: int | None = None) -> None",
+        "docstring": "汎用: 生存確認 → (必要ならゾンビ掃除) → 停止していればバックグラウンド起動 → ポーリング → 失敗時警告\n\n子プロセスの標準出力/エラーはlog_pathに保存する(過去にDEVNULLへ捨てていたため、\nUnicodeEncodeError等の実クラッシュ原因が一切見えず診断に手動再現が必要だった)。\nkill_port を指定すると、起動前に対象ポートを掴んでいるゾンビプロセスを強制終了する\n(Ollamaのような長寿命の外部サービスには絶対に使わないこと。Backend/Frontendのような\nこのスクリプト自身が管理するサービス専用)。",
+        "lineno": 417,
+        "decorators": []
+      },
+      {
+        "name": "_route_target_domain",
+        "is_async": false,
+        "signature": "_route_target_domain(instruction: str) -> tuple[Path, str, Path]",
+        "docstring": "ユーザーの指示からターゲット領域(ドメイン)と、そのvenv Pythonを自動判定する",
+        "lineno": 482,
+        "decorators": []
+      },
+      {
+        "name": "startup_local_services",
+        "is_async": true,
+        "signature": "startup_local_services()",
+        "docstring": "V8.8: ローカルインフラの自動監査と起動（Ollama + Backend + Frontend）",
+        "lineno": 505,
+        "decorators": []
+      },
+      {
+        "name": "_progress_dots",
+        "is_async": true,
+        "signature": "_progress_dots(message: str, stop_event: asyncio.Event)",
+        "docstring": "V8.7 確実なプログレス表示（ドットを打つ）",
+        "lineno": 590,
+        "decorators": []
+      },
+      {
+        "name": "phase0_ruff_autofix",
+        "is_async": true,
+        "signature": "phase0_ruff_autofix() -> None",
+        "docstring": "未使用importやフォーマット違反等のトイルを、LLM推論(Phase 2)前にPythonネイティブで事前消滅させる。\n\nruffの修復結果はlogger.debugにのみ記録し、標準出力やPhase 1のメインエラーログ\n(LLMへ渡される成果物)には一切含めない(サイレント実行)。",
+        "lineno": 604,
+        "decorators": []
+      },
+      {
+        "name": "check_cognitive_load",
+        "is_async": false,
+        "signature": "check_cognitive_load(text: str, max_lines: int | None = None, max_chars: int | None = None) -> tuple[bool, str]",
+        "docstring": "入力テキストの行数・文字数を計算し、認知負荷が許容範囲内かを判定する。\n\nmax_lines / max_chars のうち指定された項目のみを検査する(両方指定も可)。\n戻り値: (許容範囲内か, 判定内容を示す説明文字列)",
+        "lineno": 657,
+        "decorators": []
+      },
+      {
+        "name": "sanitize_pii",
+        "is_async": false,
+        "signature": "sanitize_pii(text: str) -> str",
+        "docstring": "文字列中の機密情報(メールアドレス・APIキー/クレデンシャル・電話番号らしき\n数字パターン)を正規表現で検知し、[XXX MASKED]形式でマスキングする。\n\nデッドレター(DLQ)にエラーメッセージや会話履歴をプレーンテキストで保存する際、\n機密情報がそのまま平文で記録・漏洩することを防ぐための軽量なサニタイズ処理。\n文字列でない入力は安全に文字列へキャストしてから処理する。",
+        "lineno": 692,
+        "decorators": []
+      },
+      {
+        "name": "_write_dead_letter",
+        "is_async": false,
+        "signature": "_write_dead_letter(*, target_file: str | None, system_prompt, messages: list, final_error: str, raw_response: str) -> Path",
+        "docstring": "自己修正ループが最大リトライ回数に達し縮退運転へ移行する際、失敗時点の\n全文脈(システムプロンプト・会話履歴・最終エラー・Claudeの生の応答)を\ntools/audit_reports/dead_letters/ 配下へ構造化JSONとして保存する。\nなぜ自己修正しきれなかったかを事後分析できるようにする可観測性強化。\n\n書き込み前に sanitize_pii で全文字列値をマスキングし、メールアドレスや\nAPIキー等の機密情報がDLQへ平文で漏洩することを防ぐ(Epic 4 - 追加課題K)。",
+        "lineno": 707,
+        "decorators": []
+      },
+      {
+        "name": "run_linter",
+        "is_async": true,
+        "signature": "run_linter(tool_name: str) -> str",
+        "docstring": null,
+        "lineno": 764,
+        "decorators": []
+      },
+      {
+        "name": "phase1_audit",
+        "is_async": true,
+        "signature": "phase1_audit(is_final = False) -> Path",
+        "docstring": null,
+        "lineno": 808,
+        "decorators": []
+      },
+      {
+        "name": "phase2_claude_translation",
+        "is_async": true,
+        "signature": "phase2_claude_translation(user_instruction: str, error_log_path: Path) -> dict",
+        "docstring": "Claude API による「AST置換指示」への翻訳・分割。\n\n従来は自然言語でJSON出力を要求し、応答テキストからMarkdownフェンスを\n手動で除去してjson.loadsする防御的パースに依存していた。tools パラメータに\ntools.ast_modifier.AstModificationInstruction と同一のスキーマ(model_json_schema())\nを関数(Tool)として定義し、tool_choiceでその呼び出しを強制することで、\n解説文やMarkdown装飾が混入する余地をAPIレベルで排除する。",
+        "lineno": 838,
+        "decorators": []
+      },
+      {
+        "name": "_build_tree_lines",
+        "is_async": false,
+        "signature": "_build_tree_lines(dir_path: Path, prefix: str, lines: list) -> None",
+        "docstring": "dir_path直下を除外ルール適用済みで走査し、tree形式の行をlinesへ追記する再帰ヘルパー。",
+        "lineno": 1109,
+        "decorators": []
+      },
+      {
+        "name": "generate_directory_tree",
+        "is_async": false,
+        "signature": "generate_directory_tree() -> str",
+        "docstring": "apps/, packages/, tools/ 配下のディレクトリツリーを文字列として生成する。\n\nTree-based Context アーキテクチャ(Epic 1 FinOps)の中核: フルソースコードダンプを\nClaudeへ送る代わりに、この「地図」だけを渡し、実際に必要なファイルの内容は\nClaude自身がread_file_section等のツールでOn-demandに取得する構成へ移行する。\n除外ルール(仮想環境・生成物ディレクトリ、バイナリ拡張子等)は\ntools/extract_source.py と共通化し、二重管理を避ける。",
+        "lineno": 1134,
+        "decorators": []
+      },
+      {
+        "name": "phase2_claude_tool_augmented",
+        "is_async": true,
+        "signature": "phase2_claude_tool_augmented(user_instruction: str, error_log_path: Path) -> dict",
+        "docstring": "Tool-Augmented版Phase 2。\n\ntools.ast_mapper.get_symbol_definition / tools.file_reader.read_file_section /\ntools.pyright_tool.get_type_info をClaudeに公開し、Claude自身が「双方向推論ループ」で\n自律的にコードを調査してからAiderTask のリストを確定させる。get_type_info はPyrightの\n実診断結果を返すことで、型エラーの推測によるハルシネーション修正を防ぐ。\n最終提出は submit_aider_plan ツールへのtool_choice強制で構造化出力を保証する。",
+        "lineno": 1156,
+        "decorators": []
+      },
+      {
+        "name": "_drain_stream",
+        "is_async": true,
+        "signature": "_drain_stream(stream: asyncio.StreamReader, buffer: list, activity: dict) -> None",
+        "docstring": null,
+        "lineno": 1459,
+        "decorators": []
+      },
+      {
+        "name": "run_subprocess_with_idle_timeout",
+        "is_async": true,
+        "signature": "run_subprocess_with_idle_timeout(process: asyncio.subprocess.Process, idle_timeout: float)",
+        "docstring": null,
+        "lineno": 1471,
+        "decorators": []
+      },
+      {
+        "name": "_resolve_target_file",
+        "is_async": false,
+        "signature": "_resolve_target_file(file_path: str) -> Path | None",
+        "docstring": "LLMが返したfile_pathをゼロトラストで解決する。\n\nTARGET_APP_DIR起点・BASE_DIR起点の2候補を.resolve()した絶対パスで存在確認し、\nどちらも無ければファイル名一致でBASE_DIR配下を検索する(候補が複数なら曖昧なので不採用)。\n最終的にBASE_DIR配下に封じ込まれていない候補(絶対パス指定やパストラバーサル等)は\n採用しない。",
+        "lineno": 1494,
+        "decorators": []
+      },
+      {
+        "name": "phase3_aider_execution",
+        "is_async": true,
+        "signature": "phase3_aider_execution(tasks: list[dict], deduped_error_log: str, static_context_path: Path) -> tuple[int, list[str]]",
+        "docstring": null,
+        "lineno": 1526,
+        "decorators": []
+      },
+      {
+        "name": "_has_staged_changes",
+        "is_async": false,
+        "signature": "_has_staged_changes(cwd: Path, files: list[str]) -> bool",
+        "docstring": "指定ファイル群に、コミット可能なステージ済み変更(新規/変更/削除)があるかを判定する。\n\n`git diff --cached --quiet` は多くの場合これで十分だが、新規追跡ファイル\n(直前の `git add` で初めてインデックスに入ったファイル)を含むケースを\n確実に扱うため、`git status --porcelain --` の各行の先頭1文字(インデックス側の\nステータス)を直接判定する: 空白(' ')は未ステージ、'?' は完全未追跡を意味し、\nそれ以外(A/M/D/R/C 等)はステージ済み変更が存在することを意味する。",
+        "lineno": 1792,
+        "decorators": []
+      },
+      {
+        "name": "_commit_or_shadow",
+        "is_async": false,
+        "signature": "_commit_or_shadow(target_dir: Path, files: list[str], commit_message: str) -> bool",
+        "docstring": "settings.shadow_mode(instructions/182)が有効な場合、実際のgit add/commitを\n一切行わず(インデックスへのステージすら行わない)、コミットされたはずの内容を\ntools/shadow_mode_log.jsonlへ記録するのみに留める。無効な場合は従来通り一括\nコミットを行う。戻り値は「実際にコミットが行われたか」(False=シャドウ抑止/\nステージ済み変更なしのいずれか)。呼び出し元は、この戻り値でコミット後の\n後続処理(学習データ抽出フック等)を実行すべきかどうかを判断できる。",
+        "lineno": 1818,
+        "decorators": []
+      },
+      {
+        "name": "_autonomous_rollback",
+        "is_async": false,
+        "signature": "_autonomous_rollback(target_dir: Path, commit_hash: str = 'HEAD') -> None",
+        "docstring": "直前のNazo-Agent自動コミット(commit_hash)を `git revert --no-edit` で自律的に\n取り消す(instructions/188、6次元定量評価ゲートで退行を検知した場合のFail-Safe)。\n\n【厳格なFail-Closed(Blast Radiusの最小化)】git revert自体がコンフリクト等で失敗\nした場合、不確実な状態での処理続行(Fail-Open)を絶対に許容しない。まず\n`git revert --abort`で作業ツリーをクリーンな状態へ戻し、それ自体も失敗した場合\n(revertシーケンスが開始していなかった等)は`git reset --hard HEAD`で強制的に\n復旧する。いずれの場合も最終的に`sys.exit(1)`でプロセス全体を直ちに停止する\n(呼び出し元のtry/except Exceptionでは捕捉されない、SystemExitはExceptionの\nサブクラスではないため)。",
+        "lineno": 1845,
+        "decorators": []
+      },
+      {
+        "name": "_run_post_commit_quality_gate",
+        "is_async": false,
+        "signature": "_run_post_commit_quality_gate(target_dir: Path) -> bool",
+        "docstring": "Nazo-Agentがtarget_dirへ実際にコミット(shadow_mode抑止でない、_commit_or_shadow\nがTrueを返した場合のみ呼ぶこと)した直後、6次元定量評価ゲート\n(tools/benchmark/run_benchmark.py: evaluate_6d_quality_gate)を再実行し、退行\n(Fail)を検知した場合は直前のコミットを_autonomous_rollback()で自律的に取り消す\n(instructions/188)。\n\n【インフラエラーと品質退行を混同しない】tools/benchmark/run_benchmark.pyの終了コード\n契約(instructions/136)では、exit code 125はDocker CLI不在等の「インフラエラー」\n専用であり、この場合そもそもベンチマーク自体が1件も実行されずreport[\"quality_gate_6d\"]\nは生成されない。これを「退行を検知した」と混同してロールバックしてしまうと、Docker\n未導入の開発機(このリポジトリの現状のNazo-Agentライブ自己修復loop実行環境)では、\n正常に成功したコミットが理由なく毎回ロールバックされ、自己修復能力そのものが構造的に\n機能停止する。したがって、ゲートを実際に評価できなかった場合(exit code 125等の\nインフラエラー・レポート未生成・JSON破損)は「非退行を確認できない」だけであり\n「退行を検知した」わけではないため、ロールバックせず警告のみに留める(Fail-Closedは\ninstructions/188が明示するgit revert自体の失敗時にのみ適用する。_autonomous_rollback\n参照)。ロールバックするのはreport[\"quality_gate_6d\"][\"passed\"]が明示的にFalseの\n場合のみ。\n\n戻り値: ゲートに合格した、またはゲート自体を評価できなかった場合はTrue(いずれも\nロールバック不要)。退行を明示的に検知してロールバックを実行した場合はFalse。\nロールバック自体が失敗した場合は_autonomous_rollback内でsys.exit(1)しこの関数から\n戻らない。",
+        "lineno": 1905,
+        "decorators": []
+      },
+      {
+        "name": "_escalate_test_update_tasks_to_sandbox",
+        "is_async": true,
+        "signature": "_escalate_test_update_tasks_to_sandbox(tasks: list[dict]) -> None",
+        "docstring": "テストの陳腐化(triage_type == \"test_update\")と判定された各タスクを、\ntools/agent_graph.py の sandbox_verify_node による隔離ワークツリー(git worktree)+\nDockerサンドボックス検証+PRドラフト生成へ委譲する(instructions/126)。\n\n以前はここで専用の隔離ドラフトブランチ(draft/test-update-{timestamp})を\n共有の作業ディレクトリ(TARGET_APP_DIR)上に作成し、そちらへ直接コミットしていたが、\ngit worktreeを使わないため「メインの作業ディレクトリを一切変更しない」隔離性を\n保証できなかった。以降、隔離検証はすべてsandbox_verify_nodeに一元化する\n(このため、修正の適用自体もここでは行わず、隔離ワークツリー内でのみ行われる)。",
+        "lineno": 1974,
+        "decorators": []
+      },
+      {
+        "name": "verify_logic_with_pytest",
+        "is_async": true,
+        "signature": "verify_logic_with_pytest(target_file: Path) -> tuple[bool, str]",
+        "docstring": "pytest-testmon(変更影響テストの選択)+ pytest-xdist(並列実行)で、決定論的に\nロジックの正しさを検証する。\n\nOllamaが「文法的には正しいが論理が破綻したコード」を出力するFalse Positiveは、\nRuff/Pyrightのような静的解析では検知できない。実際にテストを走らせて確認する\n絶対的なゲートキーパーとして機能し、失敗時はコミットをブロックしてClaudeパイプラインへの\nエスカレーション判断に使う。\n\n対象ファイルに対応する単一のテストファイルを推測して単体実行する(旧実装)のではなく、\nテストスイート全体を対象に `--testmon` で前回実行からの変更差分に関係するテストのみへ\n自動的に絞り込み、`-n auto` でCPUコア数に応じて並列実行する。これにより、プロジェクト\n全体のテストを毎回フル実行するO(N)のレイテンシ劣化を避けつつ、決定論的な検証としての\n厳密さは保つ(testmonは実行済みテストのコードカバレッジに基づき、変更されたコードパスに\n依存するテストのみを再実行対象として選択する)。target_fileは呼び出し元でのログ・\nエスカレーション文脈のためにのみ使用し、テスト選択自体はtestmonに委ねる。",
+        "lineno": 2027,
+        "decorators": []
+      },
+      {
+        "name": "_run_claude_pipeline_and_commit",
+        "is_async": true,
+        "signature": "_run_claude_pipeline_and_commit(user_instruction: str, log_path: Path, deduped_log: str, commit_message: str) -> None",
+        "docstring": "Claudeパイプライン(Tool Calling + Pydantic + 自己修正ループ + libcst AST置換)を実行し、\n成功したファイルを一括コミットする。\n\nmain_flowの通常経路(engine==\"claude\")と、Ollama自律修復がpytest検証に失敗した際の\nエスカレーション経路の両方から共有される。\n\nテストの陳腐化(triage_type == \"test_update\")と判定されたタスクは、共有の作業\nディレクトリ(TARGET_APP_DIR)へ直接適用する前にここで振り分け、\n_escalate_test_update_tasks_to_sandbox() へすべて委譲する(隔離ワークツリー内でのみ\n適用される)。それ以外(bug_fix)のタスクのみ、従来通りphase3_aider_executionで\n直接適用し、一括コミットする。",
+        "lineno": 2068,
+        "decorators": []
+      },
+      {
+        "name": "_process_target",
+        "is_async": true,
+        "signature": "_process_target(user_instruction: str, engine: str, log_path: Path) -> None",
+        "docstring": "エラーログの認知負荷検査からエンジン別のディスパッチ(Claude/Ollama)までを行う。\n\nmain_flowから抽出しているのは、CognitiveLoadExceededErrorを上位(main_flow)の\ntry/exceptで一括して捕捉し、Graceful Shutdown(タスクのスキップ)へ落とし込める\nようにするため(main_flow側で長大なブロックをtry/exceptで再インデントする必要を\n避け、可読性を保つ)。",
+        "lineno": 2115,
+        "decorators": []
+      },
+      {
+        "name": "main_flow",
+        "is_async": true,
+        "signature": "main_flow(user_instruction: str, engine: str = 'ollama')",
+        "docstring": null,
+        "lineno": 2258,
+        "decorators": []
+      }
+    ]
+  }
+]

@@ -1,0 +1,17 @@
+【ミッション: SSoT監査のための追加ファクト抽出（ドメイン層・スキーマ・インフラ）】
+
+先ほどのAST抽出により、tools/ 内の監査が完了しました。
+続いて、プロジェクト全体のアーキテクチャ監査を行うため、以下の3つのスクリプトを作成・実行し、結果を保存してください。
+
+Step 1: ドメイン層の依存関係抽出
+`evaluation/` ディレクトリ内の全Pythonファイルを対象に、ASTを用いて `import` および `from ... import` 文のみを抽出し、`docs/audit/imports_fact.json` に保存してください。
+（目的: evaluation層が純粋なドメイン層であり、workersやinterfacesに逆依存していないかを証明するため）
+
+Step 2: データスキーマの抽出
+`packages/shared_core/nazokake_core/schemas.py` をAST解析し、`NazokakeItem` クラスのフィールド定義（型アノテーション含む）を抽出し、`docs/audit/schema_fact.json` に保存してください。
+
+Step 3: インフラ定義の抽出
+`infra/docker-compose.yml` を読み込み、定義されている「サービス名（services）」と「ネットワーク（networks）」のリストを抽出し、`docs/audit/infra_fact.json` に保存してください（PyYAML等の外部ライブラリがなければ、正規表現や単純なテキスト解析で構いません）。
+
+Step 4: 報告
+3つのJSONファイルの生成が完了したら報告してください。一時スクリプトは実行後に削除して構いません。

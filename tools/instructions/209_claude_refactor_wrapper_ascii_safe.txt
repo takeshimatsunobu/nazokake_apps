@@ -1,0 +1,10 @@
+【ミッション: GitラッパースクリプトのASCII Safe化】
+
+tools/deploy/deploy_to_vm.ps1 から呼び出される git push が、裏で使用している tools/deploy/gcloud_ssh_wrapper.ps1 において ParserError（文字化けによる構文破壊）を引き起こしました。
+
+Step 1: 非ASCII文字の完全排除
+tools/deploy/gcloud_ssh_wrapper.ps1 を解析し、スクリプト内のすべての絵文字や日本語のメッセージ（Write-Errorなど）を、標準的な英語のASCII表現（[WARN], [ERROR] など）に完全に書き換えてください。
+
+Step 2: 単独コミット
+スクリプトに非ASCIIバイトが残っていないことを確認の上、変更した gcloud_ssh_wrapper.ps1 のみをコミットしてください。
+※絶対制約: git add . は厳禁です。変更したファイルのみを明示的に指定すること。

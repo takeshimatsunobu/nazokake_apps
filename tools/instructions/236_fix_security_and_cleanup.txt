@@ -1,0 +1,19 @@
+【ミッション: クリティカルな脆弱性の修正とデッドコードの削除】
+
+本番環境の稼働に伴い、セキュリティ監査で発見された重大な脆弱性の修正と、コードベースのクリーンアップを行います。
+以下のステップを実行してください。
+
+Step 1: Tactical CIC エンドポイントの認証追加
+`apps/tactical_cic/webhook_api.py` に定義されている全てのエンドポイント（`/api/cic/webhook/share`, `/api/cic/missions/{id}/fire` など）に、適切な認証（例: `verify_admin_token` などのFirebase Auth依存）を追加し、外部からの不正アクセスを遮断してください。
+※もしCICが外部のWebhook（GitHub等）から呼ばれる仕様の場合は、HMAC署名検証などの適切なサーバー間認証を実装してください。
+
+Step 2: デッドコードの完全削除
+過去のRCEリスクを含む古いバックアップディレクトリ `apps/evaluator_backup/` をディレクトリごと完全に削除してください。
+また、ルートディレクトリにある `.gcloudignore` が古い状態であれば、現在の構成に合わせて適切にクリーンアップ（または削除）してください。
+
+Step 3: 未追跡ファイル（学習データ）の回収
+現在のワークツリーに残っている未追跡（Untracked）のファイル群（`tools/seed_research_data.py`, `tools/publish_research_articles.py`, `tools/instructions/` 配下のテキスト等）をすべて `git add` してください。これらは将来のDPO/SFTパイプラインのための重要な学習データとなります。
+
+Step 4: コミットと報告
+Step 1〜3の変更をまとめてコミットしてください（コミットメッセージ例: "fix: Tactical CICの認証追加およびデッドコード・未追跡ファイルの整理"）。
+完了後、どのような認証方式を採用したかのサマリーを報告してください。

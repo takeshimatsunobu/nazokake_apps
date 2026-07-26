@@ -1,0 +1,6 @@
+{
+  "target_dir": "evaluation/",
+  "exists": false,
+  "note": "evaluation/ はリポジトリに存在しない。SSoT_architecture.md 8.1節は evaluation/evaluator.py と evaluation/prompts.py を要求しているが、実際のファイルシステムには対応するディレクトリ・ファイルが無いことを AST解析ではなくファイルシステム探索によりファクトとして確認した。",
+  "files": []
+}

@@ -1,0 +1,166 @@
+{
+  "file": "packages/shared_core/nazokake_core/schemas.py",
+  "class": "NazokakeItem",
+  "found": true,
+  "bases": [
+    "BaseModel"
+  ],
+  "fields": [
+    {
+      "name": "doc_id",
+      "annotation": "str",
+      "default": "Field(..., min_length=1)",
+      "lineno": 76
+    },
+    {
+      "name": "id",
+      "annotation": "str",
+      "default": "Field(..., min_length=1)",
+      "lineno": 77
+    },
+    {
+      "name": "odai",
+      "annotation": "str",
+      "default": "Field(..., min_length=1)",
+      "lineno": 78
+    },
+    {
+      "name": "result",
+      "annotation": "Result",
+      "default": null,
+      "lineno": 79
+    },
+    {
+      "name": "nazokake_text",
+      "annotation": "str",
+      "default": "Field(..., min_length=1)",
+      "lineno": 80
+    },
+    {
+      "name": "scores",
+      "annotation": "Scores",
+      "default": null,
+      "lineno": 81
+    },
+    {
+      "name": "s_total",
+      "annotation": "float",
+      "default": "Field(..., ge=0.0, le=5.0)",
+      "lineno": 82
+    },
+    {
+      "name": "overall",
+      "annotation": "str",
+      "default": "Field(..., min_length=1)",
+      "lineno": 83
+    },
+    {
+      "name": "axis_comments",
+      "annotation": "Dict[str, str]",
+      "default": "Field(default_factory=dict)",
+      "lineno": 84
+    },
+    {
+      "name": "source",
+      "annotation": "Literal['batch_factory_gemini', 'batch_factory_local']",
+      "default": "SOURCE_TAG",
+      "lineno": 87
+    },
+    {
+      "name": "model_id",
+      "annotation": "str",
+      "default": "Field(..., min_length=1)",
+      "lineno": 88
+    },
+    {
+      "name": "evaluator_model_id",
+      "annotation": "str",
+      "default": "Field(..., min_length=1)",
+      "lineno": 89
+    },
+    {
+      "name": "persona",
+      "annotation": "PersonaMeta",
+      "default": null,
+      "lineno": 90
+    },
+    {
+      "name": "trend",
+      "annotation": "TrendMeta",
+      "default": null,
+      "lineno": 91
+    },
+    {
+      "name": "dpo_pair_id",
+      "annotation": "str",
+      "default": "Field(default='', description='DPO学習用: GeminiとELYZAのペアを紐付ける共通ID')",
+      "lineno": 92
+    },
+    {
+      "name": "created_at",
+      "annotation": "datetime",
+      "default": "Field(default_factory=lambda: datetime.now(timezone.utc))",
+      "lineno": 93
+    },
+    {
+      "name": "schema_version",
+      "annotation": "str",
+      "default": "SCHEMA_VERSION",
+      "lineno": 94
+    },
+    {
+      "name": "feed_ready",
+      "annotation": "bool",
+      "default": "True",
+      "lineno": 97
+    },
+    {
+      "name": "status",
+      "annotation": "str",
+      "default": "'all_completed'",
+      "lineno": 98
+    },
+    {
+      "name": "eval_status",
+      "annotation": "str",
+      "default": "'completed'",
+      "lineno": 99
+    },
+    {
+      "name": "is_user_edited",
+      "annotation": "bool",
+      "default": "False",
+      "lineno": 100
+    },
+    {
+      "name": "is_golden_data",
+      "annotation": "bool",
+      "default": "False",
+      "lineno": 101
+    },
+    {
+      "name": "is_approved",
+      "annotation": "bool",
+      "default": "False",
+      "lineno": 102
+    },
+    {
+      "name": "random_weight",
+      "annotation": "float",
+      "default": "Field(default_factory=random.random, description='無限スクロールのランダムシーク用乱数')",
+      "lineno": 103
+    },
+    {
+      "name": "gemini_status",
+      "annotation": "str",
+      "default": "'pending'",
+      "lineno": 104
+    },
+    {
+      "name": "elyza_status",
+      "annotation": "str",
+      "default": "'n/a'",
+      "lineno": 105
+    }
+  ]
+}

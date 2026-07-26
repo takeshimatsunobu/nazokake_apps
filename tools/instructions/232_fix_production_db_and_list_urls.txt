@@ -1,0 +1,21 @@
+【ミッション: 本番環境のDBクラッシュ修正と管理画面URLの調査】
+
+Cloud Runの本番環境（https://nazokake-backend-r6jq2erkta-an.a.run.app）にて、以下の致命的なエラーが発生し、なぞかけの生成や道場機能が完全に停止しています。
+
+エラー内容:
+Internal Server Error: (sqlite3.OperationalError) unable to open database file
+(Background on this error at: https://sqlalche.me/e/20/e3q8)
+
+Step 1: 本番DBクラッシュの修正
+原因は、非rootコンテナ環境において、メインのSQLiteデータベース（NazokakeItem等を保存するDB）の保存先パスに書き込み権限がないことだと推測されます（PR #7で tactical_cic のDBは /tmp に逃がしましたが、メインDBが漏れているようです）。
+メインDBのパス設定ロジック（環境変数 DATABASE_URL の読み込みやデフォルトパスの設定箇所）を調査し、Cloud Run環境でも正常にDBファイルを開けるように修正してください。
+（※現状はエフェメラルなデータロストを許容し、まずは動かすことを最優先とします。/tmp 配下への配置、または Dockerfile での data ディレクトリの権限付与など、適切な方法で修正してください）。
+修正後、コミットしてデプロイパイプラインを走らせてください。
+
+Step 2: 管理画面・エンドポイントの調査
+現在のコードベース（FastAPIのルーティングやフロントエンドのルーター定義）を調査し、一般ユーザー向けではない「管理コクピット」や「ダッシュボード」等の管理用URL（パス）をすべてリストアップしてください。
+
+Step 3: 報告
+- DBエラーに対してどのような修正を行ったか
+- 調査して判明した管理画面のURL一覧（例: /admin, /cockpit など）
+上記2点を報告してください。
