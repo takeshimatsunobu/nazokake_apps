@@ -16,6 +16,8 @@ import sys
 import tempfile
 from pathlib import Path
 
+import pytest
+
 BASE_DIR = Path(__file__).resolve().parent.parent.parent
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
@@ -109,3 +111,57 @@ def test_ast_modifier_fails_closed_on_target_syntax_error():
     # あわせて確認する(instructions/229の削除要求そのものの回帰テスト)。
     assert not hasattr(ast_modifier, "_string_based_fallback_replace")
     assert not hasattr(ast_modifier, "_apply_string_fallback")
+
+
+# --- instructions/246: ブロック単位の圧縮検知(小型モデルによる既存コードの
+# 不当な要約・圧縮の防止) ---
+
+
+def test_ast_modifier_blocks_target_block_compression_even_when_file_level_ratio_is_safe():
+    """置換対象の関数自体が大きく圧縮されていても、ファイル全体で見ると他の関数群に
+    埋もれて既存の全体行数ヒューリスティック(is_mass_deletion)の閾値には引っかからない
+    ケースを固定する。この場合でも、対象ブロック単体の行数比較(instructions/246で
+    追加したブロック単位の圧縮検知)がFail-Closed(sys.exit(1))で書き込みを拒否し、
+    ファイル内容を一切変更しないことを確認する。
+    """
+    big_function_lines = ["def big_function():"]
+    big_function_lines += [f"    x{i} = {i}" for i in range(20)]
+    big_function_lines.append("    return x0")
+    big_function = "\n".join(big_function_lines) + "\n"
+
+    filler_functions = []
+    for i in range(10):
+        filler_functions.append(
+            f"def filler_{i}():\n"
+            f"    y = 0\n    y = 1\n    y = 2\n    y = 3\n    y = 4\n    y = 5\n"
+            f"    return y\n"
+        )
+
+    source = big_function + "\n" + "\n".join(filler_functions)
+
+    tmpdir = tempfile.mkdtemp()
+    target = Path(tmpdir) / "target.py"
+    target.write_text(source, encoding="utf-8")
+
+    compressed_new_code = "def big_function():\n    ...\n"
+
+    # 事前条件: このFixtureが既存のファイル全体ヒューリスティックには引っかから
+    # ないこと自体を明示的に確認する(テストの前提がドリフトしないように)。
+    modified_lines_if_applied = len(source.splitlines()) - len(
+        big_function.splitlines()
+    ) + len(compressed_new_code.splitlines())
+    original_lines = len(source.splitlines())
+    assert not (
+        original_lines > 20 and modified_lines_if_applied < original_lines * 0.6
+    ), "Fixtureがドリフトし、ファイル全体ヒューリスティックだけで検知できてしまっている"
+
+    with pytest.raises(SystemExit):
+        ast_modifier.apply_modification(
+            {
+                "file_path": str(target),
+                "target_name": "big_function",
+                "new_code": compressed_new_code,
+            }
+        )
+
+    assert target.read_text(encoding="utf-8") == source

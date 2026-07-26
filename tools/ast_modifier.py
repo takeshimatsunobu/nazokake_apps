@@ -107,6 +107,9 @@ class TargetNodeReplacer(cst.CSTTransformer):
         self.target_name = target_name
         self.new_node = new_node
         self.replaced = False
+        # instructions/246: 置換対象ノードそのものの置換前ソースを保持しておき、
+        # 呼び出し元(apply_modification)がブロック単位の圧縮検知(行数比較)に使う。
+        self.original_node_code: str | None = None
 
     def leave_FunctionDef(
         self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
@@ -116,6 +119,7 @@ class TargetNodeReplacer(cst.CSTTransformer):
         if not isinstance(self.new_node, cst.FunctionDef):
             return updated_node
         self.replaced = True
+        self.original_node_code = cst.Module(body=[]).code_for_node(original_node)
         # 直前の空行数・アタッチされたコメント行(leading_lines)は元ノードのものを
         # 引き継ぎ、置換によって前後の余白構造が変化しないようにする。
         return self.new_node.with_changes(leading_lines=original_node.leading_lines)
@@ -128,6 +132,7 @@ class TargetNodeReplacer(cst.CSTTransformer):
         if not isinstance(self.new_node, cst.ClassDef):
             return updated_node
         self.replaced = True
+        self.original_node_code = cst.Module(body=[]).code_for_node(original_node)
         return self.new_node.with_changes(leading_lines=original_node.leading_lines)
 
 
@@ -310,6 +315,22 @@ def apply_modification(instruction: dict) -> str:
             "安全のため置換をブロックします"
         )
         sys.exit(1)
+
+    # instructions/246: ブロック単位の圧縮検知。上記のファイル全体の行数比較は、
+    # 大きなファイル内の1関数だけがこっそり要約・圧縮されるケース(ファイル全体で
+    # 見ると比率的に埋もれてしまう)を検知できない。置換対象ノードそのものの
+    # 置換前後の行数を直接比較し、無関係コードの消失検知(セマンティック差分)とは
+    # 独立に、対象ブロック自体の不当な圧縮を捕捉する。
+    if transformer.original_node_code is not None:
+        original_block_lines = len(transformer.original_node_code.splitlines())
+        new_block_lines = len(new_code.splitlines())
+        if original_block_lines > 15 and new_block_lines < original_block_lines * 0.6:
+            print(
+                f"[Fatal] 置換対象ブロック '{target_name}' が不当に圧縮されている"
+                f"疑いがあります(元: {original_block_lines}行 -> 新: {new_block_lines}行)。"
+                "書き込みを中止します。"
+            )
+            sys.exit(1)
 
     _atomic_write_text(path, modified_module.code)
     return f"✅ '{target_name}' を '{file_path}' 内で安全に置換しました。"

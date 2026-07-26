@@ -854,6 +854,61 @@ async def phase1_audit(is_final=False) -> Path:
     return out_file
 
 
+# --- Phase 1.5 (instructions/246): Gemmaによる中間評価のグラウンディング強化 ---
+# Claude(高コスト・最終承認者)にエラーログを渡す前に、ローカルのGemmaへ「中間評価
+# (トリアージ)」を委譲する。生の会話文ではなく、acd_ast_compressが既に実コードの
+# 関数/クラスブロックへ機械的に紐付け済みの compact_context(AST事実)のみを見せる
+# ことで、Gemmaの判断そのものを客観的事実にグラウンディングさせ、根拠のない
+# 憶測混じりの低品質な所見が最終段のClaudeへそのまま渡ることを防ぐ。
+GEMMA_TRIAGE_MODEL = "gemma4:12b"  # tools/agent_graph.py の GEMMA_MODEL と同一タグ
+GEMMA_TRIAGE_URL = "http://127.0.0.1:11434/api/generate"
+
+
+async def ground_triage_with_gemma(compact_context: str) -> str:
+    """AST圧縮済みのエラーログ(compact_context)をGemmaに中間評価(トリアージ)させる。
+
+    compact_contextの各セクションは既にacd_ast_compressによって実際の関数/クラス
+    ソースへ機械的にグラウンディング済み(=客観的事実)であり、Gemmaの役割はその
+    事実だけを根拠に「引用されたコードは本当に指摘内容を裏付けているか」を判定する
+    ことに限定する。「その他(関数特定不可)」に分類された、実コードへ紐付けられ
+    なかった項目は、実在するASTブロックとの照合ができていない=グラウンディング
+    不能であるとして、低信頼度として扱うよう明示的に指示する。
+
+    このステップはClaude本編に対する追加の質向上策であり、必須の依存関係では
+    ない(Ollama未起動・タイムアウト等で失敗しても、呼び出し元がcompact_context
+    単独へフォールバックできるようベストエフォートとする)。
+    """
+    prompt = (
+        "あなたは客観性を重視するトリアージ担当のシニアエンジニアです。以下の"
+        "「AST圧縮済みエラーログ」は、各エラーが実際にどの関数/クラスのソース"
+        "コードで発生したかを機械的に突き合わせ済みの、客観的な事実の集合です。\n\n"
+        "以下の観点で、セクションごとに簡潔な中間評価(トリアージ)を行ってください:\n"
+        "1. 引用されているソースコードは、記載されたエラー内容を実際に裏付けて"
+        "いるか(裏付けている=グラウンディング済みの本物の問題、裏付けが弱い/"
+        "無関係に見える=ノイズの疑い)。\n"
+        "2. 「### その他(関数特定不可)」セクションに列挙された項目は、実在する"
+        "関数/クラスへ紐付けられなかった(=グラウンディングできていない)ため、"
+        "常に低信頼度として扱ってください。\n"
+        "3. 判断はここに引用された客観的なコード・エラー文のみを根拠にし、"
+        "記載のない外部知識や憶測で補完しないでください。\n\n"
+        "【絶対厳守】引用するコードやエラー文は要約・言い換え・省略をせず、"
+        "ファイルパス・シンボル名・行番号を含め原文のまま正確に引用してください"
+        "(この中間評価は後続の意思決定者[Claude]がそのまま参照するため、"
+        "情報の欠落・圧縮は許されません)。\n\n"
+        f"【AST圧縮済みエラーログ】\n{compact_context}\n\n"
+        "各セクションについて「グラウンディング済み(本物)」「ノイズの疑い」"
+        "「低信頼度(関数特定不可)」のいずれかの判定と、一言の根拠を簡潔に"
+        "列挙してください。解説文の前置きは不要です。"
+    )
+    async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=10.0)) as client:
+        response = await client.post(
+            GEMMA_TRIAGE_URL,
+            json={"model": GEMMA_TRIAGE_MODEL, "prompt": prompt, "stream": False},
+        )
+        response.raise_for_status()
+        return response.json().get("response", "").strip()
+
+
 # --- Phase 2 ---
 async def phase2_claude_translation(
     user_instruction: str, error_log_path: Path
@@ -903,6 +958,16 @@ async def phase2_claude_translation(
         f"   [ACD Engine] AST圧縮完了: {len(raw_error_log)}文字 -> {len(compact_context)}文字"
     )
 
+    print("\n🔍 [Phase 1.5] Gemma による中間評価(グラウンディング)を開始します...")
+    try:
+        gemma_triage_report = await ground_triage_with_gemma(compact_context)
+        print("✅ Gemma 中間評価完了。")
+    except Exception as e:
+        print(
+            f"   ⚠️ [Gemma中間評価] 呼び出しに失敗、この評価をスキップして続行します: {e}"
+        )
+        gemma_triage_report = "(Gemmaによる中間評価は実行できませんでした。以下のグラウンディング済みエラーログのみを根拠に判断してください。)"
+
     from tools.ast_modifier import AstModificationDesign
 
     # TLS問題を防ぐ防弾設定
@@ -925,7 +990,11 @@ async def phase2_claude_translation(
         "【Criticとしてのトリアージ】まず、【絶対的仕様書(SSoT)】と、後ほど提示する「エラーログ」"
         "(Pytestの失敗結果を含む場合がある)を照合し、次のどちらに該当するかを判定せよ。"
         "憶測や一般的なベストプラクティスではなく、SSoTに明記された最新仕様との整合性のみを"
-        "判断根拠とし、ハルシネーションによる誤トリアージを避けること:\n"
+        "判断根拠とし、ハルシネーションによる誤トリアージを避けること。なお、後ほど提示する"
+        "「エラーログ」にはGemma(ローカルモデル)による中間評価(トリアージ)が併記されている"
+        "場合がある。これは一次スクリーニングとしての参考情報にすぎず、それ自体を根拠として"
+        "鵜呑みにしてはならない。最終判断は必ず上記のSSoTと、エラーログ内に実際に引用された"
+        "客観的なコード・Pytest失敗事実のみに基づいて行うこと:\n"
         "  パターンA: コード側のロジックバグ(実装がSSoT/要件定義書の仕様を満たしていない)。\n"
         "  パターンB: テストコード自体の陳腐化(SSoTの仕様変更により、テストが古い仕様を"
         "前提にしている)。\n\n"
@@ -974,10 +1043,16 @@ async def phase2_claude_translation(
     # 正しい型で再出力させる。最大3回試行し、3回連続で失敗した場合のみ、パイプライン
     # 全体を落とさず縮退運転(タスク0件として継続)する。
     MAX_SELF_CORRECTION_RETRIES = 3
-    # エラーログ(compact_context)は自己修正リトライの全attemptで不変のまま
-    # messages[0]に居座り続けるため、Prompt Cachingの対象として最も効果が高い。
+    # エラーログ(compact_context)・Gemma中間評価はいずれも自己修正リトライの全attemptで
+    # 不変のままmessages[0]に居座り続けるため、Prompt Cachingの対象として最も効果が高い。
     # 2回目以降のリトライではこのブロックがキャッシュヒットし、トークン消費を抑える。
-    error_log_text = f"【エラーログ】\n{compact_context}"
+    # Gemmaの中間評価を先に置き、直後にグラウンディング根拠そのもの(compact_context)を
+    # 全文残すことで、Claudeが中間評価の当否を自分自身でも検証できるようにする
+    # (中間評価の要約だけを渡して元の事実を失わせない)。
+    error_log_text = (
+        f"【Gemmaによる中間評価(グラウンディング済みトリアージ)】\n{gemma_triage_report}\n\n"
+        f"【エラーログ(AST圧縮済み・グラウンディング根拠)】\n{compact_context}"
+    )
     messages: list = [
         {
             "role": "user",
@@ -2264,6 +2339,13 @@ async def generate_code_with_local_coder(original_code: str, instruction: str) -
         "従って書き換えてください。\n\n"
         f"【元のコード】\n```python\n{original_code}\n```\n\n"
         f"【修正方針】\n{instruction}\n\n"
+        "【絶対厳守: AST置換前提の完全性維持】この出力はlibcstによって関数/クラス"
+        "ノード単位でそのまま置換されます。「修正方針」が触れていない既存の行は"
+        "一字一句そのまま保持し、変更が必要な箇所だけを書き換えてください。"
+        "「...」「# 以下省略」「# 変更なし」「# rest of the code remains the same」の"
+        "ような省略表現で既存のロジックを要約・圧縮・削除することは絶対に禁止です。"
+        "出力は必ず、置換対象の関数/クラス全体を最初のdef/classから最後の行まで"
+        "省略なく含む、そのまま実行可能な完全なコードにしてください。\n\n"
         "出力は修正後の関数またはクラス定義のコードのみとし、解説文やMarkdownの"
         "コードフェンス(```)は一切付けないでください。"
     )
