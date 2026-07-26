@@ -1,21 +1,27 @@
 """
 nazokake_core/firestore_sync.py
 ==================================
-ローカルSQLite(Local SSoT)からFirestoreへの一方向バックアップ同期。
+ローカルSQLite(Local SSoT)とFirestoreの間のバックアップ同期(Push)と、
+Cloud Run起動時の復元(Pull、instructions/240)。
 
-sync_status=="pending"/"error" の行を取り、firebase_adminでFirestoreの対象コレクションへ
-Push(冪等/Upsert)する。冪等性と順序逆転防止のため、Firestore上の既存ドキュメントの
-updated_at を確認し、ローカルの updated_at が同じかそれより新しい場合のみ上書きする
-(Firestoreトランザクション内で判定と書き込みをアトミックに行う)。
+【Push: sync_once() / sync_once_safe()】sync_status=="pending"/"error" の行を取り、
+firebase_adminでFirestoreの対象コレクションへPush(冪等/Upsert)する。冪等性と
+順序逆転防止のため、Firestore上の既存ドキュメントのupdated_at を確認し、ローカルの
+updated_at が同じかそれより新しい場合のみ上書きする(Firestoreトランザクション内で
+判定と書き込みをアトミックに行う)。失敗時はローカルのsync_statusを"error"にし、
+次回実行時にリトライ対象として再度拾い上げる(デッドレター的リトライキュー)。
 
-失敗時はローカルのsync_statusを"error"にし、次回実行時にリトライ対象として
-再度拾い上げる(デッドレター的リトライキュー)。Firestoreはあくまで「読み取り専用
-レプリカ/バックアップ」であり、このモジュールはローカルDB→Firestoreの一方向のみを
-実行する(クラウド側からの逆方向の書き込みは行わない)。
+【Pull: async_restore_from_firestore()】Cloud Run上のSQLite(/tmp)はコンテナ再起動の
+たびに空になるエフェメラルなストレージのため、起動時にFirestore側の内容を空の
+ローカルDBへ書き戻す。これによりFirestoreは「クラウド側が自らデータを生成・改変する
+主体にはならない読み取り専用レプリカ/バックアップ」という位置づけを保ったまま
+(あくまでローカルSQLiteが正、Firestoreへの書き込みはこのモジュール経由のPush/Pull
+のみ)、Cloud Runの再起動を跨いだデータの実効的な永続化を実現する。
 """
 from __future__ import annotations
 
 import asyncio
+import datetime
 import logging
 import os
 import sys
@@ -24,11 +30,20 @@ from typing import Any
 import firebase_admin
 from firebase_admin import firestore
 
-from .database import get_pending_sync_batch, mark_sync_failed, mark_synced
+from .database import (
+    async_bulk_restore_items_if_missing,
+    get_pending_sync_batch,
+    mark_sync_failed,
+    mark_synced,
+)
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_COLLECTION = "nazokake_items"
+
+# instructions/240: 起動時リストアを、一括insert可能な数千件規模でも安全な
+# ホストパラメータ数(チャンクサイズ x NazokakeItemORMの列数)に収めるための単位。
+_RESTORE_CHUNK_SIZE = 200
 
 # ローカルDB専用のブックキーピングカラムはFirestore側へは送らない。
 _LOCAL_ONLY_FIELDS = {"sync_status", "last_sync_error"}
@@ -119,3 +134,86 @@ async def sync_once_safe(batch_size: int = 20) -> None:
         await sync_once(batch_size=batch_size)
     except Exception as e:  # noqa: BLE001 - BackgroundTasksの外へ例外を漏らさない意図的な捕捉
         logger.warning(f"⚠️ Firestoreバックアップ同期(BackgroundTasks)に失敗しました: {e}")
+
+
+def _normalize_for_sqlite(value: Any) -> Any:
+    """FirestoreのDatetimeWithNanoseconds(datetime.datetimeのサブクラス)等、
+    そのままではSQLite/JSON列へ保存できない型をISO8601文字列へ変換する。
+    このコードベース全体の規約(TriggerStateORM等参照)通り、日時はdatetime型
+    カラムではなく文字列として保存するため、通常のdatetime.datetimeも同様に
+    変換対象とする。
+
+    persona/trend/result等のJSON型カラムはdict/listのネスト構造を持ち、その内部
+    にもFirestoreのタイムスタンプ(例: trend.fetched_at)が含まれ得るため、
+    再帰的に変換する(実機検証で、トップレベルのみの変換では
+    "Object of type DatetimeWithNanoseconds is not JSON serializable"が
+    ネスト位置で発生することを確認済み)。
+    """
+    if isinstance(value, datetime.datetime):
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {k: _normalize_for_sqlite(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_normalize_for_sqlite(v) for v in value]
+    return value
+
+
+async def async_restore_from_firestore() -> dict[str, int]:
+    """instructions/240: Cloud Run起動時、空のローカルSQLiteへFirestoreの
+    nazokake_itemsコレクションから全件をPull(復元)する。sync_once()と対になる
+    復元方向の処理で、これによりPush/Pull両方向が揃い「Cloud Run再起動でSQLiteが
+    空になり、アプリ上のデータが消える」問題を解消する。
+
+    【nazokake_core.schemas.NazokakeItemを使わない理由】そのスキーマは
+    extra="forbid"かつ多数のフィールド(id/result/source/model_id/
+    evaluator_model_id/persona/trend等)が必須で、apps/batch_factoryが完全な形で
+    書き込むアイテムを前提としている。一方、今回実際に復元したいデータの大半は
+    instructions/239でバックアップ対象にしたapps/evaluator/backend(Cloud Run)
+    自身が書く部分行(id/persona/trend等を含まず、result_geminiはあってもresultは
+    無い等)であり、NazokakeItemORM側では元々これらの列はNULL許容(doc_id/odai
+    以外)。厳格なNazokakeItemで検証すると、復元したい対象のほぼ全件がバリデー
+    ションエラーで復元されずに終わってしまうため、実際のDB制約
+    (doc_id/odaiのみ必須)に沿った最小限の検証のみ行う。
+
+    【一括処理(実機検証で判明)】このコレクションは実測1万件超(過去のアーキテクチャ
+    世代由来と見られるodai欠落の不正行が大半を占める)。1件ずつsession.get()で
+    存在確認してから個別commitする素朴な実装では起動が数分単位でブロックされ、
+    Cloud Runの起動タイムアウトに抵触しかねないため、database.pyの
+    async_bulk_restore_items_if_missing()でチャンク単位の一括insertを行う。
+    """
+    _ensure_firebase_app()
+    db = firestore.client()
+    collection = _resolve_collection()
+
+    stats = {"restored": 0, "skipped_existing": 0, "skipped_invalid": 0, "errors": 0}
+
+    docs = await asyncio.to_thread(lambda: list(db.collection(collection).stream()))
+
+    valid_rows: list[dict[str, Any]] = []
+    for doc in docs:
+        data = doc.to_dict() or {}
+        data["doc_id"] = doc.id
+        if not data.get("odai"):
+            stats["skipped_invalid"] += 1
+            continue
+        valid_rows.append({k: _normalize_for_sqlite(v) for k, v in data.items()})
+
+    for i in range(0, len(valid_rows), _RESTORE_CHUNK_SIZE):
+        chunk = valid_rows[i : i + _RESTORE_CHUNK_SIZE]
+        try:
+            restored, skipped_existing = await async_bulk_restore_items_if_missing(chunk)
+            stats["restored"] += restored
+            stats["skipped_existing"] += skipped_existing
+        except Exception as e:
+            logger.warning(
+                f"⚠️ [firestore_restore] チャンク(先頭doc_id={chunk[0].get('doc_id')})の"
+                f"復元に失敗しました: {e}"
+            )
+            stats["errors"] += len(chunk)
+
+    logger.info(
+        f"🔄 [firestore_restore] restored={stats['restored']} "
+        f"skipped_existing={stats['skipped_existing']} "
+        f"skipped_invalid={stats['skipped_invalid']} errors={stats['errors']}"
+    )
+    return stats

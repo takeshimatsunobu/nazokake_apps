@@ -119,10 +119,22 @@ async def health_check():
 # 呼び出す経路がこれまでアプリ内に存在しなかったため、起動時に明示的に実行する。
 from nazokake_core.database import init_db  # noqa: E402
 
+# instructions/240: instructions/239で確立したPush(Cloud Run→Firestore)と対になる
+# Pull(Firestore→Cloud Run)方向。init_db()直後、空のテーブルへFirestoreの内容を
+# 復元することで、Cloud Run再起動を跨いだデータの実効的な永続化サイクルを完成させる。
+from nazokake_core.firestore_sync import async_restore_from_firestore  # noqa: E402
+
 
 @app.on_event("startup")
 async def _init_db_on_startup() -> None:
     await init_db()
+    try:
+        await async_restore_from_firestore()
+    except Exception as e:
+        # 【絶対制約】リストア失敗はアプリ全体の起動をクラッシュさせない
+        # (Firestore側の一時的な障害等でCloud Runの起動自体が失敗するのは本末転倒)。
+        # ログ出力のみに留め、ローカルDBは空のまま起動を継続する。
+        logger.warning(f"⚠️ Firestoreからのリストアに失敗しました(起動は継続します): {e}")
 
 
 # 【instructions/204: フロントエンド一元配信】フロントエンドを別ポートで立ち上げる
