@@ -66,6 +66,34 @@ class AstModificationInstruction(BaseModel):
     )
 
 
+class AstModificationDesign(BaseModel):
+    """Claudeが出力する「設計(修正方針)」のみのスキーマ。instructions/244(FinOps):
+    Claude APIの出力トークンコストを削減するため、Claudeには実際のコード全文(new_code)を
+    生成させず、修正方針を示す短い自然言語テキスト(modification_instruction)のみを
+    出力させる。実際のコード生成(実装)はローカルのOllama(qwen2.5-coder)へ委譲し
+    (tools/nazo_agent.py: generate_code_with_local_coder)、生成結果をnew_codeとして
+    埋めた上でAstModificationInstructionへ変換してからapply_modification()へ渡す。"""
+
+    file_path: str = Field(..., description="修正対象ファイルのパス")
+    target_name: str = Field(..., description="置換対象の関数名またはクラス名(完全一致)")
+    modification_instruction: str = Field(
+        ..., description="修正方針を指示する短い自然言語テキスト(実装コードそのものは含まない)"
+    )
+    triage_type: Literal["bug_fix", "test_update"] = Field(
+        default="bug_fix", description="バグ修正か、陳腐化したテストの更新か"
+    )
+    confidence_score: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="この修正方針に対するモデル自身の確信度(0.0=全く自信がない〜1.0=完全に確信)",
+    )
+    requires_escalation: bool = Field(
+        default=False,
+        description="Trueの場合、この修正方針は上位モデル(CTOノード)によるレビューが必要",
+    )
+
+
 class TargetNodeReplacer(cst.CSTTransformer):
     """target_nameに完全一致する関数/クラス定義ノードのみを、new_nodeに
     差し替えるTransformer。

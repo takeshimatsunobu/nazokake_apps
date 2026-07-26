@@ -858,13 +858,16 @@ async def phase1_audit(is_final=False) -> Path:
 async def phase2_claude_translation(
     user_instruction: str, error_log_path: Path
 ) -> dict:
-    """Claude API による「AST置換指示」への翻訳・分割。
+    """Claude API による「AST置換設計」への翻訳・分割。
 
     従来は自然言語でJSON出力を要求し、応答テキストからMarkdownフェンスを
     手動で除去してjson.loadsする防御的パースに依存していた。tools パラメータに
-    tools.ast_modifier.AstModificationInstruction と同一のスキーマ(model_json_schema())
+    tools.ast_modifier.AstModificationDesign と同一のスキーマ(model_json_schema())
     を関数(Tool)として定義し、tool_choiceでその呼び出しを強制することで、
     解説文やMarkdown装飾が混入する余地をAPIレベルで排除する。
+    instructions/244(FinOps)により、Claudeが出力するのは実装コード(new_code)では
+    なく修正方針(modification_instruction)のみであり、実際のコード生成は
+    後続の _delegate_code_generation_to_local_coder がローカルCoderへ委譲する。
     """
     print(
         "\n🔍 [Phase 2] Claude API による「AST置換指示」への翻訳・分割を開始します..."
@@ -900,7 +903,7 @@ async def phase2_claude_translation(
         f"   [ACD Engine] AST圧縮完了: {len(raw_error_log)}文字 -> {len(compact_context)}文字"
     )
 
-    from tools.ast_modifier import AstModificationInstruction
+    from tools.ast_modifier import AstModificationDesign
 
     # TLS問題を防ぐ防弾設定
     http_client = httpx.AsyncClient(
@@ -930,12 +933,13 @@ async def phase2_claude_translation(
         "適用する修正指示を生成せよ。\n"
         f"【要件定義書】\n{user_instruction}\n\n"
         "各修正は、対象ファイル(file_path)・置換対象の関数/クラス名(target_name)・"
-        "置換後の関数/クラス定義の完全なソースコード(new_code)の3点で構成すること。"
-        'triage_type は "bug_fix" とすること。解説文やMarkdownのコードブロック装飾は'
-        "一切付けず、必ず submit_ast_modifications ツールの呼び出しのみで結果を提出すること。\n\n"
+        "修正方針を指示する短い自然言語テキスト(modification_instruction)の3点で構成すること。"
+        "実際のコード(実装)は一切書かず、方針の指示のみに徹すること(実装はローカルモデルに"
+        '委譲される)。triage_type は "bug_fix" とすること。解説文やMarkdownのコードブロック'
+        "装飾は一切付けず、必ず submit_ast_modifications ツールの呼び出しのみで結果を提出すること。\n\n"
         "【パターンBの場合】SSoTに明記された最新仕様に合わせて、陳腐化したテストコードを"
         "修正するタスクを生成せよ。修正対象・方法はパターンAと同じ3点"
-        "(file_path・target_name・new_code)で構成し、生成する各タスクの triage_type を"
+        "(file_path・target_name・modification_instruction)で構成し、生成する各タスクの triage_type を"
         '必ず "test_update" にして submit_ast_modifications ツールで提出すること。'
         "summary フィールドには「⚠️ テストの陳腐化を検知し、修正ドラフトを生成しました。"
         "レビュー・マージは人間が行ってください」という旨を明記せよ"
@@ -946,7 +950,7 @@ async def phase2_claude_translation(
         {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
     ]
 
-    # Claude API に渡すツール定義。Pydanticモデル(tools.ast_modifier.AstModificationInstruction)の
+    # Claude API に渡すツール定義。Pydanticモデル(tools.ast_modifier.AstModificationDesign)の
     # JSON Schemaをそのまま input_schema へ流用し、Tool Calling強制の出力形式と
     # サーバー側バリデーションの型定義を単一のスキーマ源(Single Source of Truth)に保つ。
     submit_tool = {
@@ -957,7 +961,7 @@ async def phase2_claude_translation(
             "properties": {
                 "tasks": {
                     "type": "array",
-                    "items": AstModificationInstruction.model_json_schema(),
+                    "items": AstModificationDesign.model_json_schema(),
                 },
                 "summary": {"type": "string"},
             },
@@ -1042,7 +1046,7 @@ async def phase2_claude_translation(
             try:
                 validated_tasks = []
                 for raw_task in submit_block.input.get("tasks", []):
-                    validated = AstModificationInstruction(**raw_task)
+                    validated = AstModificationDesign(**raw_task)
                     task_dict = validated.model_dump()
                     task_dict["mode"] = "ast_replace"
                     validated_tasks.append(task_dict)
@@ -2087,6 +2091,96 @@ async def verify_logic_with_pytest(target_file: Path) -> tuple[bool, str]:
     return False, tail[-4000:]
 
 
+# --- ローカルCoderへの実装委譲(instructions/244: FinOpsコスト削減) ---
+# Claude API の出力トークンコストを削減するため、Claudeには「設計(修正方針)」のみを
+# 出力させ、実際のコード生成(実装)はローカルのOllama(qwen2.5-coder)へ委譲する。
+LOCAL_CODER_MODEL = "qwen2.5-coder:7b"
+LOCAL_CODER_URL = "http://127.0.0.1:11434/api/generate"
+
+_CODE_FENCE_START_RE = re.compile(r"^```[a-zA-Z]*\n")
+_CODE_FENCE_END_RE = re.compile(r"\n```$")
+
+
+def _strip_code_fences(text: str) -> str:
+    """ローカルCoderの応答からMarkdownのコードフェンス(```python ... ```)を除去する。
+
+    プロンプトでフェンスを付けないよう指示しても、小型モデルは癖でフェンスを
+    付けてくることがあるため、防御的に取り除く(付いていなければ何もしない)。
+    """
+    stripped = text.strip()
+    stripped = _CODE_FENCE_START_RE.sub("", stripped)
+    stripped = _CODE_FENCE_END_RE.sub("", stripped)
+    return stripped.strip()
+
+
+def _get_original_code(file_path: str, target_name: str) -> str:
+    """file_path内でtarget_nameに完全一致する関数/クラスの現在のソースを取得する。
+
+    ローカルCoderへの委譲には、Claudeが出力したmodification_instructionだけでなく
+    書き換え対象の現在のコードが必須のため、既存のACD Engine(acd_extract_function_blocks)
+    を流用して取得する(新規の探索ロジックは追加しない)。
+    """
+    resolved = _resolve_target_file(file_path)
+    if resolved is None:
+        return ""
+    for _, _, name, source in acd_extract_function_blocks(resolved):
+        if name == target_name:
+            return source
+    return ""
+
+
+async def generate_code_with_local_coder(original_code: str, instruction: str) -> str:
+    """元コード(original_code)と設計指示(instruction)から、ローカルのOllama
+    (qwen2.5-coder)に修正後の関数/クラスコードを生成させる。
+
+    Claude(高コスト)には設計(modification_instruction)のみを出力させ、実際の
+    コード生成をこの関数へ委譲することでAPI出力トークンコストを削減する
+    (instructions/244)。
+    """
+    prompt = (
+        "あなたは熟練のPythonエンジニアです。以下の「元のコード」を「修正方針」に"
+        "従って書き換えてください。\n\n"
+        f"【元のコード】\n```python\n{original_code}\n```\n\n"
+        f"【修正方針】\n{instruction}\n\n"
+        "出力は修正後の関数またはクラス定義のコードのみとし、解説文やMarkdownの"
+        "コードフェンス(```)は一切付けないでください。"
+    )
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+        response = await client.post(
+            LOCAL_CODER_URL,
+            json={"model": LOCAL_CODER_MODEL, "prompt": prompt, "stream": False},
+        )
+        response.raise_for_status()
+        raw_text = response.json().get("response", "")
+    return _strip_code_fences(raw_text)
+
+
+async def _delegate_code_generation_to_local_coder(tasks: list[dict]) -> None:
+    """Claudeが出力した設計(modification_instruction)を、ローカルCoderによる実装
+    (new_code)へ変換し、各taskへ書き戻す。
+
+    下流(phase3_aider_execution の ast_replace 分岐 / _escalate_test_update_tasks_to_sandbox)は
+    いずれも task["new_code"] を前提としているため、ここで埋めることで既存の適用経路
+    (libcstによるAST置換・多段バリデーションゲート)を一切変更せずに済む。
+    元コードが見つからない場合は空文字のままとし、下流の必須チェックにより
+    そのタスクは安全にスキップされる(縮退運転)。
+    """
+    for task in tasks:
+        file_path = task.get("file_path", "")
+        target_name = task.get("target_name", "")
+        instruction = task.get("modification_instruction", "")
+        original_code = _get_original_code(file_path, target_name)
+        if not original_code:
+            print(
+                f"⚠️ 警告: '{target_name}' の元コードが '{file_path}' 内に見つからず、"
+                "ローカルCoderへの委譲をスキップします。"
+            )
+            task["new_code"] = ""
+            continue
+        print(f"   🧑‍💻 [Local Coder] {file_path} :: {target_name}() の実装を生成中...")
+        task["new_code"] = await generate_code_with_local_coder(original_code, instruction)
+
+
 async def _run_claude_pipeline_and_commit(
     user_instruction: str, log_path: Path, deduped_log: str, commit_message: str
 ) -> None:
@@ -2106,6 +2200,8 @@ async def _run_claude_pipeline_and_commit(
 
     triage_data = await phase2_claude_translation(user_instruction, log_path)
     tasks = triage_data.get("tasks", [])
+
+    await _delegate_code_generation_to_local_coder(tasks)
 
     test_update_tasks = [t for t in tasks if t.get("triage_type") == "test_update"]
     bug_fix_tasks = [t for t in tasks if t.get("triage_type") != "test_update"]

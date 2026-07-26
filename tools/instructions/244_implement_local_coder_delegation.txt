@@ -1,0 +1,24 @@
+【ミッション: Claude APIコスト削減のためのローカルCoderへの実装委譲】
+
+現在、Claude APIの出力トークンコストが膨大になっています。これを削減するため、Claudeには「設計（修正指示）」のみを行わせ、実際のコード生成（実装）はローカルのOllama（Qwen Coder等）に委譲するパイプラインへ改修します。
+
+Step 1: スキーマの分離とClaudeの役割変更
+`tools/ast_modifier.py` または `tools/nazo_agent.py` に定義されている、Claudeが出力するTool Callingのスキーマ（`AstModificationInstruction` 等）を修正してください。
+- 変更前: `new_code`（修正後のコード全文）を出力させていた。
+- 変更後: `new_code` を廃止し、代わりに `modification_instruction`（修正方針を指示する短い自然言語テキスト）を出力させる新しいスキーマ（例: `AstModificationDesign`）を定義し、Claudeにはこれを出力させてください。
+
+Step 2: ローカルCoder（Ollama）呼び出し関数の実装
+`tools/nazo_agent.py` に、ローカルのOllama API（例: `http://localhost:11434/api/generate` または `api/chat`）を呼び出す非同期関数 `generate_code_with_local_coder(original_code: str, instruction: str) -> str` を実装してください。
+- モデルは `qwen2.5-coder`（または現在利用可能な最適なコーディングモデル）を指定してください。
+- プロンプトには、対象関数の `original_code` と、Claudeが出力した `instruction` を渡し、「修正後の関数コードのみ（Markdownフェンスなし、またはパース可能な形式）を出力せよ」と指示してください。
+
+Step 3: パイプラインの結合
+`tools/nazo_agent.py` のメインフロー（`_run_claude_pipeline_and_commit` 等）を改修し、以下の順序で処理が進むように結合してください。
+1. Claude APIを呼び出し、設計書（`file_path`, `target_name`, `modification_instruction`）を取得する。
+2. `tools/ast_mapper.py`（または `file_reader.py`）を用いて、対象の `original_code` を取得する。
+3. `generate_code_with_local_coder` を呼び出し、ローカルモデルに `new_code` を生成させる。
+4. 生成された `new_code` を既存の `ast_modifier.apply_modification` に渡してAST置換を行う。
+
+Step 4: 動作確認とコミット
+実装が完了したら、コードの構文チェックを行い、変更をコミットしてください（Pushは不要です）。
+完了後、パイプラインがどのように分離されたか、アーキテクチャの変更点を報告してください。
