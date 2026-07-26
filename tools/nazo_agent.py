@@ -1868,6 +1868,113 @@ def _commit_or_shadow(target_dir: Path, files: list[str], commit_message: str) -
     return True
 
 
+def _create_and_open_pr(
+    target_dir: Path, files: list[str], commit_message: str, branch_prefix: str
+) -> tuple[bool, bool | None]:
+    """Agentによる修正を、共有ブランチへの直接コミットではなく専用の作業ブランチへ
+    退避してコミットし、GitHub CLI(`gh pr create --draft`)でPRドラフトを作成する。
+
+    instructions/245(SSoT第6項「Human-in-the-Loop」原則): Agent(nazo_agent.py)が
+    `main`(共有の作業ブランチ)へ自律的に直接コミット・Push(特にpush --force)する
+    挙動を禁止し、必ず新しい作業ブランチを介したPRドラフトとして人間のレビュー・
+    マージに委ねる。settings.shadow_mode有効時は_commit_or_shadowの既存の抑止経路
+    (ログのみ記録)に完全に委ね、ブランチ作成すら行わない。
+
+    このスクリプト自身がtarget_dirを共有の作業ディレクトリとして使い続けるデーモン
+    であるため、コミット・Push・PR作成のどの段階で終わっても、finallyで必ず元居た
+    ブランチへcheckoutし直す(ブランチを切り替えたまま放置しない)。
+
+    戻り値: (PRドラフトの作成に成功したか, 6次元定量評価ゲートに合格したか)。
+    ゲート自体を評価できなかった場合(shadow_mode抑止・実質的な変更なしでコミットが
+    発生しなかった場合)、2番目の要素はNoneとなる。
+    """
+    if settings.shadow_mode:
+        _commit_or_shadow(target_dir, files, commit_message)
+        return False, None
+
+    original_branch = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(target_dir),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        check=True,
+    ).stdout.strip()
+
+    branch_name = (
+        f"{branch_prefix}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    )
+    subprocess.run(["git", "checkout", "-b", branch_name], cwd=str(target_dir), check=True)
+
+    try:
+        committed = _commit_or_shadow(target_dir, files, commit_message)
+        if not committed:
+            return False, None
+
+        # rollback=False: このコミットはまだ共有ブランチへマージされていない専用
+        # ブランチ上の下書きであり、git revertで打ち消してもレビュー対象のPRを
+        # 汚すだけなので、判定結果のみをPR本文へ記載し人間の判断に委ねる。
+        gate_passed = _run_post_commit_quality_gate(target_dir, rollback=False)
+
+        push_result = subprocess.run(
+            ["git", "push", "-u", "origin", branch_name],
+            cwd=str(target_dir),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+        )
+        if push_result.returncode != 0:
+            print(
+                f"🚨 [PR Workflow] ブランチ '{branch_name}' のPushに失敗しました: "
+                f"{push_result.stderr.strip()}"
+            )
+            print(f"   ローカルには残っています。手動でのPushは以下で可能です: git push -u origin {branch_name}")
+            return False, gate_passed
+
+        gate_note = (
+            "✅ 6次元定量評価ゲート: 合格"
+            if gate_passed
+            else "⚠️ 6次元定量評価ゲート: 不合格または評価不能(マージ前に必ず内容を確認してください)"
+        )
+        pr_result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "create",
+                "--draft",
+                "--base",
+                "main",
+                "--head",
+                branch_name,
+                "--title",
+                commit_message,
+                "--body",
+                "Nazo-Agentによる自律修正です(instructions/245: SSoT第6項 Human-in-the-Loop)。\n\n"
+                f"{gate_note}\n\n"
+                "マージの可否は必ず人間のレビューによって判断してください。",
+            ],
+            cwd=str(target_dir),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+        )
+        if pr_result.returncode != 0:
+            print(f"🚨 [PR Workflow] PRドラフトの作成に失敗しました: {pr_result.stderr.strip()}")
+            print(
+                f"   ブランチ '{branch_name}' はPush済みです。手動でのPR作成は以下で可能です: "
+                f"gh pr create --draft --base main --head {branch_name}"
+            )
+            return False, gate_passed
+
+        print(f"✅ [PR Workflow] PRドラフトを作成しました:\n{pr_result.stdout.strip()}")
+        return True, gate_passed
+    finally:
+        subprocess.run(["git", "checkout", original_branch], cwd=str(target_dir), check=True)
+
+
 def _autonomous_rollback(target_dir: Path, commit_hash: str = "HEAD") -> None:
     """直前のNazo-Agent自動コミット(commit_hash)を `git revert --no-edit` で自律的に
     取り消す(instructions/188、6次元定量評価ゲートで退行を検知した場合のFail-Safe)。
@@ -1928,7 +2035,7 @@ def _autonomous_rollback(target_dir: Path, commit_hash: str = "HEAD") -> None:
     sys.exit(1)
 
 
-def _run_post_commit_quality_gate(target_dir: Path) -> bool:
+def _run_post_commit_quality_gate(target_dir: Path, rollback: bool = True) -> bool:
     """Nazo-Agentがtarget_dirへ実際にコミット(shadow_mode抑止でない、_commit_or_shadow
     がTrueを返した場合のみ呼ぶこと)した直後、6次元定量評価ゲート
     (tools/benchmark/run_benchmark.py: evaluate_6d_quality_gate)を再実行し、退行
@@ -1948,8 +2055,15 @@ def _run_post_commit_quality_gate(target_dir: Path) -> bool:
     参照)。ロールバックするのはreport["quality_gate_6d"]["passed"]が明示的にFalseの
     場合のみ。
 
+    rollback=False(instructions/245: PRドラフト運用)の場合、退行を検知しても
+    git revertは行わない。専用の作業ブランチ上のコミットはまだ共有ブランチへ
+    マージされていない使い捨ての下書きであり、そこにrevertコミットを積んでも
+    レビュー対象のPRを汚すだけで意味がないため、判定結果のみを呼び出し元
+    (_create_and_open_pr)へ返し、PR本文への記載を通じて人間の判断に委ねる。
+
     戻り値: ゲートに合格した、またはゲート自体を評価できなかった場合はTrue(いずれも
-    ロールバック不要)。退行を明示的に検知してロールバックを実行した場合はFalse。
+    ロールバック不要)。退行を明示的に検知した場合はFalse
+    (rollback=Trueの場合はさらに_autonomous_rollback()を実行してから返す)。
     ロールバック自体が失敗した場合は_autonomous_rollback内でsys.exit(1)しこの関数から
     戻らない。
     """
@@ -1988,6 +2102,14 @@ def _run_post_commit_quality_gate(target_dir: Path) -> bool:
     if gate.get("passed"):
         print("✅ [Fail-Safe] 6次元定量評価ゲートに合格しました。ロールバックは不要です。")
         return True
+
+    if not rollback:
+        print(
+            "🚨 [Fail-Safe] 6次元定量評価ゲートで退行を検知しました"
+            f"({json.dumps(gate.get('dimensions'), ensure_ascii=False)})。"
+            "ロールバックは行わず、PRドラフトへ結果を記録します(マージの可否は人間が判断してください)。"
+        )
+        return False
 
     print(
         "🚨 [Fail-Safe] 6次元定量評価ゲートで退行を検知しました。直前のコミットを"
@@ -2218,16 +2340,15 @@ async def _run_claude_pipeline_and_commit(
 
     if success_count > 0 and successful_files:
         print(
-            f"\n📦 {success_count}件の成功ファイルを一括コミット(Bulk Commit)します..."
+            f"\n📦 {success_count}件の成功ファイルをPRドラフトとして提出します"
+            "(instructions/245: 直接コミット・Pushは行いません)..."
         )
         try:
-            committed = _commit_or_shadow(TARGET_APP_DIR, successful_files, commit_message)
-            # 【instructions/188】実際にライブブランチへコミットした場合のみ、6次元定量
-            # 評価ゲートで退行を検証する(shadow_mode抑止時はコミット自体が存在しない)。
-            if committed:
-                _run_post_commit_quality_gate(TARGET_APP_DIR)
+            _create_and_open_pr(
+                TARGET_APP_DIR, successful_files, commit_message, "fix/agent-auto-repair"
+            )
         except Exception as e:
-            print(f"⚠️ コミット失敗: {e}")
+            print(f"⚠️ PRドラフトの作成に失敗しました: {e}")
 
 
 async def _process_target(user_instruction: str, engine: str, log_path: Path) -> None:
@@ -2301,25 +2422,27 @@ async def _process_target(user_instruction: str, engine: str, log_path: Path) ->
                     if test_ok:
                         rel_path = str(resolved_target)
                         print(
-                            "\n📦 自律修復ループによる変更を一括コミット(Bulk Commit)します..."
+                            "\n📦 自律修復ループによる変更をPRドラフトとして提出します"
+                            "(instructions/245: 直接コミット・Pushは行いません)..."
                         )
                         try:
-                            committed = _commit_or_shadow(
+                            opened_pr, gate_passed = _create_and_open_pr(
                                 TARGET_APP_DIR,
                                 [rel_path],
                                 "fix: LangGraph自律修復ループによる自動修正",
+                                "fix/agent-auto-repair",
                             )
 
                             # --- 推論軌跡SFTデータ自動抽出フック(フライホイール化) ---
-                            # 【instructions/182】シャドウモードで実コミットが抑止された
-                            # 場合(committed=False)、抽出対象となる実際のコミットが
+                            # 【instructions/182】シャドウモードでPR作成自体が抑止された
+                            # 場合(opened_pr=False)、抽出対象となる実際のコミットが
                             # 存在しないため、このフック自体もスキップする。
-                            # 【instructions/188】6次元定量評価ゲートで退行を検知して
-                            # 自律ロールバックした場合(_run_post_commit_quality_gateが
-                            # Falseを返す)、そのコミットは既に取り消されているため、
-                            # 学習データとして抽出・蓄積しない(フライホイールが退行を
-                            # 「成功修復」として誤学習することを防ぐ)。
-                            if committed and _run_post_commit_quality_gate(TARGET_APP_DIR):
+                            # 【instructions/188 / 245】6次元定量評価ゲートで退行を
+                            # 検知した場合(gate_passed=False)、その修正は既にPRドラフト
+                            # 内に留め置かれ人間のレビュー待ちであり、まだ「成功修復」と
+                            # 確定していないため、学習データとして抽出・蓄積しない
+                            # (フライホイールが退行を誤学習することを防ぐ)。
+                            if opened_pr and gate_passed:
                                 print(
                                     "\n🌀 [Flywheel] 今回の修復軌跡を学習データとして抽出します..."
                                 )
@@ -2347,7 +2470,7 @@ async def _process_target(user_instruction: str, engine: str, log_path: Path) ->
                                         f"⚠️ 学習データの抽出に失敗しました (code={sft_result.returncode})。"
                                     )
                         except Exception as e:
-                            print(f"⚠️ コミット失敗: {e}")
+                            print(f"⚠️ PRドラフトの作成に失敗しました: {e}")
                     else:
                         print(
                             "\n🚨 [Escalation] Ollamaの修正が論理テストに失敗しました。"
@@ -2434,12 +2557,14 @@ async def main_flow(user_instruction: str, engine: str = "ollama"):
     print("\n" + "🌟" * 25)
     print("🎯 【V8.8 (Tool-Augmented) 対話型・自律パイプライン完走 (超・可観測仕様)】")
     print(
-        "   すべてのフェーズが終了しました。Gitログと final_error_log.txt を確認してください。"
+        "   すべてのフェーズが終了しました。final_error_log.txt と、"
+        "作成されたPRドラフト(`gh pr list --draft`)を確認してください。"
     )
     print(
-        "   ※ 万が一、修正に失敗しエラーが悪化していた場合は、以下のコマンドで一撃ロールバックが可能です:"
+        "   ※ instructions/245により、Agentは修正をmain(共有ブランチ)へ直接コミット・"
+        "Pushしません。修正はすべて専用ブランチ上のPRドラフトとして提出されるため、"
+        "問題があれば単にそのPRをマージしなければ安全です。"
     )
-    print(f"   git -C {TARGET_APP_DIR} reset --hard HEAD~1")
     print("🌟" * 25 + "\n")
 
     # --- V8.9: Graceful Shutdown ---
