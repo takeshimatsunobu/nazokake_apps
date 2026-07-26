@@ -640,6 +640,66 @@ async def async_get_item(doc_id: str) -> dict[str, Any] | None:
         return {c.name: getattr(row, c.name) for c in NazokakeItemORM.__table__.columns}
 
 
+# instructions/240: 起動時リストアで一括挿入する際、NOT NULL制約かつPython側
+# defaultを持つ列(feed_ready/status/is_user_edited/is_golden_data/is_approved/
+# sync_status/retry_count)は、Core経由の複数行insertではORMのdefault=が
+# 自動適用されない(キーが明示的にNoneだとNULLをそのままバインドしてしまい
+# NOT NULL制約違反になる)。Firestore側のドキュメントにキー自体が無かった場合
+# にのみ、この既定値で補う。
+_NAZOKAKE_ITEM_BULK_DEFAULTS: dict[str, Any] = {
+    "feed_ready": True,
+    "status": "pending",
+    "is_user_edited": False,
+    "is_golden_data": False,
+    "is_approved": False,
+    "sync_status": "synced",  # Firestoreから来た時点で定義上「既に同期済み」
+    "retry_count": 0,
+}
+
+
+async def async_bulk_restore_items_if_missing(rows: list[dict[str, Any]]) -> tuple[int, int]:
+    """instructions/240: Firestoreからの起動時リストア専用の一括挿入。
+
+    1件ずつsession.get()で存在確認してから個別commitする方式は、実際の
+    nazokake_itemsコレクションの規模(実測1万件超)ではCloud Runの起動を
+    数分間ブロックしてしまい実用にならないため、SQLiteのINSERT OR IGNORE相当
+    (on_conflict_do_nothing、doc_id基準)で複数件を1回のトランザクションに
+    まとめて処理する。呼び出し元(firestore_sync.py)がSQLiteのホスト
+    パラメータ数上限を避けるための適度なチャンクサイズに分割して渡す前提。
+
+    SQLAlchemy Coreの複数行insertは全行が同一のキー集合を持つ必要があるため、
+    ORMの全カラムを基準に各行を正規化する(欠けているキーは、NOT NULL制約を
+    持つ列のみ_NAZOKAKE_ITEM_BULK_DEFAULTSで補い、その他はNULL許容なのでNoneのまま)。
+
+    戻り値は (このバッチでの新規挿入件数, 既存のためスキップされた件数)。
+    """
+    if not rows:
+        return 0, 0
+
+    columns = [c.name for c in NazokakeItemORM.__table__.columns]
+    filtered_rows = []
+    for payload in rows:
+        if not payload.get("doc_id") or not payload.get("odai"):
+            continue
+        row = {
+            col: (payload[col] if col in payload else _NAZOKAKE_ITEM_BULK_DEFAULTS.get(col))
+            for col in columns
+        }
+        filtered_rows.append(row)
+
+    if not filtered_rows:
+        return 0, 0
+
+    async with get_session() as session:
+        async with session.begin():
+            stmt = sqlite_insert(NazokakeItemORM).values(filtered_rows)
+            stmt = stmt.on_conflict_do_nothing(index_elements=["doc_id"])
+            result = await session.execute(stmt)
+            inserted = result.rowcount if result.rowcount and result.rowcount > 0 else 0
+
+    return inserted, len(filtered_rows) - inserted
+
+
 async def async_get_dlq_items() -> list[dict[str, Any]]:
     """DLQ(sync_status=="fatal"、ポイズンピル隔離済み)の行を全カラムで取得する。
 

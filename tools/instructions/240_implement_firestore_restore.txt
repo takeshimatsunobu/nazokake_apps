@@ -1,0 +1,21 @@
+【ミッション: Cloud Run起動時のFirestoreからのデータリストア（復元）の実装】
+
+前回のタスクでFirestoreへのバックアップ（Push）が完了しました。
+今回は、Cloud Runコンテナの起動時に、Firestoreに保存されているデータを空のSQLiteへ書き戻す（Pull/リストア）処理を実装し、データ永続化のサイクルを完成させます。
+
+Step 1: リストア関数の実装
+`packages/shared_core/nazokake_core/firestore_sync.py` に、Firestoreの `nazokake_items` コレクションから全ドキュメントを取得し、ローカルのSQLiteへ一括でUpsertする関数 `async_restore_from_firestore()` を実装してください。
+- 取得したデータは `NazokakeItem` スキーマでバリデーションしてからSQLiteへ保存してください。
+- データ量が多い場合を考慮し、必要であればページネーションやバッチ処理を検討してください（現状は全件取得でも構いません）。
+
+Step 2: 起動フックへの組み込み
+`apps/evaluator/backend/main.py` の起動フック（`@app.on_event("startup")`）内で、`init_db()` の直後に `async_restore_from_firestore()` を呼び出すように修正してください。
+- 起動時のリストア処理で例外が発生した場合でも、アプリ全体の起動がクラッシュしないよう、適切に例外をハンドリング（ログ出力のみ）してください。
+
+Step 3: 動作確認とコミット
+実装が完了したら、ローカル環境で以下のテストを行ってください。
+1. ローカルのSQLiteファイル（`nazokake_local.db`）を削除する。
+2. サーバーを起動する。
+3. 起動ログにリストア処理の成功が記録され、API経由でデータが取得できること（Firestoreから復元されたこと）を確認する。
+問題なければ、変更をコミットし、リモートへPushしてデプロイをトリガーしてください。
+完了後、実装内容と検証結果を報告してください。
