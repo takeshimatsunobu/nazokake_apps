@@ -54,6 +54,10 @@ data/sft_dataset.jsonl
 data/dpo_dataset.jsonl
 data/extraction_stats.json
 
+# extract_training_data.pyが生成するインストラクション・チューニング用JSONL
+# (instructions/241、再生成可能な成果物かつ実ユーザーデータを含むため非コミット)
+data/training/
+
 # 一時ファイル・スモークテストの残骸
 _tmp*
 

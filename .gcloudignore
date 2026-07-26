@@ -55,14 +55,27 @@ cloudflared.exe
 # --- apps/batch_factory: このcloudbuild.yamlはevaluatorのみビルドするため丸ごと不要 ---
 apps/batch_factory/
 
-# --- apps/evaluator: ビルドに必要な backend/ と Dockerfile 以外は不要 ---
-apps/evaluator/frontend/
+# --- apps/evaluator: ビルドに必要な backend/・Dockerfile・frontend/public/ 以外は不要 ---
+# 【instructions/241で発見・修正】apps/evaluator/frontend/ を丸ごと除外していたが、
+# instructions/204(フロントエンド一元配信)以降、Dockerfileが
+# `COPY apps/evaluator/frontend/public ./apps/evaluator/frontend/public` を実行するため、
+# このディレクトリ全除外は本来ビルドに必要なファイルまで欠落させる古い記述だった
+# (cloudbuild.yaml経由の`gcloud builds submit`を実際に使うとCOPY失敗でビルドが壊れる)。
+# public/ のみ明示的に再度含める。
+apps/evaluator/frontend/*
+!apps/evaluator/frontend/public
 apps/evaluator/data/
 apps/evaluator/scripts/
 apps/evaluator/export_context_final/
 apps/evaluator/service_frontend/
 apps/evaluator/.firebase/
 apps/evaluator/*.gguf.bak
+
+# --- ローカルSQLite実体・一時的な事実抽出成果物(instructions/241) ---
+*.db
+*.db-wal
+*.db-shm
+docs/audit/
 
 # --- ローカル開発ツール・キャッシュ・履歴(リポジトリ全体) ---
 .agents/
