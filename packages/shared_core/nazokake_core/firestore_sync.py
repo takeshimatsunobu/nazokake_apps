@@ -74,6 +74,14 @@ def _push_one_sync(db, collection: str, row: dict[str, Any]) -> str:
     Firestore上の既存ドキュメントのupdated_atがローカルのそれより新しい場合は
     「順序逆転」とみなし、上書きせずスキップする。戻り値は "pushed" または
     "skipped_stale"。
+
+    【instructions/250】merge=Trueで書き込む(非merge の set() は、payload に
+    含まれないフィールドをすべて削除する全置換のため)。このローカル行が知らない
+    フィールド(例: workers/ondemand_elyza_worker.pyがelyza_job_status等の狭い
+    フィールド集合にスコープを絞って直接書き込んだ結果)を、Cloud Run側の定期的な
+    バックアップPushが誤って消し去ることを防ぐ。skip_staleの判定ロジック自体は
+    このmerge化と無関係(判定は書き込みの実行有無のみを左右し、書き込み方式には
+    影響しない)。
     """
     doc_ref = db.collection(collection).document(row["doc_id"])
     payload = _build_push_payload(row)
@@ -90,7 +98,7 @@ def _push_one_sync(db, collection: str, row: dict[str, Any]) -> str:
                 and remote_updated_at > local_updated_at
             ):
                 return "skipped_stale"
-        transaction.set(doc_ref, payload)
+        transaction.set(doc_ref, payload, merge=True)
         return "pushed"
 
     return _txn(db.transaction())

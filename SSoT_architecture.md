@@ -76,6 +76,11 @@ Criticトリアージ (Human-in-the-Loop): SSoTの動的注入によるテスト
   - **`interfaces/`:** ユーザー指定のお題でのリアルタイム生成、または評価リクエストを同期的に処理するエンドポイント。
 - **Local SSoTモデル (絶対的正データストア):** ローカルDB（SQLite等）を単一の絶対的な正（Single Source of Truth）と定義する。すべての新規データ生成・更新は必ずローカルDBに対してのみ行う。ドキュメント契約は `packages/shared_core/nazokake_core/schemas.py` の `NazokakeItem` としてPydanticで凍結し、`doc_id`/`odai`/`nazokake_text`/`scores`/`s_total`等の必須フィールドを保証する。
 - **Firestoreの役割 (読み取り専用レプリカ/バックアップ):** Firestoreはクラウド上の「読み取り専用レプリカ」および「バックアップ」としてのみ機能させる。クラウド側からの新規書き込みは一切禁止し、ローカルDB→Firestoreへの一方向同期のみを許可することで、スプリットブレイン問題を物理的に排除する。
+- **【instructions/250: 名前付き・限定的な例外】オンデマンドELYZAジョブキュー:** 上記の一方向同期原則に対する、意図的かつ範囲を限定した唯一の例外。Cloud Run本番環境にはローカルOllama/ELYZAへの直接到達経路が(トンネル接続時を除き)存在しないため、なぞかけの"おまけ"(ELYZA)生成をFirestore経由の非同期ジョブとしてローカルワーカー(`workers/ondemand_elyza_worker.py`)へ委譲する。
+  - Cloud Run側はこの例外においても直接Firestoreへ書き込まない。「pending」の合図はCloud Run自身のローカルSQLite(`POST /generate`の通常upsert)へ書くだけであり、既存の一方向同期(`sync_once`)がそれを間接的にFirestoreへ伝播させる。
+  - `workers/ondemand_elyza_worker.py` だけが、Firestoreへの書き込み権限を持つ第二の書き手として明示的に許可される。ただし対象は次の狭いフィールド集合に厳格に限定する: `elyza_job_status` / `elyza_job_locked_at` / `elyza_job_retry_count` / `llmjp_status` / `result_llmjp` / `nazokake_text_llmjp` / `scores_llmjp` / `s_total_llmjp` / `overall_llmjp` / `axis_comments_llmjp`。`status`/`eval_status`/`result`/`result_gemini`/`scores`/`message`等のGemini・主系フィールドには一切書き込まない(`doc_ref.update()`によるフィールド単位の更新のみを用い、ドキュメント全体を置換する`set()`は使わない)。
+  - この例外を許容してもなお二重書き込みによる破壊を避けるため、`sync_once`のFirestoreへの書き込みは`merge=True`(フィールド単位マージ)を用いる。これにより、Cloud Run側の定期的なバックアップPushが、ワーカーが書き込んだ上記フィールドを意図せず上書き・消去することを防ぐ。
+  - `elyza_status`(既存カラム)は本例外とは無関係の別概念(golden feedのキュレーションフラグ、後述参照)であるため、意図的に別カラム`elyza_job_status`を新設して衝突を避けている。
 - **非同期バックアップ同期:** ローカルDBに変更が加わった際、非同期ジョブ（`workers/`）を利用してFirestoreへデータをPush（上書き）する。
 - **同期失敗時のフェイルセーフ:** 通信エラー等でFirestoreへの同期が失敗した場合は、ローカルの「デッドレターキュー（DLQ）」への退避、または当該レコードへの「未同期フラグ（`sync_status = "pending"`）」の記録によって失敗を可視化する。
 - **リトライ機構 (冪等同期):** ネットワーク復旧時、ワーカーが `sync_status = "pending"` の未同期データを拾い上げ、Firestoreに対して冪等（何度実行しても結果が同じ）な上書き操作で同期を再試行する。
@@ -83,7 +88,8 @@ Criticトリアージ (Human-in-the-Loop): SSoTの動的注入によるテスト
 - **ステータス管理 (実態: 複数軸の独立フラグ):** 単一のMECEな6状態遷移ではなく、`NazokakeItem` が持つ複数の独立したステータス軸で管理する。
   - `status`: feed.js連携用の全体ステータス（例: `"all_completed"`）。
   - `eval_status`: 評価パイプラインの完了状態（例: `"completed"`）。
-  - `gemini_status` / `elyza_status`: 各生成エンジン（Gemini / ELYZA）別の生成完了状態（例: `"pending"` / `"n/a"`）。
+  - `llmjp_status`: ELYZA（おまけ）生成パイプラインの完了状態（例: `"pending"` / `"generated"` / `"completed"` / `"failed"`）。実装上のフィールド名は`elyza_status`ではなく`llmjp_status`である点に注意(下記訂正)。
+  - `gemini_status` / `elyza_status`: 各生成エンジン別の golden feed 選定フラグ（例: `"golden"` / `"n/a"`）。上記`llmjp_status`とは異なる目的のフィールドであり、混同しないこと(instructions/250でこのドリフトが判明し、オンデマンドELYZAジョブキューには意図的に別カラム`elyza_job_status`を新設した)。
   - `is_user_edited` / `is_golden_data` / `is_approved`: 赤ペン添削・学習データ選定用の真偽値フラグ群。
  これらに加え、トレンド抽出等のバッチキューの排他制御は、ローカルDBのレコードレベルロック（またはトランザクションによるステータス更新）を用いて pending → processing → completed の3状態をアトミックに制御し、複数ワーカーの競合を物理的に排除する。
 
@@ -126,4 +132,4 @@ pyright_tool.py (静的型検査): 変更適用前にPyrightをドライラン�
   - **データ（双方向・還流型）:** ローカルSQLite → Firestoreへの非同期バックアップ同期（8.2節）に加え、本番環境（Cloud Run）で収集された鎮静化（SNS上の不毛な争いをユーモアでアウフヘーベンさせるという本システムの目標、1節参照）の成否データが、Firestore経由でローカル環境へ還流する。
 - **ビジネスロジックのフロー（本番成否データ→自己改善トリガー）:** 本番で収集された鎮静化の成否データは、`data-sync-daemon` によってFirestoreからローカルSQLiteへ取り込まれ、ローカルエージェント（`agent-workspace`）の継続的な自己改善（プロンプト評価・DPO/SFTデータ蓄積、7節課題P）を駆動するトリガーとなる。この一連の流れにより、本番運用の実績が次のローカル生成・評価サイクルの質を高める閉路を構成する。
 - **ネットワーク境界:** `agent-workspace` と `gen-engine` は外部到達不能な内部網（`cleanroom-internal`）でのみ接続し、`agent-workspace` と `data-sync-daemon` は外部API（Claude/Gemini、Firestore）到達用の`cleanroom-egress`網を個別に持つ。`agent-workspace`のソースマウントは`apps/` `packages/` `tools/` `tests/`に厳格に限定し、`infra/`自身および`data/`（SSoT実体・鍵情報）は対象外とすることで、自律修正ループがインフラ定義やデータ領域を予期せず破壊することを構造的に防ぐ。
-- **【現状の制約】** Firestore↔SQLite間の実際の同期ロジック（`workers/`相当）は本セクション執筆時点では未実装であり、`data-sync-daemon`はコンテナ・マウント構成のみを確定させたプレースホルダー状態である（7節のバックログ対象）。
+- **【現状の制約(instructions/250で部分的に解消)】** Firestore↔SQLite間のバックアップ同期ロジック(ローカルSQLite→Firestoreの一方向Push)自体は既存の`nazokake_core.firestore_sync`として実装済みだが、`workers/`配下の実ファイルとしては`workers/ondemand_elyza_worker.py`(オンデマンドELYZAジョブキュー、8.2節)が最初の具体的な実装である。`data-sync-daemon`(常設バックグラウンドデーモンとしての同期ワーカー)自体は依然コンテナ・マウント構成のみのプレースホルダー状態のままであり(7節のバックログ対象)、`ondemand_elyza_worker.py`は人間が手動起動するオンデマンド実行を前提とする別物である点に注意。

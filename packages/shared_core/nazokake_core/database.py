@@ -171,6 +171,25 @@ class NazokakeItemORM(Base):
     # retry_count: 連続同期失敗回数(ポイズンピル判定用)。upsert_item()でローカル内容が
     # 変わるたびに0へリセットする(=新しい変更は「まだ1度も試していない」とみなす)。
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    # --- instructions/250: オンデマンドELYZAジョブキュー(SSoT §8.2 一方向同期原則への
+    # 名前付き・限定的な例外) ---
+    # 既存の elyza_status(golden feed用のキュレーションフラグ、"n/a"/"golden"等)とは
+    # 意味が異なるため、意図的に別カラムとして分離する(既存機能を壊さないため)。
+    # 値: None / "pending" / "processing" / "completed" / "failed" / "dead_letter"。
+    # このステータスの伝播経路は次の通り: Cloud Run側はこのフィールドに直接Firestoreへ
+    # 書き込まない。POST /generate 時点のupsert_item()へ含めるだけで、既存の一方向
+    # 同期(sync_once/_push_one_sync)が自動的にFirestoreへ伝播させる。書き戻し
+    # (pending -> processing -> completed/failed)は workers/ondemand_elyza_worker.py が
+    # 唯一の書き手であり、Firestore側でもこのフィールドと関連するllmjp_status/*_llmjp
+    # 系フィールドのみをスコープを絞って更新する(status/eval_status/result/scores等の
+    # Gemini・主系フィールドには一切触れない)。
+    elyza_job_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    # elyza_job_locked_at: "processing"に遷移した時刻(ISO8601)。ワーカーがクラッシュして
+    # 「processing」のまま停止した場合のゾンビ回収(stale判定)の基準値としてのみ使う。
+    elyza_job_locked_at: Mapped[str | None] = mapped_column(String, nullable=True)
+    # elyza_job_retry_count: このジョブの連続失敗回数。mark_sync_failed()のポイズンピル
+    # 判定と同じ考え方で、上限到達時に"dead_letter"へ隔離し無限リトライを防ぐ。
+    elyza_job_retry_count: Mapped[int] = mapped_column(Integer, default=0)
 
 
 class AuditLogORM(Base):

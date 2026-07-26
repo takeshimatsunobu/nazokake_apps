@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from loguru import logger
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from firebase_admin import firestore
 
 from api.deps import get_db, handle_exceptions
 from api.routers.admin_costs import is_budget_exceeded
@@ -28,7 +29,7 @@ from models.schemas import GenerateRequest
 from services.generation import generate_via_gemini, generate_via_llmjp
 from services.evaluation import run_evaluation, AXES
 from nazokake_core.database import async_get_item, async_upsert_item
-from nazokake_core.firestore_sync import sync_once_safe
+from nazokake_core.firestore_sync import _ensure_firebase_app, _resolve_collection, sync_once_safe
 from nazokake_core.quality_circuit_breaker import async_record_evaluation_score
 from nazokake_core.schemas import Result, Scores
 
@@ -195,6 +196,51 @@ async def _guarded_progressive(db, doc_id: str, odai: str, pair_id: str):
             logger.error(f"[{doc_id}] エラーステータスのDB書き込みに失敗: {db_e}")
 
 
+# 【instructions/250】オンデマンドELYZAワーカーがFirestoreへ書き戻す結果のうち、
+# GET /status がマージしてよいフィールドのみを明示的に列挙する(スコープ限定)。
+# status/eval_status/result/scores等のGemini・主系フィールドはここに含めない
+# (SSoT §8.2の一方向同期原則への例外はこの狭いフィールド集合に限定されるため)。
+_ELYZA_JOB_MERGE_FIELDS = (
+    "llmjp_status",
+    "result_llmjp",
+    "nazokake_text_llmjp",
+    "scores_llmjp",
+    "s_total_llmjp",
+    "overall_llmjp",
+    "axis_comments_llmjp",
+)
+
+
+def _fetch_completed_elyza_job_sync(doc_id: str) -> dict | None:
+    """Firestoreの該当ドキュメントを直接読み取り、オンデマンドELYZAワーカーが
+    elyza_job_status="completed"を書き込み済みであれば、マージ対象フィールドのみを
+    返す(読み取り専用。Cloud Run側からのFirestoreへの書き込みは一切行わない)。
+
+    firebase_adminの同期APIをそのまま使う(呼び出し元でasyncio.to_threadに包む)。
+    """
+    _ensure_firebase_app()
+    db = firestore.client()
+    snapshot = db.collection(_resolve_collection()).document(doc_id).get()
+    if not snapshot.exists:
+        return None
+    remote = snapshot.to_dict() or {}
+    if remote.get("elyza_job_status") != "completed":
+        return None
+    return {field: remote.get(field) for field in _ELYZA_JOB_MERGE_FIELDS}
+
+
+async def _fetch_completed_elyza_job(doc_id: str) -> dict | None:
+    """Firestore参照が失敗しても(オフライン・権限エラー等)、ローカルSQLite単独の
+    結果へ安全に縮退できるよう、例外はここで吸収してNoneを返す
+    (呼び出し元のポーリングエンドポイント自体を落とさない)。
+    """
+    try:
+        return await asyncio.to_thread(_fetch_completed_elyza_job_sync, doc_id)
+    except Exception as e:
+        logger.warning(f"⚠️ [ELYZA Job] Firestoreからの結果マージに失敗(ローカルのみで続行): {e}")
+        return None
+
+
 @router.get("/status/{doc_id}")
 @handle_exceptions
 async def get_status(doc_id: str, background_tasks: BackgroundTasks):
@@ -206,6 +252,15 @@ async def get_status(doc_id: str, background_tasks: BackgroundTasks):
     data = await async_get_item(doc_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Not found")
+
+    # 【instructions/250】ローカルSQLite側でELYZAがまだ完了していない場合のみ、
+    # オンデマンドワーカーがFirestoreへ書き戻した結果がないか確認してマージする
+    # (ローカルが既に完了済みならFirestoreへは問い合わせない: 無駄なAPI呼び出し削減)。
+    if data.get("llmjp_status") != "completed":
+        elyza_job_result = await _fetch_completed_elyza_job(doc_id)
+        if elyza_job_result is not None:
+            data = {**data, **elyza_job_result}
+
     return {
         "status": data.get("status") or "unknown",
         "eval_status": data.get("eval_status") or "unknown",
@@ -243,6 +298,11 @@ async def generate_ai(req: GenerateRequest, background_tasks: BackgroundTasks, d
         "status": "processing",
         "eval_status": "processing",
         "llmjp_status": "pending",
+        # 【instructions/250】オンデマンドELYZAワーカー用のジョブキュー合図。ここで
+        # Firestoreへ直接書き込むことは絶対にしない(SSoT §8.2の一方向同期原則)。
+        # この値は他フィールドと同様にローカルSQLiteへ書くだけであり、直後の
+        # sync_once_safe(既存の一方向Push)が自動的にFirestoreへ伝播させる。
+        "elyza_job_status": "pending",
         "message": "AIが生成中...",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "random_weight": random.random(),  # noqa: S311 (無限スクロール用シーク乱数。暗号用途ではない)

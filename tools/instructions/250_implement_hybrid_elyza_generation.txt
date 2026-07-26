@@ -1,0 +1,24 @@
+【ミッション: クラウド・ローカル連携によるオンデマンドELYZA生成の実装】
+
+Web画面（Cloud Run）から入力されたお題に対して、ローカルのELYZAでも生成・評価を行うハイブリッドアーキテクチャを構築します。Factory（バッチ）とは分離し、Firestoreを介した非同期メッセージングでローカルGPUを活用します。
+
+Step 1: SSoT_architecture.md の更新
+SSoTの第8.2節や第9節を更新し、以下の「クラウド・ローカル非同期連携アーキテクチャ」を明記してください。
+- クラウド（Cloud Run）で受け付けたユーザーリクエストは、Firestoreに `elyza_status="pending"` として記録される。
+- ローカル環境のオンデマンドワーカーがFirestoreを監視し、お題を拾い上げてELYZAで生成・評価を行い、結果をFirestoreに書き戻す。
+- Cloud Run側はFirestoreを参照して最新結果をフロントエンドに返す。
+
+Step 2: Cloud Run側のポーリングAPI改修
+`apps/evaluator/backend/api/routers/generate.py` の `GET /status/{doc_id}` を改修してください。
+ローカルSQLiteのデータだけでなく、Firestoreの該当ドキュメントも直接取得し、Firestore側にELYZAの生成結果（`elyza_status == "completed"` 等）があれば、それをマージしてフロントエンドに返すようにしてください。これにより、ローカルPCで生成された結果がWeb画面にリアルタイムに反映されます。
+
+Step 3: ローカル用オンデマンドELYZAワーカーの作成
+`workers/ondemand_elyza_worker.py` を作成してください。
+このワーカーは以下の動作をループで行うデーモンとして実装します。
+1. Firestoreの `nazokake_items` コレクションから `elyza_status == "pending"` のアイテムを取得する。
+2. ローカルのOllama（ELYZA）および評価パイプラインを呼び出して、なぞかけ生成と評価を実行する。
+3. 結果をローカルSQLiteに保存し、同時にFirestoreの該当ドキュメントを更新する。
+
+Step 4: 動作確認とコミット
+実装が完了したら、コードの構文チェックを行い、変更をコミットしてください（Pushは不要です）。
+完了後、アーキテクチャの変更点と、ローカルワーカーの起動方法を報告してください。
