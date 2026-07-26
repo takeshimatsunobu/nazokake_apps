@@ -29,6 +29,13 @@ steps:
       - '--allow-unauthenticated'
       - '--set-secrets=GEMINI_API_KEY=GEMINI_API_KEY:latest,ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest'
       - '--set-env-vars=EXCHANGE_RATE_USD_JPY=160.0,SERVER_COST_PER_HOUR_JPY=5.0'
+      # instructions/249: メインDBがCloud Runのエフェメラルな/tmpに置かれたSQLiteのため、
+      # 複数インスタンスへ分裂するとPOST/GETが別インスタンスに割り振られ404になる
+      # (本番ログで実際に確認済み: 同一doc_idへのPOSTとGETが別instanceIdで処理されていた)。
+      # インスタンス数を1に固定し、リクエストが必ず同一インスタンス/同一SQLiteへ
+      # 到達するようにする(恒久対策はFirestore等の共有DBへの移行だが、それまでの
+      # 応急処置としてスケールアウトそのものを禁止する)。
+      - '--max-instances=1'
 
 images:
   - 'asia-northeast1-docker.pkg.dev/$PROJECT_ID/${_REPOSITORY}/${_SERVICE_NAME}:$BUILD_ID'

@@ -137,3 +137,11 @@ jobs:
           env_vars: |
             EXCHANGE_RATE_USD_JPY=160.0
             SERVER_COST_PER_HOUR_JPY=5.0
+          # instructions/249: メインDBがCloud Runのエフェメラルな/tmpに置かれたSQLiteの
+          # ため、複数インスタンスへ分裂するとPOST/GETが別インスタンスに割り振られ
+          # 404になる(本番ログで実際に確認済み: 同一doc_idへのPOSTとGETが別
+          # instanceIdで処理されていた)。インスタンス数を1に固定し、リクエストが
+          # 必ず同一インスタンス/同一SQLiteへ到達するようにする(恒久対策はFirestore等
+          # の共有DBへの移行だが、それまでの応急処置としてスケールアウトそのものを
+          # 禁止する)。
+          flags: --max-instances=1
