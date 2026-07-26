@@ -56,7 +56,7 @@ Criticトリアージ (Human-in-the-Loop): SSoTの動的注入によるテスト
 - **PR Draft Generation (Human-in-the-Loop):** 厳密監視フェーズ中、エージェントは直接メインブランチにコミットせず、本SSoTを動的に読み込んだ上でアーキテクチャ上の妥当性を明記したプルリクエスト（PR）のドラフトを作成する。
 
 ## 7. Active Backlog & Roadmap (To Do)
-[Priority High] 課題 I (🚨 現在進行中): tools/ 内におけるアトミック書き込みの完全化（shutil.copymode によるメタデータ保持と排他制御）。
+[Priority High] 課題 I (✅ 完了 (Done)): tools/ 内におけるアトミック書き込みの完全化（一時ファイル生成・shutil.copystat によるパーミッション/mtime/atime等メタデータの保持・filelockによる排他制御・os.replaceによる不可分なファイル置換、tools/ast_modifier.py の _atomic_write_text）。
 
 [Priority Medium] 課題 L: OpenTelemetry等を活用したLLMOps専用トレース基盤（LangSmith, Datadog等）へのログ統合。
 
@@ -107,7 +107,9 @@ nazo_agent.py / agent_graph.py: Gemma -> Qwen -> Claude という3層防弾エ�
 
 file_reader.py (読み取り専用I/O): エージェントによるファイル読み込みをカプセル化し、encoding="utf-8-sig" 等を用いた安全なテキスト抽出を提供する。
 
-ast_modifier.py / ast_mapper.py (構文防弾化とセキュア書き込み): エージェントが提案したコード差分（Diff）をASTとしてパースし、セマンティクスが破壊されていないかを検証する。検証通過後、アトミック書き込み（一時ファイル生成・shutil.copymodeによるメタデータ保持・os.replace）を用いてディスクへ安全に上書き保存する単一のゲートキーパー。
+ast_modifier.py（構文防弾化とセキュア書き込み）: エージェントが提案したコード差分（Diff）をASTとしてパースし、セマンティクスが破壊されていないかを検証する。検証通過後、アトミック書き込み（一時ファイル生成・shutil.copystatによるパーミッション/メタデータ保持・os.replace）を用いてディスクへ安全に上書き保存する単一のゲートキーパー。対象ファイル自体が構文エラーでlibcstによりパースできない場合はFail-Closed（即座にエラーとして処理を中断）とし、文字列ベースの推測的フォールバックは行わない。
+
+ast_mapper.py（読み取り専用のシンボル定義抽出）: エージェントがコードを修正する前に、関数名/クラス名からその定義元のソースコード全文をASTで正確に取得するための読み取り専用ツール（get_symbol_definition）。ファイルへの書き込みは一切行わず、修正前のコンテキスト把握を「推測」ではなく実際のASTファクトに基づいて行わせるためのゲートキーパー。
 
 pyright_tool.py (静的型検査): 変更適用前にPyrightをドライランし、型推論エラーが発生するコードのコミットをブロックする。
 - **【絶対制約】エージェントのサンドボックス保護:**

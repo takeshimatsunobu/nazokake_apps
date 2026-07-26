@@ -60,14 +60,21 @@ def test_compute_aggregate_all_null_success_yields_zero_not_none():
     assert aggregate["success_rate"] == 0.0
 
 
-# --- AST脆弱性の克服: 対象ファイル自体の構文エラーに対するString-basedフォールバック ---
+# --- instructions/229: String-basedフォールバックの廃止とFail-Closed化 ---
+#
+# instructions/164が導入したString-basedフォールバック(_string_based_fallback_replace /
+# _apply_string_fallback)は、対象ファイル自体の構文エラーによりlibcstでパースできない
+# 場合に、正規表現ベースの行単位置換で修正を強行していた。この経路は通常経路が持つ
+# 安全網(セマンティック差分検証・大量削除/挿入ヒューリスティック)のいずれも適用できず、
+# 防弾ツールとしてのリスクの方が大きいと判断し、instructions/229で完全に削除した。
+# 以下は、その削除後の意図した挙動(Fail-Closed: パースできないファイルへの書き込みは
+# 一切行わず、必ずErrorを返す)を固定する回帰テスト。
 
 
-def test_ast_modifier_falls_back_to_string_replace_on_target_syntax_error():
+def test_ast_modifier_fails_closed_on_target_syntax_error():
     """対象ファイル自体が構文エラーを含みlibcstでパースできない場合(既存の
-    syntax_error Fixtureそのもの)でも、apply_modification()がクラッシュ/エラー
-    終了するのではなく、String-basedフォールバックで実際に修正を適用し、
-    postfixテストが通る状態まで到達できることを確認する。
+    syntax_error Fixtureそのもの)、apply_modification()はフォールバックを試みず、
+    即座にErrorを返し、ファイルの内容を一切変更しないことを確認する。
     """
     tmpdir = tempfile.mkdtemp()
     target = Path(tmpdir) / "buggy.py"
@@ -95,53 +102,10 @@ def test_ast_modifier_falls_back_to_string_replace_on_target_syntax_error():
         }
     )
 
-    assert not result.startswith("Error:"), f"フォールバックが失敗した: {result}"
-    assert "Fallback" in result
-
-    fixed_source = target.read_text(encoding="utf-8")
-    namespace: dict = {}
-    exec(compile(fixed_source, str(target), "exec"), namespace)  # noqa: S102
-    assert namespace["shout"]("hello") == "HELLO!"
-
-
-def test_ast_modifier_fallback_refuses_to_write_when_target_name_not_found():
-    """String-basedフォールバックが、target_nameの定義位置すら特定できない場合は
-    (安全側に倒して)元ファイルを一切変更せず、Errorを返すことを確認する。
-    """
-    tmpdir = tempfile.mkdtemp()
-    target = Path(tmpdir) / "buggy.py"
-    shutil.copyfile(SYNTAX_ERROR_FIXTURE_DIR / "buggy.py", target)
-    original_broken_source = target.read_text(encoding="utf-8")
-
-    result = ast_modifier.apply_modification(
-        {
-            "file_path": str(target),
-            "target_name": "this_function_does_not_exist",
-            "new_code": "def this_function_does_not_exist():\n    pass\n",
-        }
-    )
-
-    assert result.startswith("Error:")
+    assert result.startswith("Error:"), f"Fail-Closedにならなかった: {result}"
     assert target.read_text(encoding="utf-8") == original_broken_source
 
-
-def test_ast_modifier_fallback_refuses_to_write_when_still_broken():
-    """String-basedフォールバックを適用した後の全文が、それでもPython標準の
-    ast.parseで構文エラーになる場合は、書き込みを行わずErrorを返すことを確認する
-    (フォールバック自体が二重に失敗した場合の安全側フェイル)。
-    """
-    tmpdir = tempfile.mkdtemp()
-    target = Path(tmpdir) / "buggy.py"
-    shutil.copyfile(SYNTAX_ERROR_FIXTURE_DIR / "buggy.py", target)
-    original_broken_source = target.read_text(encoding="utf-8")
-
-    result = ast_modifier._apply_string_fallback(
-        target,
-        original_broken_source,
-        "shout",
-        'def shout(word):\n    return word.upper(\n',  # 括弧が閉じておらず依然壊れている
-        RuntimeError("simulated original parse failure"),
-    )
-
-    assert result.startswith("Error:")
-    assert target.read_text(encoding="utf-8") == original_broken_source
+    # 削除済みのString-basedフォールバック関数がモジュールに残っていないことも
+    # あわせて確認する(instructions/229の削除要求そのものの回帰テスト)。
+    assert not hasattr(ast_modifier, "_string_based_fallback_replace")
+    assert not hasattr(ast_modifier, "_apply_string_fallback")
