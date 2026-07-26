@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from .mdmp_engine import analyze_target, run_mdmp_session, audit_warhead
+from .migrate_db import migrate_schema
 
 router = APIRouter()
 
@@ -19,6 +20,15 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[2]
 _LOCAL_SSOT_DB = _PROJECT_ROOT / 'local_ssot.db'
 _NAZOKAKE_DB = _PROJECT_ROOT / 'nazokake.db'
 DB_PATH = str(_LOCAL_SSOT_DB if _LOCAL_SSOT_DB.exists() else _NAZOKAKE_DB)
+
+# 【instructions/225: 起動時自動マイグレーション】このrouterはmain.py起動時に
+# importされる(=コンテナ起動のたびに評価される)ため、ここでmigrate_schema()を
+# 呼ぶことで、Cloud Runの新規インスタンス起動時にtactical_missionsテーブルが
+# 存在しない状態を解消する。CREATE TABLE IF NOT EXISTSなので毎回呼んでも安全。
+# 上記で解決したDB_PATH(このモジュール自身のパス計算)を明示的に渡すことで、
+# migrate_db.py側の独立したパス計算と食い違う可能性を構造的に排除する
+# (instructions/225で判明した2箇所のparents[N]不一致バグの再発防止)。
+migrate_schema(DB_PATH)
 
 def get_db():
     # check_same_thread=False: このジェネレータはFastAPIによりスレッドプール上で
