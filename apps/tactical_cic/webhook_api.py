@@ -10,8 +10,15 @@ from typing import Optional
 
 from .mdmp_engine import analyze_target, run_mdmp_session, audit_warhead
 from .migrate_db import migrate_schema
+from api.deps import verify_admin_token
 
-router = APIRouter()
+# instructions/236: このルーターは元々「webhook」を名乗るが、実際には外部サービス
+# (GitHub等)からのサーバー間呼び出しではなく、/cicダッシュボード(人間の操作者)が
+# ブラウザから直接叩く内部ツール(public/js/cic_app.js参照、外部からのWebhook送信元は
+# 存在しない)。そのため、他のadmin系ルーターと同じFirebase Auth
+# (verify_admin_token)で統一する。router全体にdependenciesを付けることで、
+# 個々のエンドポイントへの付け忘れを構造的に防ぐ。
+router = APIRouter(dependencies=[Depends(verify_admin_token)])
 
 # DB接続ユーティリティ
 # プロジェクトルート基準の絶対パスで解決する(相対パスのままだとuvicornの実行cwd
