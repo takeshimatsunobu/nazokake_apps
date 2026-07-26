@@ -370,15 +370,50 @@ def _finalize(parsed: dict) -> dict:
     return {"hint": hint, "toku": toku, "kokoro": kokoro, "thinking": thinking}
 
 
+def _is_gemini_auth_error(err: Exception | None) -> bool:
+    """APIキーの未設定・不正な形式でよく見られるエラーシグネチャかどうかを判定する。
+
+    google-genaiは認証系の失敗を専用の例外クラスとしては公開しておらず、
+    汎用的な例外のメッセージ文字列にしか判別材料がないため、既知のシグネチャで
+    判定する(instructions/247: 本番でAPIキーが不正な形式でシークレットに保存
+    されており、SDKがOAuth2アクセストークンでの認証にフォールバックして
+    401 UNAUTHENTICATED / ACCESS_TOKEN_TYPE_UNSUPPORTED が発生した実例に基づく)。
+    """
+    if err is None:
+        return False
+    text = str(err)
+    return any(
+        marker in text
+        for marker in (
+            "UNAUTHENTICATED",
+            "PERMISSION_DENIED",
+            "ACCESS_TOKEN_TYPE_UNSUPPORTED",
+            "API key not valid",
+            "API_KEY_INVALID",
+        )
+    )
+
+
 async def generate_via_gemini(odai: str) -> dict:
     """【即時・主軸】Gemini 3.5 Flash で構造化生成（GEN_SCHEMA＋3回リトライ）。失敗時は例外送出。"""
+    api_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
+    if not api_key:
+        # 【instructions/247】キー欠落時、Firestoreからのプロンプト構築やGemini SDKの
+        # 生の認証エラーで3回リトライを浪費させず即座に失敗させ、フロントエンドに
+        # 原因が分かるメッセージを返す。
+        raise RuntimeError(
+            "Gemini APIキーが設定されていません。管理者に環境変数/シークレット"
+            "(GEMINI_API_KEY)の設定をご確認いただくよう連絡してください。"
+        )
+
     sys_prompt, user_prompt, dyn_temp = await _build_gen_prompts(odai)
     fallback_model = "gemini-3.5-flash"
+
     last_err = None
     for attempt in range(3):
         # 💡 SDKバグ回避: 同期クライアントを別スレッドで安全に実行
         def gemini_call():
-            client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+            client = genai.Client(api_key=api_key)
             return client.models.generate_content(
                 model=fallback_model,
                 contents=f"{sys_prompt}\n\n{user_prompt}",
@@ -410,6 +445,16 @@ async def generate_via_gemini(odai: str) -> dict:
             last_err = e
             print(f"⚠️ Gemini生成エラー (試行 {attempt + 1}/3): {e}")
         await asyncio.sleep(0.8)
+
+    if _is_gemini_auth_error(last_err):
+        # 【instructions/247】キーが設定されてはいるが不正(誤った形式で保存されている
+        # 等)な場合、SDKの生の401/OAuthエラー文をそのままユーザーに見せず、原因の
+        # 見当がつくメッセージに変換する。詳細は末尾に残し、調査時にログから追える
+        # ようにする。
+        raise RuntimeError(
+            "Gemini APIキーが正しく設定されていません(認証エラー)。"
+            f"シークレット/環境変数(GEMINI_API_KEY)の値をご確認ください。詳細: {last_err}"
+        )
     raise RuntimeError(f"Gemini生成に3回失敗しました: {last_err}")
 
 
