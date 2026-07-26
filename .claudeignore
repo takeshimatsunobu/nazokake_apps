@@ -1,0 +1,51 @@
+# .claudeignore
+# ==============
+# instructions/242(FinOps): Claude Codeが不要な巨大ファイルを読み込んで
+# コンテキスト(トークン)を浪費しないよう、LLMの推論に直接関係のない
+# ファイルを除外する。.gcloudignore/.gitignoreと役割は異なる
+# (デプロイ・バージョン管理ではなく、Claude Codeが自動で読む/検索する
+# 対象を絞るためのもの)ため、他の除外設定を流用せず独立して定義する。
+
+# --- 事実抽出・監査ツールの巨大な出力(instructions/227-229) ---
+docs/audit/*.json
+
+# --- ログ・データセット・DB実体(内容を読んでも推論の助けにならない) ---
+*.log
+*.jsonl
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+tools/audit_reports/dead_letters/
+tools/shadow_mode_log.jsonl
+data/
+
+# --- デッドコード(instructions/236で確認済み、どこからも参照されない) ---
+apps/evaluator_backup/
+
+# --- ローカルLLM本体・LoRA成果物・大容量モデルファイル ---
+*.gguf
+*.gguf.bak
+*.safetensors
+*.bin
+*.pt
+Nazokake_localLLM/
+apps/batch_factory/models/
+apps/evaluator/models/
+llama-bin/
+unsloth_compiled_cache/
+
+# --- 仮想環境・ビルド成果物・キャッシュ ---
+.venv/
+.venv*/
+__pycache__/
+*.pyc
+.mypy_cache/
+node_modules/
+packages/shared_core/build/
+
+# --- その他の静的アセット・バイナリ(LLM推論に直接関係しない) ---
+public/assets/
+apps/evaluator/frontend/public/assets/
+*.pdf
+*.zip

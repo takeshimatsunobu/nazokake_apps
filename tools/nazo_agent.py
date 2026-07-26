@@ -43,6 +43,26 @@ class TokenCircuitBreaker:
             sys.exit(1)  # ここはデーモンごと安全に殺すための意図的な exit
 
 
+def _log_cache_usage(usage) -> None:
+    """instructions/242(FinOps): system_prompt/エラーログに設定済みのcache_control
+    (ephemeral)が実際にヒットしているかを可視化する。cache_read_input_tokensが
+    毎回0のままなら、システムプロンプトやエラーログにタイムスタンプ等の非決定的な
+    値が紛れ込みキャッシュが無効化されている("silent invalidator")兆候であり、
+    ここでの可視化なしには気づけない。TokenCircuitBreakerの集計ロジック自体は
+    変更しない(観測用のログ出力のみを追加する)。
+    """
+    if usage is None:
+        return
+    cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    input_tokens = getattr(usage, "input_tokens", 0) or 0
+    if cache_read or cache_creation:
+        print(
+            f"   💰 [Prompt Cache] read={cache_read} (約0.1倍コスト) "
+            f"creation={cache_creation} (約1.25倍コスト) uncached={input_tokens}"
+        )
+
+
 # --- ターゲット環境の設定 ---
 BASE_DIR = Path(__file__).resolve().parent.parent
 TOOLS_DIR = Path(__file__).resolve().parent
@@ -1001,6 +1021,7 @@ async def phase2_claude_translation(
                     usage, "output_tokens", 0
                 )
                 TokenCircuitBreaker.add(total_tokens)
+            _log_cache_usage(usage)
 
             submit_block = next(
                 (
@@ -1356,6 +1377,7 @@ async def phase2_claude_tool_augmented(
                     usage, "output_tokens", 0
                 )
                 TokenCircuitBreaker.add(total_tokens)
+            _log_cache_usage(usage)
 
             submit_block = next(
                 (
