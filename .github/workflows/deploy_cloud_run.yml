@@ -122,3 +122,18 @@ jobs:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ env.REGION }}
           image: ${{ env.IMAGE }}:${{ github.sha }}
+          # instructions/248: `gcloud run deploy` はインクリメンタルであり、ここを
+          # 省略しても既存のシークレット/環境変数バインドを消しはしない(実際、この
+          # ワークフローが去年から本番へデプロイし続けている現行リビジョンにも
+          # GEMINI_API_KEY/ANTHROPIC_API_KEYは正しくバインドされたままだった)。
+          # ただし暗黙の継承に頼ると、このサービスをゼロから再作成する場合や、
+          # 手順書(infra/scripts/setup_gcp_wif_and_secrets.sh)の一度きりの手動設定を
+          # 誰も覚えていない場合に静かに壊れる。cloudbuild.yaml(このリポジトリの
+          # もう一方のデプロイ経路)に既に定義済みの値をそのままSSoTとして踏襲し、
+          # このワークフロー単体でも同じ状態を再現できるように明示する。
+          secrets: |
+            GEMINI_API_KEY=GEMINI_API_KEY:latest
+            ANTHROPIC_API_KEY=ANTHROPIC_API_KEY:latest
+          env_vars: |
+            EXCHANGE_RATE_USD_JPY=160.0
+            SERVER_COST_PER_HOUR_JPY=5.0
