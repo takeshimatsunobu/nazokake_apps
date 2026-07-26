@@ -16,6 +16,7 @@ updated_at を確認し、ローカルの updated_at が同じかそれより新
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import sys
 from typing import Any
@@ -24,6 +25,8 @@ import firebase_admin
 from firebase_admin import firestore
 
 from .database import get_pending_sync_batch, mark_sync_failed, mark_synced
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_COLLECTION = "nazokake_items"
 
@@ -101,3 +104,18 @@ async def sync_once(batch_size: int = 20) -> dict[str, int]:
             stats["failed"] += 1
 
     return stats
+
+
+async def sync_once_safe(batch_size: int = 20) -> None:
+    """instructions/239: apps/evaluator/backend(Cloud Run)がFastAPIのBackgroundTasks
+    経由で呼ぶための安全側ラッパー。BackgroundTasksはHTTPレスポンス送出後に実行される
+    ため、ここで例外を外へ伝播させてもユーザーには届かずサーバー側のノイズにしか
+    ならない。個々のアイテムの同期失敗はsync_once内部で既にmark_sync_failedにより
+    次回リトライ対象として記録されるため、ここで捕捉するのは
+    get_pending_sync_batch自体の失敗やFirebase初期化失敗等、sync_onceのループに
+    到達する前の例外のみを想定している。
+    """
+    try:
+        await sync_once(batch_size=batch_size)
+    except Exception as e:  # noqa: BLE001 - BackgroundTasksの外へ例外を漏らさない意図的な捕捉
+        logger.warning(f"⚠️ Firestoreバックアップ同期(BackgroundTasks)に失敗しました: {e}")

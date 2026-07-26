@@ -1,0 +1,50 @@
+# .github/workflows/cron_cleanup.yml
+# ============================================
+# instructions/239 Step1(旧237の決着): tools/cleanup_git_resources.py の定期実行。
+#
+# 【重要な限界】このスクリプトが対象とする escalation/*・draft/* ブランチは、
+# tools/agent_graph.py の managed_git_worktree() がローカルのNazo-Agent開発機上でのみ
+# 作成するものであり、リポジトリ全体を調査した結果これらのブランチが origin へ
+# push されている箇所は一切無い(レビュー用に残すのはブランチのみ、という設計コメントは
+# 人間が手元で `git worktree add` して見る想定)。GitHub Actionsランナーは毎回originからの
+# 新規cloneのため、これらのローカル限定ブランチは原理的に見えない。
+#
+# つまりこのワークフローは、237が本来解決したい「ローカル開発機でのブランチ/worktree
+# 蓄積」に対しては実質ノーオペになる。その蓄積は既に tools/scheduler_daemon.py
+# (ローカルのmlops-schedulerサイドカーコンテナ)が tools/mlops_trigger.py を定期実行し、
+# その _run_trigger_cycle() が無条件で cleanup_merged_git_resources() を呼ぶことで
+# 解消されている(ローカル側の既存の仕組み)。
+#
+# このワークフローはinstructions/239の文言通りに実装するものであり、将来origin側に
+# 何らかのマージ済みブランチが残るケース(例: 人間が手動でescalation/*をPRレビュー用に
+# pushした後、削除し忘れた場合)に備えた保険として追加する。
+
+name: Cleanup merged git resources (cron)
+
+on:
+  schedule:
+    # 毎日 18:00 UTC (JST 03:00)
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # tools/cleanup_git_resources.py はSQLAlchemy等の外部依存を一切持たない
+      # 標準ライブラリのみのスクリプトのため、uvプロジェクトを介さず直接実行する。
+      - name: Run cleanup_git_resources.py
+        run: python tools/cleanup_git_resources.py

@@ -11,11 +11,12 @@ import random
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 
 from api.deps import handle_exceptions
 from models.schemas import HumanSubmitRequest
 from nazokake_core.database import async_upsert_item
+from nazokake_core.firestore_sync import sync_once_safe
 from services.evaluation import run_evaluation
 
 router = APIRouter()
@@ -23,7 +24,7 @@ router = APIRouter()
 
 @router.post("/submit_human")
 @handle_exceptions
-async def submit_human(req: HumanSubmitRequest):
+async def submit_human(req: HumanSubmitRequest, background_tasks: BackgroundTasks):
     doc_id = uuid.uuid4().hex
     await async_upsert_item({
         "doc_id": doc_id,
@@ -59,4 +60,7 @@ async def submit_human(req: HumanSubmitRequest):
             "eval_status": "error",
             "message": f"評価に失敗しました: {e}",
         })
+    # instructions/239: Cloud Run上のSQLiteはエフェメラルなため、一連の書き込み完了後に
+    # Firestoreへのバックアップ同期をBackgroundTasksで試みる(レスポンスをブロックしない)。
+    background_tasks.add_task(sync_once_safe)
     return {"status": "processing", "doc_id": doc_id}
