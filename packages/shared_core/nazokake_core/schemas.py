@@ -140,3 +140,16 @@ class SystemCostLog(BaseModel):
     output_tokens: int = 0
     execution_time_sec: float = 0.0
     calculated_cost_jpy: float = 0.0
+
+# ------------------------------------------------------------
+# instructions/231: 「なぞかけ研究所」記事データ基盤のスキーマ契約
+# ------------------------------------------------------------
+class ResearchArticle(BaseModel):
+    article_id: str = Field(..., min_length=1)
+    main_category: str = Field(..., min_length=1)
+    sub_category: str = Field(..., min_length=1)
+    title: str = Field(..., min_length=1)
+    content: str = ""
+    created_at: datetime
+    updated_at: datetime
+    is_published: bool = False

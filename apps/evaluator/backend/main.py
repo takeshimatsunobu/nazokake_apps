@@ -53,6 +53,7 @@ from api.routers import (
     admin_costs,
     user_feedback,
     admin_feedbacks,
+    research,
 )
 
 # 🌟 ロギング初期化設定
@@ -102,6 +103,7 @@ app.include_router(admin_costs.router, prefix="/api/admin", tags=["AdminCosts"])
 app.include_router(user_feedback.router, prefix="/api", tags=["UserFeedback"])
 app.include_router(admin_feedbacks.router, prefix="/api/admin", tags=["AdminFeedbacks"])
 app.include_router(board.router, prefix="/api/board", tags=["Board"])
+app.include_router(research.router, prefix="/api", tags=["Research"])
 app.include_router(cic_router, prefix="/api/cic", tags=["Tactical CIC"])
 
 

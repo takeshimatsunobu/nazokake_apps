@@ -188,6 +188,31 @@ class AuditLogListResponse(BaseModel):
     items: List[AuditLogItem]
 
 
+# --- なぞかけ研究所(instructions/231, 233): 公開済み記事の一覧・詳細取得の契約。
+# 一覧は本文(content)を含めずタイトル/カテゴリのみ(レスポンスサイズ抑制)、
+# 詳細のみ本文を含める。
+class ResearchArticleSummary(BaseModel):
+    article_id: str
+    main_category: str
+    sub_category: str
+    title: str
+    created_at: Optional[str] = None
+
+
+class ResearchArticleListResponse(BaseModel):
+    articles: List[ResearchArticleSummary]
+
+
+class ResearchArticleDetail(BaseModel):
+    article_id: str
+    main_category: str
+    sub_category: str
+    title: str
+    content: str
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+
 # --- 1-Click Deploy(instructions/172、No-Toilの徹底): 検証サーバーへのワンタッチ
 # デプロイ(tools/deploy/run_verification_server.ps1)をバックグラウンドで起動する
 # エンドポイントの契約。ローカル開発環境専用(Cloud Run上のデプロイ済みコンテナには
