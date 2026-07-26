@@ -1,3 +1,4 @@
+import os
 import sqlite3
 import uuid
 import json
@@ -16,9 +17,24 @@ router = APIRouter()
 # プロジェクトルート基準の絶対パスで解決する(相対パスのままだとuvicornの実行cwd
 # (apps/evaluator/backend)から見て存在しない別ファイルを新規作成してしまい、
 # migrate_db.pyで作成済みのtactical_missionsテーブルが見つからずOperationalErrorになる)。
-_PROJECT_ROOT = Path(__file__).resolve().parents[2]
-_LOCAL_SSOT_DB = _PROJECT_ROOT / 'local_ssot.db'
-_NAZOKAKE_DB = _PROJECT_ROOT / 'nazokake.db'
+#
+# 【instructions/225フォローアップで判明】コンテナ内では/app(=_PROJECT_ROOT)が
+# root:root・755で所有されており、非rootのappuserには書き込み権限が無いため、
+# sqlite3.connect()が`unable to open database file`で即座にクラッシュする
+# (実機Cloud Buildで確認済み)。/appの権限を緩めてまで書き込み先にする必要は無く、
+# そもそもこのDBはCloud Runの各インスタンスが再起動のたびに失う前提の一時データ
+# (instructions/225の考察: tactical_cicは未着手のプロトタイプ機能で永続化の
+# 実装対象外)なので、Cloud Runでも書き込み保証のある/tmp(ephemeral、
+# 全プロセスに書き込み権限あり)を素直に使う。PROJECT_ROOT環境変数はDockerfileが
+# コンテナ内でのみ明示的に設定するため、これをコンテナ判定に流用する
+# (main.pyの_PROJECT_ROOT解決と同じ考え方)。ローカル開発では従来通り
+# リポジトリルート直下に置く。
+if os.environ.get("PROJECT_ROOT"):
+    _DB_DIR = Path("/tmp")
+else:
+    _DB_DIR = Path(__file__).resolve().parents[2]
+_LOCAL_SSOT_DB = _DB_DIR / 'local_ssot.db'
+_NAZOKAKE_DB = _DB_DIR / 'nazokake.db'
 DB_PATH = str(_LOCAL_SSOT_DB if _LOCAL_SSOT_DB.exists() else _NAZOKAKE_DB)
 
 # 【instructions/225: 起動時自動マイグレーション】このrouterはmain.py起動時に
