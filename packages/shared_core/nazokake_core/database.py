@@ -259,6 +259,27 @@ class QualityCircuitBreakerStateORM(Base):
     tripped_at: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
+class ResearchArticleORM(Base):
+    """instructions/231: 「なぞかけ研究所」記事データ基盤(ResearchArticle Pydanticモデルの
+    永続化先)。main_category > sub_category > title の3階層でカテゴライズされた
+    研究記事を保持する。
+
+    created_at/updated_atは、このコードベース全体の規約(TriggerStateORM等参照)に
+    従い、datetime型カラムではなくISO8601文字列として保存する。
+    """
+
+    __tablename__ = "research_articles"
+
+    article_id: Mapped[str] = mapped_column(String, primary_key=True)
+    main_category: Mapped[str] = mapped_column(String, index=True)
+    sub_category: Mapped[str] = mapped_column(String, index=True)
+    title: Mapped[str] = mapped_column(String)
+    content: Mapped[str] = mapped_column(Text, default="")
+    created_at: Mapped[str] = mapped_column(String)
+    updated_at: Mapped[str] = mapped_column(String)
+    is_published: Mapped[bool] = mapped_column(Boolean, default=False)
+
+
 async def init_db() -> None:
     """テーブルが存在しない場合のみ作成する(既存データは保持される、CREATE TABLE IF NOT EXISTS相当)。"""
     async with _engine.begin() as conn:
@@ -770,6 +791,59 @@ async def async_get_golden_feed_items(
         stmt = stmt.order_by(NazokakeItemORM.created_at.desc()).limit(limit)
         rows = (await session.execute(stmt)).scalars().all()
         return [_row_to_ui_dict(row) for row in rows]
+
+
+# ------------------------------------------------------------------
+# なぞかけ研究所(instructions/231, 233): 公開済み記事の一覧・詳細取得DAO。
+# 下書き(is_published=False)は一般ユーザー向けAPIの対象外とする。
+# ------------------------------------------------------------------
+
+
+async def async_get_published_research_articles() -> list[dict[str, Any]]:
+    """公開済み記事の一覧を、main_category > sub_category でのグルーピング表示が
+    安定するようmain_category → sub_category → created_at昇順で返す。一覧表示では
+    本文(content)を使わないため、レスポンスサイズを抑える目的で含めない。
+    """
+    async with get_session() as session:
+        stmt = (
+            select(ResearchArticleORM)
+            .where(ResearchArticleORM.is_published.is_(True))
+            .order_by(
+                ResearchArticleORM.main_category,
+                ResearchArticleORM.sub_category,
+                ResearchArticleORM.created_at,
+            )
+        )
+        rows = (await session.execute(stmt)).scalars().all()
+        return [
+            {
+                "article_id": row.article_id,
+                "main_category": row.main_category,
+                "sub_category": row.sub_category,
+                "title": row.title,
+                "created_at": row.created_at,
+            }
+            for row in rows
+        ]
+
+
+async def async_get_research_article(article_id: str) -> dict[str, Any] | None:
+    """公開済み記事を1件、本文込みで取得する。下書きまたは存在しない場合はNoneを返す
+    (呼び出し元のルーターはこれを404として扱う)。
+    """
+    async with get_session() as session:
+        row = await session.get(ResearchArticleORM, article_id)
+        if row is None or not row.is_published:
+            return None
+        return {
+            "article_id": row.article_id,
+            "main_category": row.main_category,
+            "sub_category": row.sub_category,
+            "title": row.title,
+            "content": row.content,
+            "created_at": row.created_at,
+            "updated_at": row.updated_at,
+        }
 
 
 async def async_append_human_evaluation(
