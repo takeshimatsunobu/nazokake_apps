@@ -185,6 +185,13 @@ def _claim_job_sync(db, collection: str, doc_id: str) -> dict[str, Any] | None:
             "doc_id": doc_id,
             "odai": remote.get("odai") or "",
             "retry_count": remote.get("elyza_job_retry_count") or 0,
+            # 【instructions/251】DPO抽出がGemini/ELYZA両起源のレコードを同一ペアとして
+            # 回収できるよう、元ドキュメントのdpo_pair_idを引き継ぐ。Firestore側には
+            # Cloud Run自身の元のPushで既に正しく書き込まれているため、ここで
+            # スコープ付きFirestore書き込み(_ELYZA_JOB_SCOPED_FIELDS)には含めない
+            # (含めるとスコープ外フィールドとしてガードに拒否される)。ワーカー自身の
+            # ローカルSQLite側の記録にのみ必要。
+            "dpo_pair_id": remote.get("dpo_pair_id"),
         }
 
     return _txn(db.transaction())
@@ -228,10 +235,13 @@ async def _process_job(db, collection: str, job: dict[str, Any]) -> None:
     doc_id = job["doc_id"]
     odai = job["odai"]
     retry_count = job["retry_count"]
+    dpo_pair_id = job.get("dpo_pair_id")
 
     if not odai:
         _log(f"⚠️ [{doc_id}] odaiが空のため生成をスキップし、失敗として扱います。")
-        await _mark_failure(db, collection, doc_id, odai, retry_count, "odai is empty")
+        await _mark_failure(
+            db, collection, doc_id, odai, dpo_pair_id, retry_count, "odai is empty"
+        )
         return
 
     try:
@@ -241,7 +251,7 @@ async def _process_job(db, collection: str, job: dict[str, Any]) -> None:
     except Exception as e:
         _log(f"⚠️ [{doc_id}] ELYZA生成/評価に失敗: {e}")
         traceback.print_exc(file=sys.stderr)
-        await _mark_failure(db, collection, doc_id, odai, retry_count, str(e))
+        await _mark_failure(db, collection, doc_id, odai, dpo_pair_id, retry_count, str(e))
         return
 
     fields = {
@@ -256,14 +266,27 @@ async def _process_job(db, collection: str, job: dict[str, Any]) -> None:
         "elyza_job_locked_at": None,
         "elyza_job_retry_count": 0,
     }
+    # 【instructions/251】dpo_pair_idはローカルSQLite側にのみ書く(Firestore側は
+    # Cloud Run自身の元のPushで既に正しく、スコープ外フィールドのため書けない)。
     await _mark_job_outcome(
-        db, collection, doc_id, odai, local_fields=fields, scoped_fields=fields
+        db,
+        collection,
+        doc_id,
+        odai,
+        local_fields={**fields, "dpo_pair_id": dpo_pair_id},
+        scoped_fields=fields,
     )
     _log(f"✅ [{doc_id}] ELYZA生成・評価・Firestore書き戻しが完了しました。")
 
 
 async def _mark_failure(
-    db, collection: str, doc_id: str, odai: str, prior_retry_count: int, error_message: str
+    db,
+    collection: str,
+    doc_id: str,
+    odai: str,
+    dpo_pair_id: str | None,
+    prior_retry_count: int,
+    error_message: str,
 ) -> None:
     """指数バックオフ等の複雑な再試行は行わず、次のポーリング周期で"pending"扱いに
     戻すだけの単純な再試行とする(instructions/250の対象は低頻度のオンデマンド
@@ -288,7 +311,12 @@ async def _mark_failure(
         )
 
     await _mark_job_outcome(
-        db, collection, doc_id, odai, local_fields=fields, scoped_fields=fields
+        db,
+        collection,
+        doc_id,
+        odai,
+        local_fields={**fields, "dpo_pair_id": dpo_pair_id},
+        scoped_fields=fields,
     )
 
 

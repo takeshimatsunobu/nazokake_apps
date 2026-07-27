@@ -1,0 +1,15 @@
+【ミッション: DPO学習データのためのGemini/ELYZAペアリングの厳格化】
+
+タスク250で実装したハイブリッド生成において、Geminiの回答とELYZAの回答が、将来のDPO（直接選好最適化）学習において確実に「ペア」として抽出されるよう、データの紐付けを厳格化します。
+
+Step 1: dpo_pair_id の引き継ぎ確認と修正
+`workers/ondemand_elyza_worker.py` がFirestoreからお題（pending状態のドキュメント）を取得し、生成結果をローカルSQLiteおよびFirestoreに保存する際、元のドキュメントに付与されている `dpo_pair_id` を確実に引き継いで保存するようにロジックを修正・確認してください。
+- Geminiの生成結果とELYZAの生成結果が、DB上で同じ `dpo_pair_id` を持つことがDPO抽出の絶対条件です。
+
+Step 2: 抽出スクリプトの監査
+既存の `tools/extract_dataset.py`（DPOデータセット抽出スクリプト）を確認し、同じ `dpo_pair_id` を持つ2つのレコード（Gemini由来とELYZA由来）から、評価スコア（`s_total` 等）を比較して正しく `Chosen` と `Rejected` に振り分けるロジックが実装されているか確認してください。
+もし不完全であれば、スコアが高い方をChosen、低い方をRejectedとするロジックを補強してください。
+
+Step 3: 動作確認とコミット
+修正が完了したら変更をコミットしてください（Pushは不要です）。
+完了後、dpo_pair_idの引き継ぎロジックと、Chosen/Rejectedの判定基準について報告してください。

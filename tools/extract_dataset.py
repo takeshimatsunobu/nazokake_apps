@@ -88,12 +88,15 @@ class Candidate:
     score: float | None
     is_golden: bool
     trained_at: str | None
-
-
-def _primary_answer_text(row: dict) -> str | None:
-    """Gemini(主軸)の回答を優先し、無ければELYZA/LocalLLMの回答を使う。"""
-    text = row.get("nazokake_text") or row.get("nazokake_text_llmjp")
-    return text.strip() if text else None
+    # 【instructions/251】同一お題内でGemini/ELYZA(または バッチ工場の対応行)を
+    # 直接ペアリングするためのタグ。dpo_pair_idが無い(旧データ等)場合はNoneのまま
+    # 既存のodaiベースのフォールバックのみで扱われる。
+    dpo_pair_id: str | None = None
+    source: str = "unknown"  # "gemini" / "elyza" / "unknown"(旧データ等、由来不明)
+    # engine_score: 人間評価(score)とは別の、各AI評価器自身のスコア(s_total/
+    # s_total_llmjp)。dpo_pair_idベースの直接ペアリングでのみ優劣判定に使う
+    # (行単位のscoreによる既存の適格性判定・閾値分類には一切使わない)。
+    engine_score: float | None = None
 
 
 def _record_score(row: dict) -> float | None:
@@ -112,7 +115,15 @@ def _record_score(row: dict) -> float | None:
 
 
 async def _fetch_candidates() -> list[Candidate]:
-    """human_evaluations が1件以上あるか is_golden_data=True のレコードを抽出する。"""
+    """human_evaluations が1件以上あるか is_golden_data=True のレコードを抽出する。
+
+    【instructions/251】1行(doc_id)がGemini(nazokake_text)とELYZA(nazokake_text_llmjp)
+    の両方の回答を持つ場合、それぞれ独立したCandidateとして抽出する(dpo_pair_id/source/
+    engine_scoreを付与)。ただし抽出そのものの適格性(human_evaluations有無/
+    is_golden_data)は行単位のまま変更しない(人間キュレーションのゲートは維持する:
+    human_evaluationsは道場破りフィードでの評価時にどちらの回答文が表示されていたかを
+    区別して記録していないため、行全体に対する信号として両Candidateで共有する)。
+    """
     async with get_session() as session:
         result = await session.execute(
             select(NazokakeItemORM).where(
@@ -136,21 +147,40 @@ async def _fetch_candidates() -> list[Candidate]:
         if not has_human_eval and not row.get("is_golden_data"):
             continue
 
-        answer_text = _primary_answer_text(row)
         odai = (row.get("odai") or "").strip()
-        if not answer_text or not odai:
+        if not odai:
             continue
 
-        candidates.append(
-            Candidate(
-                doc_id=row["doc_id"],
-                odai=odai,
-                answer_text=answer_text,
-                score=_record_score(row),
-                is_golden=bool(row.get("is_golden_data")),
-                trained_at=row.get("trained_at"),
+        common = {
+            "doc_id": row["doc_id"],
+            "odai": odai,
+            "score": _record_score(row),
+            "is_golden": bool(row.get("is_golden_data")),
+            "trained_at": row.get("trained_at"),
+            "dpo_pair_id": row.get("dpo_pair_id"),
+        }
+
+        gemini_text = (row.get("nazokake_text") or "").strip()
+        if gemini_text:
+            candidates.append(
+                Candidate(
+                    **common,
+                    answer_text=gemini_text,
+                    source="gemini",
+                    engine_score=row.get("s_total"),
+                )
             )
-        )
+
+        elyza_text = (row.get("nazokake_text_llmjp") or "").strip()
+        if elyza_text:
+            candidates.append(
+                Candidate(
+                    **common,
+                    answer_text=elyza_text,
+                    source="elyza",
+                    engine_score=row.get("s_total_llmjp"),
+                )
+            )
     return candidates
 
 
@@ -278,8 +308,65 @@ def build_sft_records(chosen: list[Candidate]) -> list[dict]:
     return [{"prompt": c.odai, "completion": c.answer_text} for c in chosen]
 
 
+def _pair_by_dpo_pair_id(
+    chosen: list[Candidate], rejected: list[Candidate]
+) -> tuple[list[dict], list[Candidate], list[Candidate]]:
+    """【instructions/251】同一dpo_pair_id(同一リクエストのGemini/ELYZA両起源、または
+    バッチ工場の対応するペア行)を持つ候補同士を、各自のAI評価器スコア(engine_score:
+    s_total/s_total_llmjp)で比較し、優劣が明確な場合のみ直接ペアリングする。
+
+    - 対象はclassify()を通過済みのchosen/rejectedのみ(人間キュレーションのゲート・
+      中間スコアのドロップは維持し、このペアリングで一切バイパスしない)。
+    - engine_scoreが両者とも存在し、かつ異なる場合のみペアを確定する(優劣不明の
+      組は無理にペアリングせず、ノイズを注入しない)。
+    - dpo_pair_idごとの候補数が2件以外(想定外のデータ)の場合は安全側に倒して
+      スキップし、既存のodaiベースのフォールバックに委ねる。
+
+    戻り値: (確定したペアのリスト, ペアリングに使わなかった残りのchosen, 残りのrejected)。
+    """
+    by_pair_id: dict[str, list[Candidate]] = {}
+    for c in chosen + rejected:
+        if c.dpo_pair_id:
+            by_pair_id.setdefault(c.dpo_pair_id, []).append(c)
+
+    paired_keys: set[tuple[str, str]] = set()
+    pairs: list[dict] = []
+    for members in by_pair_id.values():
+        if len(members) != 2:
+            continue
+        a, b = members
+        if a.engine_score is None or b.engine_score is None:
+            continue
+        if a.engine_score == b.engine_score:
+            continue
+        winner, loser = (a, b) if a.engine_score > b.engine_score else (b, a)
+        if not _validate_pair(winner.odai, winner.answer_text, loser.answer_text):
+            continue
+        pairs.append(
+            {
+                "prompt": winner.odai,
+                "chosen": winner.answer_text,
+                "rejected": loser.answer_text,
+            }
+        )
+        paired_keys.add((a.doc_id, a.source))
+        paired_keys.add((b.doc_id, b.source))
+
+    remaining_chosen = [c for c in chosen if (c.doc_id, c.source) not in paired_keys]
+    remaining_rejected = [c for c in rejected if (c.doc_id, c.source) not in paired_keys]
+    return pairs, remaining_chosen, remaining_rejected
+
+
 def build_dpo_pairs(chosen: list[Candidate], rejected: list[Candidate]) -> list[dict]:
-    """同一お題(odai)内でchosen×rejectedの組み合わせを作り、DPOペアとする。"""
+    """DPOペアを構築する。
+
+    【instructions/251】まずdpo_pair_id(同一リクエストのGemini/ELYZA、または
+    バッチ工場の対応行)による直接ペアリングを優先し、そこで消費されなかった残りの
+    候補には既存の同一お題(odai)内でのchosen×rejected組み合わせ生成を
+    フォールバックとして適用する。
+    """
+    dpo_pair_id_pairs, chosen, rejected = _pair_by_dpo_pair_id(chosen, rejected)
+
     chosen_by_odai: dict[str, list[Candidate]] = {}
     for c in chosen:
         chosen_by_odai.setdefault(c.odai, []).append(c)
@@ -287,7 +374,7 @@ def build_dpo_pairs(chosen: list[Candidate], rejected: list[Candidate]) -> list[
     for r in rejected:
         rejected_by_odai.setdefault(r.odai, []).append(r)
 
-    pairs: list[dict] = []
+    odai_pairs: list[dict] = []
     for odai, chosen_group in chosen_by_odai.items():
         rejected_group = rejected_by_odai.get(odai)
         if not rejected_group:
@@ -298,10 +385,10 @@ def build_dpo_pairs(chosen: list[Candidate], rejected: list[Candidate]) -> list[
         for c, r in combos:
             if not _validate_pair(odai, c.answer_text, r.answer_text):
                 continue
-            pairs.append(
+            odai_pairs.append(
                 {"prompt": odai, "chosen": c.answer_text, "rejected": r.answer_text}
             )
-    return pairs
+    return dpo_pair_id_pairs + odai_pairs
 
 
 def _ngram_tokens(text: str, n: int = NGRAM_SIZE) -> set[str]:
