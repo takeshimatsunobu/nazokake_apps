@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-07-25T10:28:53.172045+00:00",
+  "generated_at": "2026-07-27T19:09:53.964118+00:00",
   "extraction_method": "python ast module (deterministic static analysis; no inference)",
   "scanned_directories": [
     "apps",
@@ -889,7 +889,7 @@
         {
           "name": "apply_human_action",
           "is_async": true,
-          "args": "req: HumanActionRequest, admin_token: dict=Depends(verify_admin_token)",
+          "args": "req: HumanActionRequest, background_tasks: BackgroundTasks, admin_token: dict=Depends(verify_admin_token)",
           "returns": null,
           "docstring": "管理者キュレーション: 対象なぞかけの gemini_status / elyza_status を更新する。\n\nPhase 4.11 の DPO抽出(Tier A/B)は、この gemini_status/elyza_status を\ngolden/approved/rejected に更新する手段が無いまま(このエンドポイント自体が\n消失していたため)恒久的に0件抽出になっていた欠落を復旧するもの。"
         },
@@ -1091,16 +1091,30 @@
           "docstring": "未捕捉例外でもDBに必ず error を書き、無限ロード（サイレントデス）を防ぐ最終防壁。"
         },
         {
-          "name": "get_status",
+          "name": "_fetch_completed_elyza_job_sync",
+          "is_async": false,
+          "args": "doc_id: str",
+          "returns": "dict | None",
+          "docstring": "Firestoreの該当ドキュメントを直接読み取り、オンデマンドELYZAワーカーが\nelyza_job_status=\"completed\"を書き込み済みであれば、マージ対象フィールドのみを\n返す(読み取り専用。Cloud Run側からのFirestoreへの書き込みは一切行わない)。\n\nfirebase_adminの同期APIをそのまま使う(呼び出し元でasyncio.to_threadに包む)。"
+        },
+        {
+          "name": "_fetch_completed_elyza_job",
           "is_async": true,
           "args": "doc_id: str",
+          "returns": "dict | None",
+          "docstring": "Firestore参照が失敗しても(オフライン・権限エラー等)、ローカルSQLite単独の\n結果へ安全に縮退できるよう、例外はここで吸収してNoneを返す\n(呼び出し元のポーリングエンドポイント自体を落とさない)。"
+        },
+        {
+          "name": "get_status",
+          "is_async": true,
+          "args": "doc_id: str, background_tasks: BackgroundTasks",
           "returns": null,
           "docstring": null
         },
         {
           "name": "generate_ai",
           "is_async": true,
-          "args": "req: GenerateRequest, db=Depends(get_db)",
+          "args": "req: GenerateRequest, background_tasks: BackgroundTasks, db=Depends(get_db)",
           "returns": null,
           "docstring": null
         }
@@ -1120,13 +1134,33 @@
       ]
     },
     {
+      "path": "apps/evaluator/backend/api/routers/research.py",
+      "classes": [],
+      "functions": [
+        {
+          "name": "list_research_articles",
+          "is_async": true,
+          "args": "",
+          "returns": null,
+          "docstring": null
+        },
+        {
+          "name": "get_research_article",
+          "is_async": true,
+          "args": "article_id: str",
+          "returns": null,
+          "docstring": null
+        }
+      ]
+    },
+    {
       "path": "apps/evaluator/backend/api/routers/submission.py",
       "classes": [],
       "functions": [
         {
           "name": "submit_human",
           "is_async": true,
-          "args": "req: HumanSubmitRequest",
+          "args": "req: HumanSubmitRequest, background_tasks: BackgroundTasks",
           "returns": null,
           "docstring": null
         }
@@ -1225,6 +1259,13 @@
           "args": "",
           "returns": null,
           "docstring": "💡 0円コールドスタート対策用の超軽量ヘルスチェック（DBアクセスなし）"
+        },
+        {
+          "name": "_init_db_on_startup",
+          "is_async": true,
+          "args": "",
+          "returns": "None",
+          "docstring": null
         }
       ]
     },
@@ -1374,6 +1415,21 @@
         },
         {
           "name": "AuditLogListResponse",
+          "docstring": null,
+          "methods": []
+        },
+        {
+          "name": "ResearchArticleSummary",
+          "docstring": null,
+          "methods": []
+        },
+        {
+          "name": "ResearchArticleListResponse",
+          "docstring": null,
+          "methods": []
+        },
+        {
+          "name": "ResearchArticleDetail",
           "docstring": null,
           "methods": []
         },
@@ -2597,1811 +2653,6 @@
       "functions": []
     },
     {
-      "path": "apps/evaluator_backup/_dl_elyza.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/backend/api/__init__.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/backend/api/deps.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "get_db",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": "Firestore クライアントを返す依存。ルーターでは Depends(get_db) で受け取る。"
-        },
-        {
-          "name": "serialize_doc",
-          "is_async": false,
-          "args": "doc",
-          "returns": "dict",
-          "docstring": "Firestore ドキュメントを dict 化し、doc_id/id を付与する統一版。\n\ntimestamp は datetime のときのみ文字列化する（型ガード付き＝安全側）。"
-        },
-        {
-          "name": "handle_exceptions",
-          "is_async": false,
-          "args": "func: Callable",
-          "returns": "Callable",
-          "docstring": "例外を一元処理するデコレータ。HTTPException はそのまま再送出する。\n\n- async 関数: 例外時に {\"status\": \"error\", \"message\": ...} を返す。\n- sync 関数 : 例外時に HTTP 500 を送出する。"
-        },
-        {
-          "name": "verify_admin_token",
-          "is_async": false,
-          "args": "credentials: HTTPAuthorizationCredentials=Depends(security)",
-          "returns": null,
-          "docstring": "Firebase Auth の ID トークンを検証する依存。失敗時は HTTP 401。"
-        },
-        {
-          "name": "verify_user_token",
-          "is_async": false,
-          "args": "credentials: HTTPAuthorizationCredentials=Security(security)",
-          "returns": null,
-          "docstring": "一般ユーザー（匿名認証）のIDトークンを検証してUIDを返す"
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/api/routers/__init__.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/backend/api/routers/admin.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "_resolve_statuses",
-          "is_async": false,
-          "args": "data: dict",
-          "returns": "tuple",
-          "docstring": "文書から (gemini_status, elyza_status) を決定する（レガシー互換の既定値込み）。\n\n新フィールド未設定の旧文書は is_golden_data / is_approved から既定値を補う。\nELYZA 未生成（result_llmjp / nazokake_text_llmjp が無い）は 'n/a'（対象外）。"
-        },
-        {
-          "name": "apply_human_action",
-          "is_async": true,
-          "args": "req: HumanActionRequest, admin_token: dict=Depends(verify_admin_token)",
-          "returns": null,
-          "docstring": "管理者キュレーション: 対象なぞかけの gemini_status / elyza_status を更新する。\n\nPhase 4.11 の DPO抽出(Tier A/B)は、この gemini_status/elyza_status を\ngolden/approved/rejected に更新する手段が無いまま(このエンドポイント自体が\n消失していたため)恒久的に0件抽出になっていた欠落を復旧するもの。"
-        },
-        {
-          "name": "get_dlq_items",
-          "is_async": true,
-          "args": "admin_token: dict=Depends(verify_admin_token)",
-          "returns": null,
-          "docstring": "DLQ(sync_status==\"fatal\"、ポイズンピル隔離済み)の一覧を取得する。\n\nlast_sync_error(隔離理由)とretry_countを含めて返す。"
-        },
-        {
-          "name": "apply_dlq_action",
-          "is_async": true,
-          "args": "req: DlqActionRequest, admin_token: dict=Depends(verify_admin_token)",
-          "returns": null,
-          "docstring": "DLQに隔離されたアイテムへ「再試行」または「破棄」を適用する。\n\n対象が存在しない、または既にfatal(隔離中)でない場合は404。操作が成功した場合、\n直後に既存データを一切破壊しない追記専用の監査証跡(Audit Trail)を記録する。"
-        },
-        {
-          "name": "get_audit_logs",
-          "is_async": true,
-          "args": "admin_token: dict=Depends(verify_admin_token)",
-          "returns": null,
-          "docstring": "監査証跡(audit_logs)を作成日時の降順で最大100件取得する。"
-        },
-        {
-          "name": "_parse_git_status_targets",
-          "is_async": false,
-          "args": "porcelain_output: str",
-          "returns": "list",
-          "docstring": "`git status --porcelain`(v1形式)の出力から、自動コミット対象として安全な\nパスのみを抽出する。\n\n- 追跡済みファイルの変更は、既知のステータスコード(_SAFE_GIT_STATUS_CODES)の\n  場合のみ対象へ含める。\n- 未追跡ファイル(??)は tools/instructions/ 配下のみを安全対象として許可する\n  (それ以外の未追跡ファイルを無差別に対象化することは絶対に行わない)。\n- サブモジュールの内部変更(\" m\"等、小文字を含む未知のコード)は安全側に倒して\n  スキップする(意図しないサブモジュールポインタの自動コミットを避ける)。\n- リネーム(\"R  old -> new\")は旧パス・新パスの両方を対象に含める。"
-        },
-        {
-          "name": "_auto_commit_pending_changes",
-          "is_async": false,
-          "args": "repo_root: Path",
-          "returns": "list",
-          "docstring": "作業ツリーに変更があれば、追跡済みファイルおよびtools/instructions/配下の\n安全な未追跡ファイルのみを明示的に指定して自動コミットする。\n\n【絶対制約】`git add .`は使わない。対象パスは必ず個別に列挙して`git add --`へ渡す\n(_parse_git_status_targets()が安全対象のみへ絞り込む)。変更が無い、または\n安全対象が1件も無い場合は何もせず空リストを返す。"
-        },
-        {
-          "name": "_is_deploy_running",
-          "is_async": false,
-          "args": "",
-          "returns": "bool",
-          "docstring": "現在バックグラウンドで実行中のデプロイがあるかを判定する(単一workerプロセス\n前提のインメモリ状態、run_api.ps1が--workers 1を強制する既存の運用規約と同じ\n前提に依拠する)。完了済みのプロセスは参照をクリアする。"
-        },
-        {
-          "name": "trigger_deploy",
-          "is_async": true,
-          "args": "admin_token: dict=Depends(verify_admin_token)",
-          "returns": null,
-          "docstring": "検証サーバーへの閉域GitOps(Pull型)デプロイ(tools/deploy/deploy_to_vm.ps1)を\nバックグラウンドで起動する(instructions/172の骨格をinstructions/187のGitOps方式へ\n刷新、No-Toilの徹底)。\n\n実行前に作業ツリーの保留中の変更を自動コミットする(deploy_to_vm.ps1はgit pushで\nHEAD(直近のコミット)のみをVM上のBareリポジトリへ転送するため、コミットされて\nいない変更はこの手順が無ければ検証サーバーへ反映されない)。deploy_to_vm.ps1自体の\n標準出力/標準エラー出力(VM起動確認・SSH待機・push・非同期キックの通知まで)は\ndeploy.logへ追記され、admin.jsがポーリングでこれをフロントエンドのターミナル風\nエリアへ表示する。VM側で実際に実行されるinfra/verification_env/deploy_pull.sh\n(git fetch/reset --hard→setup_verification_env.sh→docker compose up --build)は\n非同期キックのため、その進捗自体はこのdeploy.logには現れない\n(VM上の~/nazokake_apps_deploy_pull.logを参照、既知の限界)。\n\n【ローカル開発環境専用】このエンドポイントはWindows PowerShell/gcloud CLIの\n存在を前提とするため、デプロイ済みのCloud Run環境(frontend/を含まないコンテナ\nイメージ、apps/evaluator/Dockerfile参照)では機能しない。デプロイスクリプトが\n見つからない場合は明示的にエラーを返す(サイレントな失敗を避ける)。"
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/api/routers/admin_costs.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "_fetch_costs_sync",
-          "is_async": false,
-          "args": "db, limit: int",
-          "returns": "list",
-          "docstring": "Firestoreのstream()を同期的に実行し、リスト化して返すヘルパー関数"
-        },
-        {
-          "name": "_fetch_recent_costs",
-          "is_async": true,
-          "args": "db, limit: int=100",
-          "returns": "list[SystemCostLog]",
-          "docstring": null
-        },
-        {
-          "name": "is_budget_exceeded",
-          "is_async": true,
-          "args": "db",
-          "returns": "bool",
-          "docstring": "直近のコストログ合計が BUDGET_LIMIT_JPY を超過しているかを判定する(ソフトリミット)。"
-        },
-        {
-          "name": "get_costs",
-          "is_async": true,
-          "args": "db=Depends(get_db)",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "get_costs_dashboard",
-          "is_async": true,
-          "args": "request: Request, db=Depends(get_db)",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/api/routers/admin_feedbacks.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "_fetch_feedbacks_sync",
-          "is_async": false,
-          "args": "db, limit: int, model_target: Optional[str], overall_score: Optional[int]",
-          "returns": "list",
-          "docstring": "Firestoreのstream()を同期的に実行し、リスト化して返すヘルパー関数。\n\nmodel_target/overall_score でのフィルタ + created_at ソートを組み合わせる場合、\nFirestore側に複合インデックスが必要になることがある(firestore.indexes.json参照)。"
-        },
-        {
-          "name": "get_admin_feedbacks",
-          "is_async": true,
-          "args": "limit: int=50, model_target: Optional[str]=None, overall_score: Optional[int]=None, db=Depends(get_db), admin_token: dict=Depends(verify_admin_token)",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "refresh_fewshot_pool",
-          "is_async": true,
-          "args": "db=Depends(get_db), admin_token: dict=Depends(verify_admin_token)",
-          "returns": null,
-          "docstring": "稼働中のAPIサーバー自身のプロセス内で Few-shot プールと評価プロンプトの動的補正を更新する(Webhook方式)。\n\n別プロセスのバッチスクリプトからDBへ直接書き込んでも、このサーバーの\nservices.generation._FEWSHOT_POOL / services.evaluation._DYNAMIC_CORRECTION_PROMPT\n(いずれもプロセス内メモリ)には反映されない(プロセス間でメモリを共有しないため)。\nこのエンドポイントを外部から叩かせることで、両方の更新を確実にサーバー自身の\nプロセス内で実行させる。"
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/api/routers/board.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "get_board_items",
-          "is_async": true,
-          "args": "category: str='nazokake', limit: int=50, db: firestore.Client=Depends(get_db)",
-          "returns": null,
-          "docstring": "掲示板の親スレッド＋返信を取得（本番用・スケーラブル設計）。\n親スレッドは複合インデックスを活用してDB側でlimitをかけ、\n返信は絞り込まれた親IDを元に取得しPython側で結合・ソートする。"
-        },
-        {
-          "name": "create_board_post",
-          "is_async": true,
-          "args": "req: BoardPostRequest, user_token: dict=Depends(verify_user_token), db: firestore.Client=Depends(get_db)",
-          "returns": null,
-          "docstring": "投稿/返信の書き込み（トランザクションで1日3回制限を強制）"
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/api/routers/feed.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "get_user_feed",
-          "is_async": true,
-          "args": "last_doc_id: Optional[str]=None, limit: int=5",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "get_golden_feed",
-          "is_async": true,
-          "args": "last_doc_id: Optional[str]=None, limit: int=5",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "evaluate_user_item",
-          "is_async": true,
-          "args": "doc_id: str, request: Request",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/api/routers/feedback.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "submit_feedback",
-          "is_async": false,
-          "args": "req: FeedbackRequest, db=Depends(get_db)",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/api/routers/generate.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "_compose_text",
-          "is_async": false,
-          "args": "odai: str, result: dict",
-          "returns": "str",
-          "docstring": null
-        },
-        {
-          "name": "_validate_result_with_fallback",
-          "is_async": false,
-          "args": "raw: dict, fallback_message: str",
-          "returns": "dict",
-          "docstring": "Resultスキーマで検証する。壊れたデータでもアプリを落とさず、\n仮の値(エラー表示用)で補完した合法なResultを返す(自己修復)。"
-        },
-        {
-          "name": "_validate_scores_with_fallback",
-          "is_async": false,
-          "args": "raw: dict",
-          "returns": "dict",
-          "docstring": "Scoresスキーマ(11軸)で検証する。壊れたデータでもアプリを落とさず、\n全軸を中間値0.5で補完した合法なScoresを返す(自己修復)。"
-        },
-        {
-          "name": "progressive_generate",
-          "is_async": true,
-          "args": "db, doc_id: str, odai: str, pair_id: str",
-          "returns": null,
-          "docstring": "段階的開示の本体。Gemini と ELYZA を「完全に独立した並列フロー」で実行する。\n\n各モデルが自分のペースで「生成 → 本文先行update → 評価 → 評価後update」を進め、\n互いの完了を一切待たない（asyncio.gather で真の並行）。これにより ELYZA 本文の表示が\nGemini の評価完了にブロックされなくなる。最後に全体を all_completed へ更新する。\nフロー(並行): [Gemini] gemini_generated→gemini_completed / [ELYZA] llmjp:generated→llmjp:completed → all_completed。\n\npair_id: バッチ工場(batch/main.py)と同一フォーマットの dpo_pair_id。Gemini/ELYZA\n両パスのローカルDB更新に記録し、抽出スクリプトがバッチ由来・アプリ由来を同一ロジックで\nペア回収できるようにする。\n\n各 async_upsert_item() 呼び出しは独立した単発のDB往復であり、その前後にある\ngenerate_via_gemini/generate_via_llmjp/run_evaluation(LLM推論)の実行中はDBに\n一切触れない。"
-        },
-        {
-          "name": "_guarded_progressive",
-          "is_async": true,
-          "args": "db, doc_id: str, odai: str, pair_id: str",
-          "returns": null,
-          "docstring": "未捕捉例外でもDBに必ず error を書き、無限ロード（サイレントデス）を防ぐ最終防壁。"
-        },
-        {
-          "name": "get_status",
-          "is_async": true,
-          "args": "doc_id: str",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "generate_ai",
-          "is_async": true,
-          "args": "req: GenerateRequest, db=Depends(get_db)",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/api/routers/metrics.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "log_telemetry",
-          "is_async": false,
-          "args": "req: TelemetryLogRequest, db=Depends(get_db)",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/api/routers/submission.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "submit_human",
-          "is_async": true,
-          "args": "req: HumanSubmitRequest",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/api/routers/user_feedback.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "submit_user_feedback",
-          "is_async": true,
-          "args": "doc_id: str, req: UserFeedbackRequest, db=Depends(get_db), decoded_token: dict=Depends(verify_user_token)",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/core/__init__.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/backend/core/config.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/backend/core/exceptions.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "global_exception_handler",
-          "is_async": true,
-          "args": "request: Request, exc: Exception",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/core/logger.py",
-      "classes": [
-        {
-          "name": "InterceptHandler",
-          "docstring": null,
-          "methods": [
-            {
-              "name": "emit",
-              "is_async": false,
-              "args": "self, record",
-              "returns": null,
-              "docstring": null
-            }
-          ]
-        }
-      ],
-      "functions": [
-        {
-          "name": "setup_cloud_logging",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/dummy_benchmark.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "calculate_score",
-          "is_async": false,
-          "args": "base: int, multiplier: float",
-          "returns": "float",
-          "docstring": null
-        },
-        {
-          "name": "badly_formatted",
-          "is_async": false,
-          "args": "x, y",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/main.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "health_check",
-          "is_async": true,
-          "args": "",
-          "returns": null,
-          "docstring": "💡 0円コールドスタート対策用の超軽量ヘルスチェック（DBアクセスなし）"
-        },
-        {
-          "name": "root",
-          "is_async": true,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/mcp_server.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "generate_nazokake",
-          "is_async": true,
-          "args": "odai: str",
-          "returns": "dict",
-          "docstring": "お題(odai)から、なぞかけをGemini(主軸)で生成する。hint/toku/kokoro/thinkingを含む辞書を返す。"
-        },
-        {
-          "name": "evaluate_nazokake",
-          "is_async": true,
-          "args": "odai: str, nazokake_text: str",
-          "returns": "dict",
-          "docstring": "お題となぞかけ全文を11軸で評価する。scores/s_total/axis_comments/overallを含む辞書を返す。"
-        },
-        {
-          "name": "trigger_dpo_pipeline",
-          "is_async": false,
-          "args": "run_training: bool=False",
-          "returns": "str",
-          "docstring": "DPOデータ抽出 -> 学習準備パイプライン(tools/run_dpo_pipeline.py)を起動し、出力ログを返す。\n\nrun_training=False(既定)の場合、batch_factory側は必ず --dry-run で起動され、\n実際のGPU学習は開始されない。run_training=True を指定した場合のみ実学習を許可する。\nネットワーク到達性の問題等でハングしないよう、タイムアウトを設けている。"
-        },
-        {
-          "name": "dpo_stats",
-          "is_async": false,
-          "args": "",
-          "returns": "str",
-          "docstring": "抽出済みDPOデータセット(dpo_dataset.jsonl)の件数・source/pair_type別内訳・最終更新日時を返す。"
-        },
-        {
-          "name": "evaluation_correction_prompt",
-          "is_async": false,
-          "args": "",
-          "returns": "str",
-          "docstring": "Phase4 Lv.2で動的生成される、なぞかけ評価の自己補正指示プロンプト。\n\nservices.evaluation.update_dynamic_correction_prompt() により実行時に更新される\n最新の値を都度参照する(モジュール属性アクセスにより値のスナップショット化を避ける)。"
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/models/__init__.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/backend/models/schemas.py",
-      "classes": [
-        {
-          "name": "HumanSubmitRequest",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "GenerateRequest",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "TelemetryLogRequest",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "FeedbackRequest",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "ConfigUpdateRequest",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "FeedbackInvalidateRequest",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "BoardPostRequest",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "HumanActionRequest",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "UserFeedbackRequest",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "FeedItem",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "FeedItemsResponse",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "StatusResponse",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "AdminActionResponse",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "ErrorEnvelope",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "DlqItem",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "DlqListResponse",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "DlqActionRequest",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "DlqActionResponse",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "AuditLogItem",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "AuditLogListResponse",
-          "docstring": null,
-          "methods": []
-        },
-        {
-          "name": "AdminDeployResponse",
-          "docstring": null,
-          "methods": []
-        }
-      ],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/backend/scripts/_temp_inspect_db.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "fs_value",
-          "is_async": false,
-          "args": "v",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "parse_doc",
-          "is_async": false,
-          "args": "doc",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "run_query",
-          "is_async": false,
-          "args": "structured_query",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/scripts/backfill_board.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "main",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/scripts/count_posts.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/backend/scripts/dataset_extractor.py",
-      "classes": [
-        {
-          "name": "DatasetExtractor",
-          "docstring": "SFT / DPO データ抽出を統合管理する、関心の分離とフェイルファストを徹底した統合抽出エンジン",
-          "methods": [
-            {
-              "name": "__init__",
-              "is_async": false,
-              "args": "self, config_name='ml_config.yaml'",
-              "returns": null,
-              "docstring": null
-            },
-            {
-              "name": "_load_config",
-              "is_async": false,
-              "args": "self",
-              "returns": null,
-              "docstring": "外部YAMLファイルからクオリティゲート（閾値）を読み込む"
-            },
-            {
-              "name": "_init_firestore",
-              "is_async": false,
-              "args": "self",
-              "returns": null,
-              "docstring": "Firestoreクライアントの初期化（相対パス解決＆完全マジックナンバー排除仕様）"
-            },
-            {
-              "name": "_fetch_base_items",
-              "is_async": false,
-              "args": "self",
-              "returns": null,
-              "docstring": "共通のデータフェッチと無効データパージロジック"
-            },
-            {
-              "name": "export_sft_dataset",
-              "is_async": false,
-              "args": "self, output_dir: Path",
-              "returns": null,
-              "docstring": "SFT用（Hugging Face `messages` スキーマ）の特級データ抽出"
-            },
-            {
-              "name": "export_dpo_dataset",
-              "is_async": false,
-              "args": "self, output_dir: Path",
-              "returns": null,
-              "docstring": "DPO用（prompt, chosen, rejected スキーマ）のペア抽出"
-            },
-            {
-              "name": "_write_jsonl",
-              "is_async": false,
-              "args": "self, records, file_path: Path",
-              "returns": null,
-              "docstring": "JSONLの安全な書き出し"
-            }
-          ]
-        }
-      ],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/backend/scripts/extract_dpo_data.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "load_records",
-          "is_async": false,
-          "args": "in_path: str",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "to_score",
-          "is_async": false,
-          "args": "v",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "build_pairs",
-          "is_async": false,
-          "args": "records",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "main",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/scripts/extract_rlhf_dataset.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "init_db",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "compose_text",
-          "is_async": false,
-          "args": "odai: str, result: dict",
-          "returns": "str",
-          "docstring": null
-        },
-        {
-          "name": "resolve_text",
-          "is_async": false,
-          "args": "item: dict, model_key: str",
-          "returns": "str",
-          "docstring": null
-        },
-        {
-          "name": "to_score",
-          "is_async": false,
-          "args": "duration",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "ts_key",
-          "is_async": false,
-          "args": "ts",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "main",
-          "is_async": false,
-          "args": "dry_run: bool=False, limit: int=None, out_path: str=OUTPUT_PATH, full_scan: bool=False",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/scripts/extract_sft_data.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "init_db",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "compose_text",
-          "is_async": false,
-          "args": "odai: str, result: dict",
-          "returns": "str",
-          "docstring": null
-        },
-        {
-          "name": "to_score",
-          "is_async": false,
-          "args": "v",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "main",
-          "is_async": false,
-          "args": "dry_run: bool=False, out_path: str=OUTPUT_PATH",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/scripts/temp_check.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/backend/services/__init__.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/backend/services/ai_service.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/backend/services/evaluation.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "update_dynamic_correction_prompt",
-          "is_async": false,
-          "args": "new_prompt: str",
-          "returns": "None",
-          "docstring": "_DYNAMIC_CORRECTION_PROMPT を外部(Webhookエンドポイント等)から安全に更新する。"
-        },
-        {
-          "name": "_log_evaluation_cost",
-          "is_async": true,
-          "args": "service_type: str, input_tokens: int=0, output_tokens: int=0, execution_time_sec: float=0.0",
-          "returns": "None",
-          "docstring": "評価コストをsystem_costsへ非同期記録する(失敗しても評価処理自体は継続する)。"
-        },
-        {
-          "name": "run_evaluation",
-          "is_async": true,
-          "args": "odai: str, nazokake_text: str",
-          "returns": "dict",
-          "docstring": "Gemini APIで11軸評価を実行し、nazokake_core.schemas.EvaluationOutputで\nデータ契約(scores/axis_comments/overallの形状)を検証した上でs_totalを添えて返す。"
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/services/feedback_analyzer.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "_fetch_recent_feedbacks_sync",
-          "is_async": false,
-          "args": "db, limit: int",
-          "returns": "list",
-          "docstring": "Firestoreのstream()を同期的に実行し、リスト化して返すヘルパー関数"
-        },
-        {
-          "name": "_fetch_ai_scores",
-          "is_async": true,
-          "args": "doc_id: str, model_target: str",
-          "returns": "Optional[dict]",
-          "docstring": "指定doc_idのnazokake_items(ローカルDB)から、model_targetに対応するAIの\n11軸スコアを取得する。"
-        },
-        {
-          "name": "analyze_axis_divergence",
-          "is_async": true,
-          "args": "db, limit: int=100",
-          "returns": "dict",
-          "docstring": "AIの自己評価とユーザー評価の乖離(過信)を軸ごとに集計する。\n\n「AIのスコアがAI_HIGH_SCORE_THRESHOLD以上、かつユーザー評価がbad」であるケースを\n過信(overconfident)としてカウントする。axis_feedbackが空のフィードバックや、\n対応するnazokake_itemsが存在しない/スコア欠損のケースはスキップする。\n\n返り値:\n    {\n        \"total_feedback_analyzed\": int,   # 実際に突き合わせ集計できたフィードバック件数\n        \"axes\": {\n            \"<axis_name>\": {\n                \"bad_count\": int,             # そのAxisにbadが付いた回数\n                \"high_score_count\": int,      # AIがそのAxisを閾値以上と評価した回数\n                \"overconfident_count\": int,   # 上記2条件が重なった(AI高評価&ユーザーbad)回数\n                \"overconfidence_rate\": float, # overconfident_count / high_score_count(0除算は0.0)\n            },\n            ...\n        },\n    }"
-        },
-        {
-          "name": "generate_correction_prompt",
-          "is_async": false,
-          "args": "analysis_data: dict, rate_threshold: float=0.5",
-          "returns": "str",
-          "docstring": "analyze_axis_divergence() の結果から、過信軸への自己評価補正を促す自然言語プロンプトを生成する。\n\noverconfidence_rate が rate_threshold 以上の軸を抽出し、評価プロンプトに追記できる\n警告文を組み立てる。対象軸が無ければ空文字を返す(= 補正不要、既存挙動を変えない)。"
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/services/feedback_loop.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "_fetch_high_rated_doc_ids_sync",
-          "is_async": false,
-          "args": "db, limit: int",
-          "returns": "list",
-          "docstring": "user_feedbacks から overall_score >= HIGH_RATING_THRESHOLD の doc_id を重複なく抽出する同期ヘルパー。"
-        },
-        {
-          "name": "fetch_high_rated_nazokake_ids",
-          "is_async": true,
-          "args": "db, limit: int=200",
-          "returns": "list",
-          "docstring": "高評価(overall_score >= 4)を得た nazokake_items の doc_id リストを重複なく返す。"
-        },
-        {
-          "name": "_fetch_fewshot_entry",
-          "is_async": true,
-          "args": "doc_id: str",
-          "returns": null,
-          "docstring": "指定doc_idのnazokake_items(ローカルDB)から、Few-shotプール互換のCoT辞書を\n組み立てる(取得できる範囲のみ)。\n\ntoku/kokoro が欠落しているドキュメント(生成失敗等)はNoneを返しスキップ対象とする。"
-        },
-        {
-          "name": "build_high_rated_fewshot_entries",
-          "is_async": true,
-          "args": "db, limit: int=200",
-          "returns": "list",
-          "docstring": "ユーザー高評価のnazokake_itemsから、Few-shotプール互換の辞書リストを組み立てる(Lv.1の土台)。\n\n取得できたエントリのみを返す(欠損データはスキップ)。呼び出し側(generation.py)が\nこのリストを既存の静的プールへどうマージ/差し替えるかを判断する。"
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/services/generation.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "_try_acquire_vram_lock",
-          "is_async": false,
-          "args": "",
-          "returns": "filelock.FileLock | None",
-          "docstring": "VRAM排他ロックの非ブロッキング取得を試みる(OSレベルのファイルロック、プロセス間)。\n\nMLOpsパイプラインが同じロックファイルを保持している間は即座に諦め、ローカルLLM\n(Ollama)呼び出しを行わずNoneを返す(呼び出し元はクラウドAPIへフォールバックする)。\n取得できた場合は呼び出し元が使用後に必ずrelease()するロックオブジェクトを返す。"
-        },
-        {
-          "name": "_load_fewshot_pool",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": "高品質ななぞかけ例文プール（150〜200件想定）を読み込む。失敗時は空（固定例のみ動作）。"
-        },
-        {
-          "name": "refresh_fewshot_pool_from_feedback",
-          "is_async": true,
-          "args": "db, limit: int=200",
-          "returns": "int",
-          "docstring": "Phase4 Lv.1: ユーザー高評価データ(user_feedbacks)をFew-shotプールの先頭に優先的にマージする(土台実装)。\n\n既存の静的プールは保持したまま高評価エントリを先頭に追加するマージ方式とし、\ngenerate_via_gemini / generate_via_llmjp の既存挙動を壊さない(呼び出さない限り無関係)。\n呼び出し元(オーケストレーター等)が任意のタイミング(バッチ/定期実行)で発火する想定。"
-        },
-        {
-          "name": "_sample_fewshot_block",
-          "is_async": false,
-          "args": "",
-          "returns": "str",
-          "docstring": "プールから毎回【必ず3件】抽出し、完全な辞書を「1行JSON」に量子化して埋め込む（Dynamic Few-Shot）。\n\n省略形ではなく associations〜kokoro までの思考プロセス(CoT)を丸ごと高密度に提示することで、\nAIに「考え方の型」と「出力フォーマット」を同時に深く模倣させる（プロンプトの量子化）。\nプールが空/3件未満でも安全（k はプール件数で上限クランプ、0件なら空文字）。"
-        },
-        {
-          "name": "chat_completion_local",
-          "is_async": true,
-          "args": "url, system_prompt, user_prompt, max_tokens=256, temperature=0.8, json_mode=False, model='gemma', read_timeout=35.0",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "_summarize_thinking",
-          "is_async": false,
-          "args": "t",
-          "returns": "str",
-          "docstring": "hint が欠落した場合に、フラットな思考フィールドから人間向け要約を組み立てる。"
-        },
-        {
-          "name": "_build_gen_prompts",
-          "is_async": true,
-          "args": "odai: str",
-          "returns": null,
-          "docstring": "動的設定(temperature/persona)を取得し、CoT生成用の system/user プロンプトを組み立てる。\n\nお手本は「固定の完全例1件（フォーマット固定）＋プールからのランダム抽出N件（多様性）」のハイブリッド。"
-        },
-        {
-          "name": "_log_generation_cost",
-          "is_async": true,
-          "args": "service_type: str, input_tokens: int=0, output_tokens: int=0, execution_time_sec: float=0.0",
-          "returns": "None",
-          "docstring": "生成コストをsystem_costsへ非同期記録する(失敗してもなぞかけ生成自体は継続する)。"
-        },
-        {
-          "name": "_finalize",
-          "is_async": false,
-          "args": "parsed: dict",
-          "returns": "dict",
-          "docstring": "生成結果を正規化（toku を10文字以内にクランプ、hint を補完）して返す。\n\n新スキーマ(フラット: associations/kakekotoba/shared_essence/surprise_check)を主に扱いつつ、\n旧スキーマ(入れ子 thinking)も後方互換で受理する。返り値の {hint,toku,kokoro,thinking} 形は維持。"
-        },
-        {
-          "name": "generate_via_gemini",
-          "is_async": true,
-          "args": "odai: str",
-          "returns": "dict",
-          "docstring": "【即時・主軸】Gemini 3.5 Flash で構造化生成（GEN_SCHEMA＋3回リトライ）。失敗時は例外送出。"
-        },
-        {
-          "name": "generate_via_llmjp",
-          "is_async": true,
-          "args": "odai: str",
-          "returns": "dict",
-          "docstring": "【遅延・おまけ】ローカル ELYZA(Ollama) で生成。VRAM 8GB防弾仕様。\n\n接続先・モデルは env で設定: LLMJP_URL / LLMJP_MODEL。\n推論が遅いため read タイムアウトを長め(120s)に取る。\nVRAM枯渇(OOM)を防ぐため、Semaphoreで同時実行数を1に制限し、実行前にクールダウンを挟む。\n\n実行前にVRAMグローバルロック(プロセス間、tools/mlops_pipeline_*.pyと共有)の\n非ブロッキング取得を試みる。MLOpsパイプラインが稼働中でロックを取得できない\n場合は、ローカル推論を直ちに諦めクラウドAPI(Gemini)へシームレスにフォールバック\nする(限られたVRAM 8GBをMLOpsの学習/評価と同時に食い合わないため)。"
-        },
-        {
-          "name": "generate_nazokake",
-          "is_async": true,
-          "args": "odai: str",
-          "returns": "dict",
-          "docstring": "後方互換ラッパ（test_pipeline 等の既存呼び出し用）。ELYZA → Gemini の順で試す。"
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/backend/services/output_parser.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "get_rag_context",
-          "is_async": true,
-          "args": "db, odai: str",
-          "returns": "str",
-          "docstring": null
-        },
-        {
-          "name": "_first_json_block",
-          "is_async": false,
-          "args": "text: str",
-          "returns": null,
-          "docstring": "最初の '{' から対応する '}' までの最小完結ブロックを返す（文字列内の括弧は無視）。\n\n現状の貪欲な r'\\{.*\\}' は「文章 {A} 文章 {B}」で {A}〜{B} 全体を掴んでしまう。\n波括弧の対応をスキャンして最初の1ブロックだけを正確に切り出す。閉じが無ければ残り全部。"
-        },
-        {
-          "name": "_salvage_str_field",
-          "is_async": false,
-          "args": "raw: str, key: str",
-          "returns": null,
-          "docstring": "raw から \"key\": \"...\" / \"key\": 「...」 の文字列値を1つだけ取り出す（堅牢サルベージ用）。\n\nELYZA(elyza:8b) は thinking.kakekotoba 等の入れ子で `\"x\"=\"y\"` や 「…」 といった\n不正JSONを混ぜ、json.loads 全体を巻き添えで失敗させることがある。だが必須の\ntoku/kokoro 自体は正しい \"...\" 値である場合が多いため、ピンポイントで救出する。"
-        },
-        {
-          "name": "_extract_json_dict",
-          "is_async": false,
-          "args": "raw: str",
-          "returns": null,
-          "docstring": "生テキストから生成結果 dict を堅牢に取り出す。失敗時 None。\n\n1) ```json 等のフェンスを除去\n2) 最初の完結した波括弧ブロックを厳密に json.loads（Gemini・整形JSONはここで成功）\n3) 失敗時は必須フィールド(toku/kokoro)＋hint を正規表現で直接サルベージ\n   （ELYZA が入れ子で不正JSONを吐いても、肝心の解き・こころを取りこぼさない）"
-        },
-        {
-          "name": "_valid_nazokake",
-          "is_async": false,
-          "args": "d",
-          "returns": "bool",
-          "docstring": "生成結果が最低限の必須フィールド(toku/kokoro)を満たすか検証する。"
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/dummy_server.py",
-      "classes": [
-        {
-          "name": "RequestHandler",
-          "docstring": null,
-          "methods": [
-            {
-              "name": "do_GET",
-              "is_async": false,
-              "args": "self",
-              "returns": null,
-              "docstring": null
-            },
-            {
-              "name": "do_POST",
-              "is_async": false,
-              "args": "self",
-              "returns": null,
-              "docstring": null
-            }
-          ]
-        }
-      ],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/frontend/public/dev_server.py",
-      "classes": [
-        {
-          "name": "NoCacheHTTPRequestHandler",
-          "docstring": null,
-          "methods": [
-            {
-              "name": "end_headers",
-              "is_async": false,
-              "args": "self",
-              "returns": null,
-              "docstring": null
-            }
-          ]
-        }
-      ],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/generate_context.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "collect_files",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": "対象ファイルの相対パス（posix表記）を昇順で返す。"
-        },
-        {
-          "name": "render_tree",
-          "is_async": false,
-          "args": "paths",
-          "returns": null,
-          "docstring": "対象ファイルのパス一覧からディレクトリツリー文字列を組み立てる。"
-        },
-        {
-          "name": "main",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/inject_history_data.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/assess_baseline.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "scan_codebase",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "check_firestore_status",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/audit_batch.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "audit_firestore_data",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": "Firestore上のなぞかけバッチ処理結果を監査し、標準出力にレポートする。"
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/audit_training_data.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "audit_training_data",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/auto_summarize.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "get_ollama_model",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": "Ollama APIから利用可能なモデル（Gemma等）を自動探索する"
-        },
-        {
-          "name": "main",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/bust_cache.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "bust_cache_and_deploy",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/check_latest_status.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "check_status",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/code_scanner.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "scan_codebase",
-          "is_async": false,
-          "args": "target_dir='backend/services'",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/code_scanner_mega.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "get_target_files",
-          "is_async": false,
-          "args": "target_dir",
-          "returns": null,
-          "docstring": "AIがパンクしないよう、解析すべき安全なファイルだけを抽出する"
-        },
-        {
-          "name": "run_mega_scan",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/diagnose_db.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "diagnose_database",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/dump_status.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "dump_project_status",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/dynamic_gcp_build.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "main",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/export_project.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "get_target_dir",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "generate_tree",
-          "is_async": false,
-          "args": "dir_path, exclude_dirs, prefix=''",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "export_context",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/extract_dpo_data.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "_init_firebase",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "_get_odai",
-          "is_async": false,
-          "args": "data: dict",
-          "returns": "str",
-          "docstring": "AI生成(generate.py)は 'odai'、人間投稿(submission.py)は 'A_TITLE' にお題を保存する。"
-        },
-        {
-          "name": "_classify",
-          "is_async": false,
-          "args": "status: str",
-          "returns": "str",
-          "docstring": null
-        },
-        {
-          "name": "_bucket_pairing",
-          "is_async": false,
-          "args": "good_bucket: list, bad_bucket: list, source: str",
-          "returns": "list",
-          "docstring": "good/badバケットをシャッフルして横断ペアリングする(pair_type=cross_prompt)。"
-        },
-        {
-          "name": "fetch_admin_curated_docs",
-          "is_async": false,
-          "args": "db",
-          "returns": "dict",
-          "docstring": "gemini_status または elyza_status が golden/approved/rejected のドキュメントをdoc_id別に集約する。"
-        },
-        {
-          "name": "extract_admin_curation_pairs",
-          "is_async": false,
-          "args": "db",
-          "returns": "list",
-          "docstring": "管理者キュレーション由来のChosen/Rejectedペアを抽出する。\n\n同一ドキュメント内でGemini/ELYZAの評価が両極端に分かれる場合はsame_prompt、\n片側のみキュレーション済みの場合はスコアバケットに積んでcross_promptとして横断ペアリングする。"
-        },
-        {
-          "name": "fetch_recent_user_feedbacks",
-          "is_async": false,
-          "args": "db, limit: int=USER_FEEDBACK_FETCH_LIMIT",
-          "returns": "list",
-          "docstring": null
-        },
-        {
-          "name": "_fetch_nazokake_items_by_ids",
-          "is_async": false,
-          "args": "db, doc_ids: list",
-          "returns": "dict",
-          "docstring": "db.get_all() でnazokake_itemsを一括取得する(doc_id件数分の個別get()を避ける)。"
-        },
-        {
-          "name": "extract_user_feedback_pairs",
-          "is_async": false,
-          "args": "db, limit: int=USER_FEEDBACK_FETCH_LIMIT",
-          "returns": "list",
-          "docstring": "user_feedbacks由来のChosen/Rejectedペアを抽出する(Tier A優先、Tier Bで補完)。"
-        },
-        {
-          "name": "_dedupe",
-          "is_async": false,
-          "args": "pairs: list",
-          "returns": "list",
-          "docstring": null
-        },
-        {
-          "name": "extract_dpo_dataset_v7",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/extract_firestore_data_all.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "make_serializable",
-          "is_async": false,
-          "args": "obj",
-          "returns": null,
-          "docstring": "辞書やリストの奥深くまで潜り、Firestore特有の型（Datetime等）を\nJSONで保存できる文字列に変換する。"
-        },
-        {
-          "name": "extract_all_raw_data",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/extract_sft_data.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "extract_sft_data",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/gather_evidence.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "gather_evidence",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/inject_backend_url.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/inject_firestore_batch.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "restore_types",
-          "is_async": false,
-          "args": "data",
-          "returns": null,
-          "docstring": "文字列になっている日付データを、Firestoreが愛する本物の時刻型に蘇生させる"
-        },
-        {
-          "name": "inject_to_firestore",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/llm_deadcode_reviewer.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "get_ollama_model",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": "利用可能なモデル（Gemma等）を動的取得"
-        },
-        {
-          "name": "analyze_with_llm",
-          "is_async": false,
-          "args": "model, filepath, snippet",
-          "returns": null,
-          "docstring": "LLMにコードを読ませて判定"
-        },
-        {
-          "name": "main",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/local_gemma_api.py",
-      "classes": [
-        {
-          "name": "NazokakeRequest",
-          "docstring": null,
-          "methods": []
-        }
-      ],
-      "functions": [
-        {
-          "name": "unwrap_clippable_linear",
-          "is_async": false,
-          "args": "module",
-          "returns": null,
-          "docstring": "PEFT互換性パッチ"
-        },
-        {
-          "name": "load_model",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "generate_nazokake",
-          "is_async": false,
-          "args": "req: NazokakeRequest",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/migrate_random_weight.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/publish_jobs.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "publish_jobs",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": "Firestoreの未処理データを抽出し、Pub/Subへ一括Publishする"
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/rescue_zombies_safe.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "process_zombies",
-          "is_async": true,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "rescue_zombies_safe",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/run_local_eval.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "run_local_evaluation",
-          "is_async": true,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/scan_streamlit.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/seed_rag_data.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "seed_rag_database_glucose_v2",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/setup_gcp_l4_instance.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "main",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/start_vertex_tuning.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "start_tuning",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/test_inference.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "unwrap_clippable_linear",
-          "is_async": false,
-          "args": "module",
-          "returns": null,
-          "docstring": "PEFT互換性パッチ（内部レイヤーの抽出手術）"
-        },
-        {
-          "name": "main",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/train_local_gemma.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/update_fewshot_pool.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "main",
-          "is_async": false,
-          "args": "",
-          "returns": "None",
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/scripts/wake_up_vm.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "run_cmd",
-          "is_async": false,
-          "args": "cmd",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "main",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/service_frontend/admin_app.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/split_research.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/test_elyza_diag.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "call_ollama",
-          "is_async": false,
-          "args": "json_mode: bool, max_tokens: int, temperature: float=0.8",
-          "returns": null,
-          "docstring": "Ollama OpenAI互換エンドポイントを直接叩き、(status, raw_body, parsed_content_or_None) を返す。"
-        },
-        {
-          "name": "brace_balance",
-          "is_async": false,
-          "args": "s: str",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "diagnose",
-          "is_async": false,
-          "args": "content: str",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "section",
-          "is_async": false,
-          "args": "title",
-          "returns": null,
-          "docstring": null
-        },
-        {
-          "name": "main",
-          "is_async": false,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/test_elyza_raw.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "run",
-          "is_async": true,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/test_local_elyza.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "test_elyza",
-          "is_async": true,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/test_ollama_500.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "post",
-          "is_async": false,
-          "args": "url, payload, label",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/test_pipeline.py",
-      "classes": [],
-      "functions": [
-        {
-          "name": "run_test",
-          "is_async": true,
-          "args": "",
-          "returns": null,
-          "docstring": null
-        }
-      ]
-    },
-    {
-      "path": "apps/evaluator_backup/utils/find_assets.py",
-      "classes": [],
-      "functions": []
-    },
-    {
-      "path": "apps/evaluator_backup/utils/find_assets_to_file.py",
-      "classes": [],
-      "functions": []
-    },
-    {
       "path": "apps/tactical_cic/__init__.py",
       "classes": [],
       "functions": []
@@ -4443,10 +2694,10 @@
       "classes": [],
       "functions": [
         {
-          "name": "migrate_db",
+          "name": "migrate_schema",
           "is_async": false,
-          "args": "",
-          "returns": null,
+          "args": "db_path: str=DB_PATH",
+          "returns": "None",
           "docstring": null
         }
       ]
@@ -4719,6 +2970,26 @@
       ]
     },
     {
+      "path": "packages/shared_core/alembic/versions/0beb78c386a3_add_quality_circuit_breaker_state_table.py",
+      "classes": [],
+      "functions": [
+        {
+          "name": "upgrade",
+          "is_async": false,
+          "args": "",
+          "returns": "None",
+          "docstring": "Upgrade schema."
+        },
+        {
+          "name": "downgrade",
+          "is_async": false,
+          "args": "",
+          "returns": "None",
+          "docstring": "Downgrade schema."
+        }
+      ]
+    },
+    {
       "path": "packages/shared_core/alembic/versions/395210f62428_add_trigger_state_table.py",
       "classes": [],
       "functions": [
@@ -4740,6 +3011,46 @@
     },
     {
       "path": "packages/shared_core/alembic/versions/9a00e26d93a7_initial_schema.py",
+      "classes": [],
+      "functions": [
+        {
+          "name": "upgrade",
+          "is_async": false,
+          "args": "",
+          "returns": "None",
+          "docstring": "Upgrade schema."
+        },
+        {
+          "name": "downgrade",
+          "is_async": false,
+          "args": "",
+          "returns": "None",
+          "docstring": "Downgrade schema."
+        }
+      ]
+    },
+    {
+      "path": "packages/shared_core/alembic/versions/ac5c6cd8803f_add_research_articles_table.py",
+      "classes": [],
+      "functions": [
+        {
+          "name": "upgrade",
+          "is_async": false,
+          "args": "",
+          "returns": "None",
+          "docstring": "Upgrade schema."
+        },
+        {
+          "name": "downgrade",
+          "is_async": false,
+          "args": "",
+          "returns": "None",
+          "docstring": "Downgrade schema."
+        }
+      ]
+    },
+    {
+      "path": "packages/shared_core/alembic/versions/c82a34711ad1_add_ondemand_elyza_job_queue_fields.py",
       "classes": [],
       "functions": [
         {
@@ -4850,6 +3161,11 @@
         {
           "name": "QualityCircuitBreakerStateORM",
           "docstring": "Agent自身の推論出力品質のサイレント・デグレード検知状態(instructions/182、\nスライディングウィンドウ方式への是正はinstructions/183)。\n\nTriggerStateORMと同じ規約(pipeline_idごとに1行を継続的にUpsertする、\nAppend-onlyではない)。2つの独立した軸を同一行で追跡する:\n  - 評価スコアの極端値(extreme_window): なぞかけ評価スコアがスケールの\n    最高/最低に偏っているかどうかのサイレント・デグレード。\n  - エラー・パース失敗(error_window): 生成/評価の試行が失敗したかどうかの\n    サイレント・デグレード。\n\n【instructions/183是正: 連続カウント方式(consecutive_*)からスライディング\nウィンドウ方式への変更】連続カウント方式は、確率的モデルのノイズ(まぐれ当たり\n1回)だけで連続回数が0へリセットされてしまい、実際には劣化が続いているのに\nTripしない(検知漏れ、Flapping脆弱性)という欠陥があった。各軸を「直近\nwindow_size件のうち何件が異常だったか」を保持するブール値のFIFOキュー\n(extreme_window/error_window)として持たせ、異常件数がanomaly_threshold以上に\n達した時点でTripとみなす方式へ変更する。個々の判定・しきい値の適用は\nquality_circuit_breaker.py側の責務であり、この層は生のウィンドウ状態のみを\n保持する。",
+          "methods": []
+        },
+        {
+          "name": "ResearchArticleORM",
+          "docstring": "instructions/231: 「なぞかけ研究所」記事データ基盤(ResearchArticle Pydanticモデルの\n永続化先)。main_category > sub_category > title の3階層でカテゴライズされた\n研究記事を保持する。\n\ncreated_at/updated_atは、このコードベース全体の規約(TriggerStateORM等参照)に\n従い、datetime型カラムではなくISO8601文字列として保存する。",
           "methods": []
         },
         {
@@ -5050,6 +3366,13 @@
           "docstring": "doc_idで1件読み取る(読み取り専用)。\n\nWALモードは複数コネクションからの並行読み取りを許すため、書き込みを直列化する\nSerialized Writerのキューを経由せず、専用の短命セッションで直接読む\n(ポーリング用途で頻繁に呼ばれるため、単一の書き込みキューの後ろに並ばせない)。"
         },
         {
+          "name": "async_bulk_restore_items_if_missing",
+          "is_async": true,
+          "args": "rows: list[dict[str, Any]]",
+          "returns": "tuple[int, int]",
+          "docstring": "instructions/240: Firestoreからの起動時リストア専用の一括挿入。\n\n1件ずつsession.get()で存在確認してから個別commitする方式は、実際の\nnazokake_itemsコレクションの規模(実測1万件超)ではCloud Runの起動を\n数分間ブロックしてしまい実用にならないため、SQLiteのINSERT OR IGNORE相当\n(on_conflict_do_nothing、doc_id基準)で複数件を1回のトランザクションに\nまとめて処理する。呼び出し元(firestore_sync.py)がSQLiteのホスト\nパラメータ数上限を避けるための適度なチャンクサイズに分割して渡す前提。\n\nSQLAlchemy Coreの複数行insertは全行が同一のキー集合を持つ必要があるため、\nORMの全カラムを基準に各行を正規化する(欠けているキーは、NOT NULL制約を\n持つ列のみ_NAZOKAKE_ITEM_BULK_DEFAULTSで補い、その他はNULL許容なのでNoneのまま)。\n\n戻り値は (このバッチでの新規挿入件数, 既存のためスキップされた件数)。"
+        },
+        {
           "name": "async_get_dlq_items",
           "is_async": true,
           "args": "",
@@ -5097,6 +3420,20 @@
           "args": "limit: int=5, cursor_created_at: str | None=None",
           "returns": "list[dict[str, Any]]",
           "docstring": "殿堂入り(golden)フィードをcreated_at降順でシークする。"
+        },
+        {
+          "name": "async_get_published_research_articles",
+          "is_async": true,
+          "args": "",
+          "returns": "list[dict[str, Any]]",
+          "docstring": "公開済み記事の一覧を、main_category > sub_category でのグルーピング表示が\n安定するようmain_category → sub_category → created_at昇順で返す。一覧表示では\n本文(content)を使わないため、レスポンスサイズを抑える目的で含めない。"
+        },
+        {
+          "name": "async_get_research_article",
+          "is_async": true,
+          "args": "article_id: str",
+          "returns": "dict[str, Any] | None",
+          "docstring": "公開済み記事を1件、本文込みで取得する。下書きまたは存在しない場合はNoneを返す\n(呼び出し元のルーターはこれを404として扱う)。"
         },
         {
           "name": "async_append_human_evaluation",
@@ -5259,7 +3596,7 @@
           "is_async": false,
           "args": "db, collection: str, row: dict[str, Any]",
           "returns": "str",
-          "docstring": "1件をFirestoreへ冪等/順序保護付きでPushする(同期関数、asyncio.to_threadから呼ぶ)。\n\nFirestore上の既存ドキュメントのupdated_atがローカルのそれより新しい場合は\n「順序逆転」とみなし、上書きせずスキップする。戻り値は \"pushed\" または\n\"skipped_stale\"。"
+          "docstring": "1件をFirestoreへ冪等/順序保護付きでPushする(同期関数、asyncio.to_threadから呼ぶ)。\n\nFirestore上の既存ドキュメントのupdated_atがローカルのそれより新しい場合は\n「順序逆転」とみなし、上書きせずスキップする。戻り値は \"pushed\" または\n\"skipped_stale\"。\n\n【instructions/250】merge=Trueで書き込む(非merge の set() は、payload に\n含まれないフィールドをすべて削除する全置換のため)。このローカル行が知らない\nフィールド(例: workers/ondemand_elyza_worker.pyがelyza_job_status等の狭い\nフィールド集合にスコープを絞って直接書き込んだ結果)を、Cloud Run側の定期的な\nバックアップPushが誤って消し去ることを防ぐ。skip_staleの判定ロジック自体は\nこのmerge化と無関係(判定は書き込みの実行有無のみを左右し、書き込み方式には\n影響しない)。"
         },
         {
           "name": "sync_once",
@@ -5267,6 +3604,27 @@
           "args": "batch_size: int=20",
           "returns": "dict[str, int]",
           "docstring": "未同期(pending/error)バッチを1回分処理する。戻り値は件数の集計。"
+        },
+        {
+          "name": "sync_once_safe",
+          "is_async": true,
+          "args": "batch_size: int=20",
+          "returns": "None",
+          "docstring": "instructions/239: apps/evaluator/backend(Cloud Run)がFastAPIのBackgroundTasks\n経由で呼ぶための安全側ラッパー。BackgroundTasksはHTTPレスポンス送出後に実行される\nため、ここで例外を外へ伝播させてもユーザーには届かずサーバー側のノイズにしか\nならない。個々のアイテムの同期失敗はsync_once内部で既にmark_sync_failedにより\n次回リトライ対象として記録されるため、ここで捕捉するのは\nget_pending_sync_batch自体の失敗やFirebase初期化失敗等、sync_onceのループに\n到達する前の例外のみを想定している。"
+        },
+        {
+          "name": "_normalize_for_sqlite",
+          "is_async": false,
+          "args": "value: Any",
+          "returns": "Any",
+          "docstring": "FirestoreのDatetimeWithNanoseconds(datetime.datetimeのサブクラス)等、\nそのままではSQLite/JSON列へ保存できない型をISO8601文字列へ変換する。\nこのコードベース全体の規約(TriggerStateORM等参照)通り、日時はdatetime型\nカラムではなく文字列として保存するため、通常のdatetime.datetimeも同様に\n変換対象とする。\n\npersona/trend/result等のJSON型カラムはdict/listのネスト構造を持ち、その内部\nにもFirestoreのタイムスタンプ(例: trend.fetched_at)が含まれ得るため、\n再帰的に変換する(実機検証で、トップレベルのみの変換では\n\"Object of type DatetimeWithNanoseconds is not JSON serializable\"が\nネスト位置で発生することを確認済み)。"
+        },
+        {
+          "name": "async_restore_from_firestore",
+          "is_async": true,
+          "args": "",
+          "returns": "dict[str, int]",
+          "docstring": "instructions/240: Cloud Run起動時、空のローカルSQLiteへFirestoreの\nnazokake_itemsコレクションから全件をPull(復元)する。sync_once()と対になる\n復元方向の処理で、これによりPush/Pull両方向が揃い「Cloud Run再起動でSQLiteが\n空になり、アプリ上のデータが消える」問題を解消する。\n\n【nazokake_core.schemas.NazokakeItemを使わない理由】そのスキーマは\nextra=\"forbid\"かつ多数のフィールド(id/result/source/model_id/\nevaluator_model_id/persona/trend等)が必須で、apps/batch_factoryが完全な形で\n書き込むアイテムを前提としている。一方、今回実際に復元したいデータの大半は\ninstructions/239でバックアップ対象にしたapps/evaluator/backend(Cloud Run)\n自身が書く部分行(id/persona/trend等を含まず、result_geminiはあってもresultは\n無い等)であり、NazokakeItemORM側では元々これらの列はNULL許容(doc_id/odai\n以外)。厳格なNazokakeItemで検証すると、復元したい対象のほぼ全件がバリデー\nションエラーで復元されずに終わってしまうため、実際のDB制約\n(doc_id/odaiのみ必須)に沿った最小限の検証のみ行う。\n\n【一括処理(実機検証で判明)】このコレクションは実測1万件超(過去のアーキテクチャ\n世代由来と見られるodai欠落の不正行が大半を占める)。1件ずつsession.get()で\n存在確認してから個別commitする素朴な実装では起動が数分単位でブロックされ、\nCloud Runの起動タイムアウトに抵触しかねないため、database.pyの\nasync_bulk_restore_items_if_missing()でチャンク単位の一括insertを行う。"
         }
       ]
     },
@@ -5376,6 +3734,11 @@
         },
         {
           "name": "SystemCostLog",
+          "docstring": null,
+          "methods": []
+        },
+        {
+          "name": "ResearchArticle",
           "docstring": null,
           "methods": []
         }
@@ -5617,6 +3980,11 @@
           "methods": []
         },
         {
+          "name": "AstModificationDesign",
+          "docstring": "Claudeが出力する「設計(修正方針)」のみのスキーマ。instructions/244(FinOps):\nClaude APIの出力トークンコストを削減するため、Claudeには実際のコード全文(new_code)を\n生成させず、修正方針を示す短い自然言語テキスト(modification_instruction)のみを\n出力させる。実際のコード生成(実装)はローカルのOllama(qwen2.5-coder)へ委譲し\n(tools/nazo_agent.py: generate_code_with_local_coder)、生成結果をnew_codeとして\n埋めた上でAstModificationInstructionへ変換してからapply_modification()へ渡す。",
+          "methods": []
+        },
+        {
           "name": "TargetNodeReplacer",
           "docstring": "target_nameに完全一致する関数/クラス定義ノードのみを、new_nodeに\n差し替えるTransformer。\n\nそれ以外のノード(前後の関数・import・モジュールレベルのコメント等)には\n一切触れない。同名ノードが複数存在する場合は最初に見つかった1件のみを\n置換する(意図しない全置換を避けるため)。",
           "methods": [
@@ -5665,20 +4033,6 @@
           "args": "new_code: str",
           "returns": "cst.CSTNode",
           "docstring": "new_code(関数/クラス定義1個ぶんのソース断片)をパースし、\n先頭の関数/クラス定義ノードを取り出す。"
-        },
-        {
-          "name": "_string_based_fallback_replace",
-          "is_async": false,
-          "args": "source: str, target_name: str, new_code: str",
-          "returns": "str | None",
-          "docstring": "対象ファイル自体が構文エラーを含みlibcstでパースできない場合の最終手段。\n\nASTノード単位の置換は「元のファイル全体がまず構文的に妥当である」ことを前提と\nするため、対象ファイル自身の構文エラーそのものが修正対象であるケース(既存の\nsyntax_error Fixture等)を原理的に扱えない。この関数は`target_name`で始まる\n定義行を先頭が非空白文字の次の行(=次のトップレベル定義、またはEOF)まで\n「その関数/クラスのおおよその範囲」とみなし、行単位の文字列置換で丸ごと\n差し替える。target_nameの定義行が見つからない場合はNoneを返す(呼び出し元は\nフォールバックそのものの失敗として安全側に倒す)。"
-        },
-        {
-          "name": "_apply_string_fallback",
-          "is_async": false,
-          "args": "path: Path, source: str, target_name: str, new_code: str, parse_error: Exception",
-          "returns": "str",
-          "docstring": "libcstによる対象ファイルのパースが失敗した場合のString-basedフォールバック\n(instructions/164)。\n\nこの経路は、通常経路が持つ安全網(セマンティック差分検証・大量削除/挿入\nヒューリスティック)のいずれも適用できない(それらは元ファイルをASTとして\n解釈できることが前提のため)。唯一の安全網として、置換後の全文をPython標準の\nast.parseで検証し、それでも構文エラーが残る場合は書き込みを行わずエラーを返す\n(フォールバック自体が失敗した場合の安全側フェイル)。"
         },
         {
           "name": "apply_modification",
@@ -6564,11 +4918,39 @@
           "docstring": null
         },
         {
+          "name": "_route_decorator_fact",
+          "is_async": false,
+          "args": "decorator: ast.expr",
+          "returns": "dict | None",
+          "docstring": "デコレータ式が `<何か>.get/post/...(\"パス\", ...)` の形であれば\n{base, method, path} を返す。それ以外(通常のデコレータ等)はNone。"
+        },
+        {
+          "name": "_extract_api_routes",
+          "is_async": false,
+          "args": "tree: ast.AST",
+          "returns": "list[dict]",
+          "docstring": "関数定義のデコレータからルート定義を機械的に抽出する(FastAPI等の変数名を決め打ちしない)。"
+        },
+        {
+          "name": "_extract_router_mounts",
+          "is_async": false,
+          "args": "tree: ast.AST",
+          "returns": "list[dict]",
+          "docstring": "`<何か>.include_router(対象, prefix=..., tags=...)` 呼び出しを機械的に抽出する。\nprefix/tagsはリテラルとして静的に確定できる場合のみ転記し、それ以外はnullのまま残す。"
+        },
+        {
           "name": "extract_file_facts",
           "is_async": false,
           "args": "py_file: Path",
-          "returns": "dict | None",
-          "docstring": "1ファイルをASTでパースし、クラス/関数のファクトを抽出する。\nパース不能なファイル(SyntaxError等)はNoneを返す(呼び出し元でparse_errorsへ記録)。"
+          "returns": "tuple[dict, list[dict], list[dict]]",
+          "docstring": "1ファイルをASTでパースし、(クラス/関数のファクト, api_routes, router_mounts) を返す。\nパース不能なファイル(SyntaxError等)は例外を送出する(呼び出し元でparse_errorsへ記録)。"
+        },
+        {
+          "name": "discover_frontend_pages",
+          "is_async": false,
+          "args": "",
+          "returns": "list[str]",
+          "docstring": "apps/配下とリポジトリ直下のpublic/配下の*.htmlファイルを、除外ルール適用後、\n決定論的な順序(パス文字列の昇順)で返す(SPA用ルーター設定が存在しないため、\n静的HTMLファイルの列挙をもって「ページ構成」のファクトとする)。\n単純なglob列挙のため、Jinjaテンプレートやfetchで取り込まれるHTML断片も\n区別せず含まれる(「どれが実際のページか」の判定は推論にあたるため行わない)。"
         },
         {
           "name": "discover_py_files",
@@ -6611,13 +4993,6 @@
       ],
       "functions": [
         {
-          "name": "_primary_answer_text",
-          "is_async": false,
-          "args": "row: dict",
-          "returns": "str | None",
-          "docstring": "Gemini(主軸)の回答を優先し、無ければELYZA/LocalLLMの回答を使う。"
-        },
-        {
           "name": "_record_score",
           "is_async": false,
           "args": "row: dict",
@@ -6629,7 +5004,7 @@
           "is_async": true,
           "args": "",
           "returns": "list[Candidate]",
-          "docstring": "human_evaluations が1件以上あるか is_golden_data=True のレコードを抽出する。"
+          "docstring": "human_evaluations が1件以上あるか is_golden_data=True のレコードを抽出する。\n\n【instructions/251】1行(doc_id)がGemini(nazokake_text)とELYZA(nazokake_text_llmjp)\nの両方の回答を持つ場合、それぞれ独立したCandidateとして抽出する(dpo_pair_id/source/\nengine_scoreを付与)。ただし抽出そのものの適格性(human_evaluations有無/\nis_golden_data)は行単位のまま変更しない(人間キュレーションのゲートは維持する:\nhuman_evaluationsは道場破りフィードでの評価時にどちらの回答文が表示されていたかを\n区別して記録していないため、行全体に対する信号として両Candidateで共有する)。"
         },
         {
           "name": "_stratify_key",
@@ -6674,11 +5049,18 @@
           "docstring": "chosen(is_golden_dataまたは高評価)のレコードだけをSFTの模範例として採用する。"
         },
         {
+          "name": "_pair_by_dpo_pair_id",
+          "is_async": false,
+          "args": "chosen: list[Candidate], rejected: list[Candidate]",
+          "returns": "tuple[list[dict], list[Candidate], list[Candidate]]",
+          "docstring": "【instructions/251】同一dpo_pair_id(同一リクエストのGemini/ELYZA両起源、または\nバッチ工場の対応するペア行)を持つ候補同士を、各自のAI評価器スコア(engine_score:\ns_total/s_total_llmjp)で比較し、優劣が明確な場合のみ直接ペアリングする。\n\n- 対象はclassify()を通過済みのchosen/rejectedのみ(人間キュレーションのゲート・\n  中間スコアのドロップは維持し、このペアリングで一切バイパスしない)。\n- engine_scoreが両者とも存在し、かつ異なる場合のみペアを確定する(優劣不明の\n  組は無理にペアリングせず、ノイズを注入しない)。\n- dpo_pair_idごとの候補数が2件以外(想定外のデータ)の場合は安全側に倒して\n  スキップし、既存のodaiベースのフォールバックに委ねる。\n\n戻り値: (確定したペアのリスト, ペアリングに使わなかった残りのchosen, 残りのrejected)。"
+        },
+        {
           "name": "build_dpo_pairs",
           "is_async": false,
           "args": "chosen: list[Candidate], rejected: list[Candidate]",
           "returns": "list[dict]",
-          "docstring": "同一お題(odai)内でchosen×rejectedの組み合わせを作り、DPOペアとする。"
+          "docstring": "DPOペアを構築する。\n\n【instructions/251】まずdpo_pair_id(同一リクエストのGemini/ELYZA、または\nバッチ工場の対応行)による直接ペアリングを優先し、そこで消費されなかった残りの\n候補には既存の同一お題(odai)内でのchosen×rejected組み合わせ生成を\nフォールバックとして適用する。"
         },
         {
           "name": "_ngram_tokens",
@@ -6775,6 +5157,26 @@
           "is_async": false,
           "args": "",
           "returns": "None",
+          "docstring": null
+        }
+      ]
+    },
+    {
+      "path": "tools/extract_training_data.py",
+      "classes": [],
+      "functions": [
+        {
+          "name": "_fetch_qualifying_items",
+          "is_async": true,
+          "args": "",
+          "returns": "list[dict[str, str]]",
+          "docstring": "評価が完了している(s_totalが存在し、QUALITY_SCORE_MIN以上)レコードを抽出する。"
+        },
+        {
+          "name": "main",
+          "is_async": false,
+          "args": "",
+          "returns": "int",
           "docstring": null
         }
       ]
@@ -7170,6 +5572,13 @@
       ],
       "functions": [
         {
+          "name": "_log_cache_usage",
+          "is_async": false,
+          "args": "usage",
+          "returns": "None",
+          "docstring": "instructions/242(FinOps): system_prompt/エラーログに設定済みのcache_control\n(ephemeral)が実際にヒットしているかを可視化する。cache_read_input_tokensが\n毎回0のままなら、システムプロンプトやエラーログにタイムスタンプ等の非決定的な\n値が紛れ込みキャッシュが無効化されている(\"silent invalidator\")兆候であり、\nここでの可視化なしには気づけない。TokenCircuitBreakerの集計ロジック自体は\n変更しない(観測用のログ出力のみを追加する)。"
+        },
+        {
           "name": "acd_mask_noise",
           "is_async": false,
           "args": "line: str",
@@ -7338,11 +5747,18 @@
           "docstring": null
         },
         {
+          "name": "ground_triage_with_gemma",
+          "is_async": true,
+          "args": "compact_context: str",
+          "returns": "str",
+          "docstring": "AST圧縮済みのエラーログ(compact_context)をGemmaに中間評価(トリアージ)させる。\n\ncompact_contextの各セクションは既にacd_ast_compressによって実際の関数/クラス\nソースへ機械的にグラウンディング済み(=客観的事実)であり、Gemmaの役割はその\n事実だけを根拠に「引用されたコードは本当に指摘内容を裏付けているか」を判定する\nことに限定する。「その他(関数特定不可)」に分類された、実コードへ紐付けられ\nなかった項目は、実在するASTブロックとの照合ができていない=グラウンディング\n不能であるとして、低信頼度として扱うよう明示的に指示する。\n\nこのステップはClaude本編に対する追加の質向上策であり、必須の依存関係では\nない(Ollama未起動・タイムアウト等で失敗しても、呼び出し元がcompact_context\n単独へフォールバックできるようベストエフォートとする)。"
+        },
+        {
           "name": "phase2_claude_translation",
           "is_async": true,
           "args": "user_instruction: str, error_log_path: Path",
           "returns": "dict",
-          "docstring": "Claude API による「AST置換指示」への翻訳・分割。\n\n従来は自然言語でJSON出力を要求し、応答テキストからMarkdownフェンスを\n手動で除去してjson.loadsする防御的パースに依存していた。tools パラメータに\ntools.ast_modifier.AstModificationInstruction と同一のスキーマ(model_json_schema())\nを関数(Tool)として定義し、tool_choiceでその呼び出しを強制することで、\n解説文やMarkdown装飾が混入する余地をAPIレベルで排除する。"
+          "docstring": "Claude API による「AST置換設計」への翻訳・分割。\n\n従来は自然言語でJSON出力を要求し、応答テキストからMarkdownフェンスを\n手動で除去してjson.loadsする防御的パースに依存していた。tools パラメータに\ntools.ast_modifier.AstModificationDesign と同一のスキーマ(model_json_schema())\nを関数(Tool)として定義し、tool_choiceでその呼び出しを強制することで、\n解説文やMarkdown装飾が混入する余地をAPIレベルで排除する。\ninstructions/244(FinOps)により、Claudeが出力するのは実装コード(new_code)では\nなく修正方針(modification_instruction)のみであり、実際のコード生成は\n後続の _delegate_code_generation_to_local_coder がローカルCoderへ委譲する。"
         },
         {
           "name": "_build_tree_lines",
@@ -7408,6 +5824,13 @@
           "docstring": "settings.shadow_mode(instructions/182)が有効な場合、実際のgit add/commitを\n一切行わず(インデックスへのステージすら行わない)、コミットされたはずの内容を\ntools/shadow_mode_log.jsonlへ記録するのみに留める。無効な場合は従来通り一括\nコミットを行う。戻り値は「実際にコミットが行われたか」(False=シャドウ抑止/\nステージ済み変更なしのいずれか)。呼び出し元は、この戻り値でコミット後の\n後続処理(学習データ抽出フック等)を実行すべきかどうかを判断できる。"
         },
         {
+          "name": "_create_and_open_pr",
+          "is_async": false,
+          "args": "target_dir: Path, files: list[str], commit_message: str, branch_prefix: str",
+          "returns": "tuple[bool, bool | None]",
+          "docstring": "Agentによる修正を、共有ブランチへの直接コミットではなく専用の作業ブランチへ\n退避してコミットし、GitHub CLI(`gh pr create --draft`)でPRドラフトを作成する。\n\ninstructions/245(SSoT第6項「Human-in-the-Loop」原則): Agent(nazo_agent.py)が\n`main`(共有の作業ブランチ)へ自律的に直接コミット・Push(特にpush --force)する\n挙動を禁止し、必ず新しい作業ブランチを介したPRドラフトとして人間のレビュー・\nマージに委ねる。settings.shadow_mode有効時は_commit_or_shadowの既存の抑止経路\n(ログのみ記録)に完全に委ね、ブランチ作成すら行わない。\n\nこのスクリプト自身がtarget_dirを共有の作業ディレクトリとして使い続けるデーモン\nであるため、コミット・Push・PR作成のどの段階で終わっても、finallyで必ず元居た\nブランチへcheckoutし直す(ブランチを切り替えたまま放置しない)。\n\n戻り値: (PRドラフトの作成に成功したか, 6次元定量評価ゲートに合格したか)。\nゲート自体を評価できなかった場合(shadow_mode抑止・実質的な変更なしでコミットが\n発生しなかった場合)、2番目の要素はNoneとなる。"
+        },
+        {
           "name": "_autonomous_rollback",
           "is_async": false,
           "args": "target_dir: Path, commit_hash: str='HEAD'",
@@ -7417,9 +5840,9 @@
         {
           "name": "_run_post_commit_quality_gate",
           "is_async": false,
-          "args": "target_dir: Path",
+          "args": "target_dir: Path, rollback: bool=True",
           "returns": "bool",
-          "docstring": "Nazo-Agentがtarget_dirへ実際にコミット(shadow_mode抑止でない、_commit_or_shadow\nがTrueを返した場合のみ呼ぶこと)した直後、6次元定量評価ゲート\n(tools/benchmark/run_benchmark.py: evaluate_6d_quality_gate)を再実行し、退行\n(Fail)を検知した場合は直前のコミットを_autonomous_rollback()で自律的に取り消す\n(instructions/188)。\n\n【インフラエラーと品質退行を混同しない】tools/benchmark/run_benchmark.pyの終了コード\n契約(instructions/136)では、exit code 125はDocker CLI不在等の「インフラエラー」\n専用であり、この場合そもそもベンチマーク自体が1件も実行されずreport[\"quality_gate_6d\"]\nは生成されない。これを「退行を検知した」と混同してロールバックしてしまうと、Docker\n未導入の開発機(このリポジトリの現状のNazo-Agentライブ自己修復loop実行環境)では、\n正常に成功したコミットが理由なく毎回ロールバックされ、自己修復能力そのものが構造的に\n機能停止する。したがって、ゲートを実際に評価できなかった場合(exit code 125等の\nインフラエラー・レポート未生成・JSON破損)は「非退行を確認できない」だけであり\n「退行を検知した」わけではないため、ロールバックせず警告のみに留める(Fail-Closedは\ninstructions/188が明示するgit revert自体の失敗時にのみ適用する。_autonomous_rollback\n参照)。ロールバックするのはreport[\"quality_gate_6d\"][\"passed\"]が明示的にFalseの\n場合のみ。\n\n戻り値: ゲートに合格した、またはゲート自体を評価できなかった場合はTrue(いずれも\nロールバック不要)。退行を明示的に検知してロールバックを実行した場合はFalse。\nロールバック自体が失敗した場合は_autonomous_rollback内でsys.exit(1)しこの関数から\n戻らない。"
+          "docstring": "Nazo-Agentがtarget_dirへ実際にコミット(shadow_mode抑止でない、_commit_or_shadow\nがTrueを返した場合のみ呼ぶこと)した直後、6次元定量評価ゲート\n(tools/benchmark/run_benchmark.py: evaluate_6d_quality_gate)を再実行し、退行\n(Fail)を検知した場合は直前のコミットを_autonomous_rollback()で自律的に取り消す\n(instructions/188)。\n\n【インフラエラーと品質退行を混同しない】tools/benchmark/run_benchmark.pyの終了コード\n契約(instructions/136)では、exit code 125はDocker CLI不在等の「インフラエラー」\n専用であり、この場合そもそもベンチマーク自体が1件も実行されずreport[\"quality_gate_6d\"]\nは生成されない。これを「退行を検知した」と混同してロールバックしてしまうと、Docker\n未導入の開発機(このリポジトリの現状のNazo-Agentライブ自己修復loop実行環境)では、\n正常に成功したコミットが理由なく毎回ロールバックされ、自己修復能力そのものが構造的に\n機能停止する。したがって、ゲートを実際に評価できなかった場合(exit code 125等の\nインフラエラー・レポート未生成・JSON破損)は「非退行を確認できない」だけであり\n「退行を検知した」わけではないため、ロールバックせず警告のみに留める(Fail-Closedは\ninstructions/188が明示するgit revert自体の失敗時にのみ適用する。_autonomous_rollback\n参照)。ロールバックするのはreport[\"quality_gate_6d\"][\"passed\"]が明示的にFalseの\n場合のみ。\n\nrollback=False(instructions/245: PRドラフト運用)の場合、退行を検知しても\ngit revertは行わない。専用の作業ブランチ上のコミットはまだ共有ブランチへ\nマージされていない使い捨ての下書きであり、そこにrevertコミットを積んでも\nレビュー対象のPRを汚すだけで意味がないため、判定結果のみを呼び出し元\n(_create_and_open_pr)へ返し、PR本文への記載を通じて人間の判断に委ねる。\n\n戻り値: ゲートに合格した、またはゲート自体を評価できなかった場合はTrue(いずれも\nロールバック不要)。退行を明示的に検知した場合はFalse\n(rollback=Trueの場合はさらに_autonomous_rollback()を実行してから返す)。\nロールバック自体が失敗した場合は_autonomous_rollback内でsys.exit(1)しこの関数から\n戻らない。"
         },
         {
           "name": "_escalate_test_update_tasks_to_sandbox",
@@ -7434,6 +5857,34 @@
           "args": "target_file: Path",
           "returns": "tuple[bool, str]",
           "docstring": "pytest-testmon(変更影響テストの選択)+ pytest-xdist(並列実行)で、決定論的に\nロジックの正しさを検証する。\n\nOllamaが「文法的には正しいが論理が破綻したコード」を出力するFalse Positiveは、\nRuff/Pyrightのような静的解析では検知できない。実際にテストを走らせて確認する\n絶対的なゲートキーパーとして機能し、失敗時はコミットをブロックしてClaudeパイプラインへの\nエスカレーション判断に使う。\n\n対象ファイルに対応する単一のテストファイルを推測して単体実行する(旧実装)のではなく、\nテストスイート全体を対象に `--testmon` で前回実行からの変更差分に関係するテストのみへ\n自動的に絞り込み、`-n auto` でCPUコア数に応じて並列実行する。これにより、プロジェクト\n全体のテストを毎回フル実行するO(N)のレイテンシ劣化を避けつつ、決定論的な検証としての\n厳密さは保つ(testmonは実行済みテストのコードカバレッジに基づき、変更されたコードパスに\n依存するテストのみを再実行対象として選択する)。target_fileは呼び出し元でのログ・\nエスカレーション文脈のためにのみ使用し、テスト選択自体はtestmonに委ねる。"
+        },
+        {
+          "name": "_strip_code_fences",
+          "is_async": false,
+          "args": "text: str",
+          "returns": "str",
+          "docstring": "ローカルCoderの応答からMarkdownのコードフェンス(```python ... ```)を除去する。\n\nプロンプトでフェンスを付けないよう指示しても、小型モデルは癖でフェンスを\n付けてくることがあるため、防御的に取り除く(付いていなければ何もしない)。"
+        },
+        {
+          "name": "_get_original_code",
+          "is_async": false,
+          "args": "file_path: str, target_name: str",
+          "returns": "str",
+          "docstring": "file_path内でtarget_nameに完全一致する関数/クラスの現在のソースを取得する。\n\nローカルCoderへの委譲には、Claudeが出力したmodification_instructionだけでなく\n書き換え対象の現在のコードが必須のため、既存のACD Engine(acd_extract_function_blocks)\nを流用して取得する(新規の探索ロジックは追加しない)。"
+        },
+        {
+          "name": "generate_code_with_local_coder",
+          "is_async": true,
+          "args": "original_code: str, instruction: str",
+          "returns": "str",
+          "docstring": "元コード(original_code)と設計指示(instruction)から、ローカルのOllama\n(qwen2.5-coder)に修正後の関数/クラスコードを生成させる。\n\nClaude(高コスト)には設計(modification_instruction)のみを出力させ、実際の\nコード生成をこの関数へ委譲することでAPI出力トークンコストを削減する\n(instructions/244)。"
+        },
+        {
+          "name": "_delegate_code_generation_to_local_coder",
+          "is_async": true,
+          "args": "tasks: list[dict]",
+          "returns": "None",
+          "docstring": "Claudeが出力した設計(modification_instruction)を、ローカルCoderによる実装\n(new_code)へ変換し、各taskへ書き戻す。\n\n下流(phase3_aider_execution の ast_replace 分岐 / _escalate_test_update_tasks_to_sandbox)は\nいずれも task[\"new_code\"] を前提としているため、ここで埋めることで既存の適用経路\n(libcstによるAST置換・多段バリデーションゲート)を一切変更せずに済む。\n元コードが見つからない場合は空文字のままとし、下流の必須チェックにより\nそのタスクは安全にスキップされる(縮退運転)。"
         },
         {
           "name": "_run_claude_pipeline_and_commit",
@@ -7644,6 +6095,19 @@
       ]
     },
     {
+      "path": "tools/publish_research_articles.py",
+      "classes": [],
+      "functions": [
+        {
+          "name": "publish_all",
+          "is_async": true,
+          "args": "",
+          "returns": "None",
+          "docstring": null
+        }
+      ]
+    },
+    {
       "path": "tools/pyright_tool.py",
       "classes": [],
       "functions": [
@@ -7828,6 +6292,26 @@
       ]
     },
     {
+      "path": "tools/seed_research_data.py",
+      "classes": [],
+      "functions": [
+        {
+          "name": "_build_articles",
+          "is_async": false,
+          "args": "",
+          "returns": "list[ResearchArticle]",
+          "docstring": "ARTICLES一覧をPydanticでバリデーションしつつResearchArticleへ変換する。\n\n投入前にPydanticの必須フィールド制約(min_length等)を通すことで、\nデータ一覧側のtypo(空文字など)を検知した状態でDBへ書き込む。"
+        },
+        {
+          "name": "seed",
+          "is_async": true,
+          "args": "",
+          "returns": "None",
+          "docstring": null
+        }
+      ]
+    },
+    {
       "path": "tools/shadow_mode.py",
       "classes": [],
       "functions": [
@@ -7848,6 +6332,33 @@
       ]
     },
     {
+      "path": "tools/train_local_model.py",
+      "classes": [],
+      "functions": [
+        {
+          "name": "_load_training_examples",
+          "is_async": false,
+          "args": "",
+          "returns": "list[dict[str, str]]",
+          "docstring": "data/training/ 配下の全JSONLファイルを読み込む。"
+        },
+        {
+          "name": "_run_training",
+          "is_async": false,
+          "args": "examples: list[dict[str, str]], adapter_path: Path, dry_run: bool",
+          "returns": "None",
+          "docstring": "SFT/DPO学習処理のプレースホルダー。\n\n想定ライブラリ: Hugging Face `transformers` / `trl`(SFTTrainer, DPOTrainer)、\nまたは `Unsloth`。ローカル環境に学習ライブラリ・GPUリソースが揃うまでは\n以下は起動せず、モック処理のみ行う。"
+        },
+        {
+          "name": "main",
+          "is_async": false,
+          "args": "",
+          "returns": "int",
+          "docstring": null
+        }
+      ]
+    },
+    {
       "path": "tools/train_unsloth.py",
       "classes": [],
       "functions": [
@@ -7861,6 +6372,323 @@
       ]
     }
   ],
+  "api_routes": [
+    {
+      "file": "apps/evaluator/backend/api/routers/admin.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/action",
+      "function": "apply_human_action"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/admin.py",
+      "base": "router",
+      "method": "GET",
+      "path": "/dlq",
+      "function": "get_dlq_items"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/admin.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/dlq/action",
+      "function": "apply_dlq_action"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/admin.py",
+      "base": "router",
+      "method": "GET",
+      "path": "/audit_logs",
+      "function": "get_audit_logs"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/admin.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/deploy",
+      "function": "trigger_deploy"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/admin_costs.py",
+      "base": "router",
+      "method": "GET",
+      "path": "/costs",
+      "function": "get_costs"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/admin_costs.py",
+      "base": "router",
+      "method": "GET",
+      "path": "/costs/dashboard",
+      "function": "get_costs_dashboard"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/admin_feedbacks.py",
+      "base": "router",
+      "method": "GET",
+      "path": "/feedbacks",
+      "function": "get_admin_feedbacks"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/admin_feedbacks.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/feedbacks/refresh-fewshot",
+      "function": "refresh_fewshot_pool"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/board.py",
+      "base": "router",
+      "method": "GET",
+      "path": "/items",
+      "function": "get_board_items"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/board.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/post",
+      "function": "create_board_post"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/feed.py",
+      "base": "router",
+      "method": "GET",
+      "path": "/feed/items",
+      "function": "get_user_feed"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/feed.py",
+      "base": "router",
+      "method": "GET",
+      "path": "/feed/golden",
+      "function": "get_golden_feed"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/feed.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/feed/evaluate/{doc_id}",
+      "function": "evaluate_user_item"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/feedback.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/feedback",
+      "function": "submit_feedback"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/generate.py",
+      "base": "router",
+      "method": "GET",
+      "path": "/status/{doc_id}",
+      "function": "get_status"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/generate.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/generate",
+      "function": "generate_ai"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/metrics.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/metrics/log",
+      "function": "log_telemetry"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/research.py",
+      "base": "router",
+      "method": "GET",
+      "path": "/research/articles",
+      "function": "list_research_articles"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/research.py",
+      "base": "router",
+      "method": "GET",
+      "path": "/research/articles/{article_id}",
+      "function": "get_research_article"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/submission.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/submit_human",
+      "function": "submit_human"
+    },
+    {
+      "file": "apps/evaluator/backend/api/routers/user_feedback.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/nazokake/{doc_id}/feedback",
+      "function": "submit_user_feedback"
+    },
+    {
+      "file": "apps/evaluator/backend/main.py",
+      "base": "app",
+      "method": "GET",
+      "path": "/api/health",
+      "function": "health_check"
+    },
+    {
+      "file": "apps/evaluator/scripts/local_gemma_api.py",
+      "base": "app",
+      "method": "POST",
+      "path": "/generate",
+      "function": "generate_nazokake"
+    },
+    {
+      "file": "apps/tactical_cic/webhook_api.py",
+      "base": "router",
+      "method": "GET",
+      "path": "/health",
+      "function": "health_check"
+    },
+    {
+      "file": "apps/tactical_cic/webhook_api.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/webhook/share",
+      "function": "receive_share"
+    },
+    {
+      "file": "apps/tactical_cic/webhook_api.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/missions/{mission_id}/audit",
+      "function": "audit_mission"
+    },
+    {
+      "file": "apps/tactical_cic/webhook_api.py",
+      "base": "router",
+      "method": "POST",
+      "path": "/missions/{mission_id}/fire",
+      "function": "fire_mission"
+    },
+    {
+      "file": "apps/tactical_cic/webhook_api.py",
+      "base": "router",
+      "method": "GET",
+      "path": "/missions/{mission_id}/bda",
+      "function": "get_bda"
+    }
+  ],
+  "router_mounts": [
+    {
+      "file": "apps/evaluator/backend/main.py",
+      "target": "generate.router",
+      "prefix": "/api",
+      "tags": [
+        "Generate"
+      ]
+    },
+    {
+      "file": "apps/evaluator/backend/main.py",
+      "target": "submission.router",
+      "prefix": "/api",
+      "tags": [
+        "Submission"
+      ]
+    },
+    {
+      "file": "apps/evaluator/backend/main.py",
+      "target": "feed.router",
+      "prefix": "/api",
+      "tags": [
+        "Feed"
+      ]
+    },
+    {
+      "file": "apps/evaluator/backend/main.py",
+      "target": "metrics.router",
+      "prefix": "/api",
+      "tags": [
+        "Metrics"
+      ]
+    },
+    {
+      "file": "apps/evaluator/backend/main.py",
+      "target": "feedback.router",
+      "prefix": "/api",
+      "tags": [
+        "Feedback"
+      ]
+    },
+    {
+      "file": "apps/evaluator/backend/main.py",
+      "target": "admin.router",
+      "prefix": "/api/admin",
+      "tags": [
+        "Admin"
+      ]
+    },
+    {
+      "file": "apps/evaluator/backend/main.py",
+      "target": "admin_costs.router",
+      "prefix": "/api/admin",
+      "tags": [
+        "AdminCosts"
+      ]
+    },
+    {
+      "file": "apps/evaluator/backend/main.py",
+      "target": "user_feedback.router",
+      "prefix": "/api",
+      "tags": [
+        "UserFeedback"
+      ]
+    },
+    {
+      "file": "apps/evaluator/backend/main.py",
+      "target": "admin_feedbacks.router",
+      "prefix": "/api/admin",
+      "tags": [
+        "AdminFeedbacks"
+      ]
+    },
+    {
+      "file": "apps/evaluator/backend/main.py",
+      "target": "board.router",
+      "prefix": "/api/board",
+      "tags": [
+        "Board"
+      ]
+    },
+    {
+      "file": "apps/evaluator/backend/main.py",
+      "target": "research.router",
+      "prefix": "/api",
+      "tags": [
+        "Research"
+      ]
+    },
+    {
+      "file": "apps/evaluator/backend/main.py",
+      "target": "cic_router",
+      "prefix": "/api/cic",
+      "tags": [
+        "Tactical CIC"
+      ]
+    }
+  ],
+  "frontend_pages": [
+    "apps/evaluator/backend/templates/costs_dashboard.html",
+    "apps/evaluator/frontend/public/404.html",
+    "apps/evaluator/frontend/public/admin.html",
+    "apps/evaluator/frontend/public/index.html",
+    "apps/evaluator/frontend/public/research.html",
+    "apps/evaluator/frontend/public/research_data/tab-basic.html",
+    "apps/evaluator/frontend/public/research_data/tab-comparative.html",
+    "apps/evaluator/frontend/public/research_data/tab-culture.html",
+    "apps/evaluator/frontend/public/research_data/tab-definition.html",
+    "apps/evaluator/frontend/public/research_data/tab-evaluation.html",
+    "apps/evaluator/frontend/public/research_data/tab-generation.html",
+    "public/cic_dashboard.html"
+  ],
   "parse_errors": [
     {
       "path": "tools/benchmark/fixtures/syntax_error/buggy.py",
@@ -7868,11 +6696,14 @@
     }
   ],
   "summary": {
-    "total_files_scanned": 274,
-    "total_files_parsed": 273,
+    "total_files_scanned": 199,
+    "total_files_parsed": 198,
     "total_parse_errors": 1,
-    "total_classes": 103,
-    "total_methods": 62,
-    "total_module_level_functions": 752
+    "total_classes": 83,
+    "total_methods": 51,
+    "total_module_level_functions": 627,
+    "total_api_routes": 29,
+    "total_router_mounts": 12,
+    "total_frontend_pages": 12
   }
 }
