@@ -5,7 +5,12 @@ GET  /status/{doc_id} : 段階的ステータス（processing → gemini_complet
 
 フロー（生成と評価を分離）:
   1. Gemini 生成 → status:gemini_generated（本文先行）→ 評価 → status:gemini_completed
-  2. 裏でローカル ELYZA 生成 → llmjp_status:generated（本文先行）→ 評価 → status:all_completed
+  2. 裏でELYZA 生成 → llmjp_status:generated（本文先行）→ 評価 → status:all_completed
+     【instructions/258】ローカル開発(K_SERVICE未設定)では直接Ollamaを呼ぶ経路A。
+     Cloud Run本番(K_SERVICE設定済み)ではLLMJP_URL等のトンネル設定が無く経路Aが
+     構造的に到達不能なため試みず、generate_ai()が書き込むelyza_job_status経由の
+     オンデマンドジョブキュー(instructions/250, workers/ondemand_elyza_worker.py)
+     である経路Bにのみ委ねる。
 Gemini(信頼パス)の失敗のみ status:error。ELYZA(おまけ)の失敗は graceful（llmjp_status:failed）。
 
 【Local-First】永続化先はFirestoreではなく packages/shared_core/nazokake_core/database.py の
@@ -15,6 +20,7 @@ Serialized Writer(ローカルSQLite)。async_upsert_item() は内部で1回のo
 """
 
 import asyncio
+import os
 import random
 import uuid
 from datetime import datetime, timezone
@@ -140,7 +146,24 @@ async def progressive_generate(db, doc_id: str, odai: str, pair_id: str):
             return False
 
     async def process_elyza() -> None:
-        """おまけパス: 生成→本文先行→評価→スコア。失敗は graceful に llmjp_status:failed。"""
+        """おまけパス: 生成→本文先行→評価→スコア。失敗は graceful に llmjp_status:failed。
+
+        【instructions/258: 経路Aの到達不能修復】Cloud Run本番環境にはLLMJP_URL/
+        CF_CLIENT_ID等のトンネル設定が存在せず(cloudbuild.yaml確認済み)、
+        デフォルトのlocalhost:11434は構造的に到達不能(instructions/257で実測確認)。
+        K_SERVICE(Cloud Run自身が注入する環境変数。main.pyのログ初期化と同じ検出規約)
+        が設定されている場合はこの直接呼び出し自体を試みず、generate_ai()が既に
+        書き込み済みのelyza_job_status="pending"を経由するinstructions/250の
+        オンデマンドジョブキュー(workers/ondemand_elyza_worker.py)のみに委ねる
+        (無駄な接続タイムアウトを避ける)。ローカル開発(K_SERVICE未設定)では
+        従来通りこの直接呼び出しを試みる。
+        """
+        if os.getenv("K_SERVICE"):
+            logger.info(
+                f"[{doc_id}] ℹ️ Cloud Run環境のため直接ELYZA呼び出し(経路A)をスキップし、"
+                "オンデマンドジョブキュー(経路B)に委ねます。"
+            )
+            return
         try:
             raw_result_l = await generate_via_llmjp(odai)
             validated_result_l = _validate_result_with_fallback(
