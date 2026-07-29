@@ -2,8 +2,8 @@
 tools/generate_doc_via_gemini.py
 ==================================
 docs/architecture_facts.json（決定論的に抽出済みのファクトのみ）をコンテキストとして
-Gemini API へ送信し、プレーンテキストのシステム概要文書 docs/system_overview_v2.md を
-生成するツール(instructions/251)。
+Gemini API へ送信し、プレーンテキストのシステム概要文書 docs/system_overview_v3.md を
+生成するツール(instructions/251, instructions/254で詳細化)。
 
 【Read-Only原則】本スクリプトはソースコード(apps/等)を一切読み込まない。入力は
 docs/architecture_facts.json のみであり、文章表現はGemini自身の推論に委ねるが、
@@ -13,6 +13,21 @@ docs/architecture_facts.json のみであり、文章表現はGemini自身の推
 【モデル指定】instructions/251で明示された "gemini-3.1-pro-preview" を無断で
 差し替えない。APIがこのモデル名を受理しない場合は、フォールバックせずエラーを
 そのまま送出して停止する(呼び出し元が正しいモデル名を確認して再実行する)。
+
+【instructions/254: 要約癖の封じ込め(instructions/255で撤回・方針転換)】初版
+(docs/system_overview_v2.md)が抽象的すぎたため、一度は「全件を省略なく列挙する」
+プロンプトへ変更したが、出力トークン上限を超過し、かつAPI呼び出しに明示的な
+タイムアウトが無かったためプロセスがハングする結果となった(instructions/255で
+観測・報告)。そのため「全変数・全関数の逐一列挙」は撤回し、「データフローと
+コールチェーンの追跡」に特化した簡潔な構造化出力へ方針転換している。
+
+【instructions/255: 防弾化(Fail-Closed)】Gemini API呼び出しにHttpOptions経由で
+明示的なタイムアウトを設定し、無限待機を許容しない(タイムアウト時は例外を
+そのまま送出してmain()が即座に失敗する)。なお本スクリプトの
+_atomic_write_textはfilelock等の排他制御を一切使用しない単純な
+tmp+fsync+os.replaceのみのため、排他制御のタイムアウトという概念自体が
+該当しない(単一プロセスの逐次実行を前提とした設計であり、複数プロセスからの
+同時書き込みは想定していない)。
 
 使い方:
     python tools/generate_doc_via_gemini.py
@@ -29,7 +44,7 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 from google import genai
-from google.genai.types import GenerateContentConfig
+from google.genai.types import GenerateContentConfig, HttpOptions
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
@@ -37,11 +52,15 @@ if sys.platform == "win32":
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FACTS_PATH = REPO_ROOT / "docs" / "architecture_facts.json"
-OUTPUT_PATH = REPO_ROOT / "docs" / "system_overview_v2.md"
-TMP_PATH = REPO_ROOT / "docs" / "system_overview_v2.tmp.md"
+OUTPUT_PATH = REPO_ROOT / "docs" / "system_overview_v3.md"
+TMP_PATH = REPO_ROOT / "docs" / "system_overview_v3.tmp.md"
 
 # instructions/251 で明示されたモデル名。無断で差し替えない(§モジュールdocstring参照)。
 MODEL_NAME = "gemini-3.1-pro-preview"
+
+# instructions/255: Fail-Closed。無限待機を許容せず、超過時は例外をそのまま送出して
+# 停止する(ミリ秒指定。google.genai.types.HttpOptions.timeoutの単位)。
+API_TIMEOUT_MS = 180_000
 
 # tools/nazo_agent.py と同じ規約(リポジトリルートの.envを読む)。ファイルが存在しない
 # 環境では無害にno-opし、OSレベルの環境変数がそのまま使われる。
@@ -52,28 +71,37 @@ PROMPT_TEMPLATE = """あなたはシステムアーキテクチャドキュメ�
 (JSON)です。推論や憶測による事実の捏造は一切行われていません。
 
 このファクトデータのみを根拠として、日本語のシステム概要ドキュメントを作成してください。
-ファクトデータに存在しない情報を推測で補ってはいけませんが、ファクトから合理的に読み取れる
-「フォルダ・ファイル構成、関数名、エンドポイントが何を意味し、どう関係しているか」の
-説明・要約は積極的に行ってください。
+ファクトデータに存在しない情報を推測で補ってはいけません。
+
+【出力構造の絶対厳守: 出力トークン上限による欠損防止】
+本ドキュメントの目的は「全変数・全関数の逐一列挙」ではなく、「データフローと
+コールチェーンの正確な追跡」です。Markdownの見出し階層を厳格に守ってください
+(## はセクション見出し、### は各ページ/エンドポイント/機能単位の小見出し)。
+各項目は要点を絞って簡潔に記述し、出力が途中で打ち切られることを絶対に避けて
+ください(冗長な説明よりも、完結した構造化出力を優先すること)。
 
 出力は以下の4つのセクションを、この順序・見出しでMarkdown形式にて必ず含めてください:
 
 ## 1. アプリの構成と関係性
-フォルダとファイルの構成(filesの各pathとclasses/functions)、および抽出した
-関数・クラス・変数等がどのような意味と関係性を持つのかを説明してください。
+filesの主要なディレクトリ(apps/, tools/, packages/, infra/)ごとに、その役割と
+主要なモジュール・クラスがどう連携しているかを簡潔に説明してください(個々の
+関数を逐一列挙する必要はなく、構造と主要な依存関係の把握を目的とします)。
 
 ## 2. ページ動作とUX
-frontend_pagesに列挙された各ページの動作原理と、ユーザーのアクションに基づく
-リアクション（処理フロー）を説明してください。
+frontend_pagesに列挙された各ページについて、###見出しでページごとに区切り、
+以下の処理チェーンを関数名を明記して具体的に記述してください:
+「ユーザーのアクション → 呼び出されるAPIパス(api_routesのpath/method) →
+実行されるバックエンド関数(function) → ワーカーへの伝達(該当する場合) →
+データベース(SQLite/Firestore)のどのテーブル/コレクションへの副作用か」。
 
 ## 3. 管理者コンソール（権限と操作）
-管理者が扱う領域（api_routesおよびrouter_mountsのうち /api/admin 配下の
-エンドポイント等）において、何を管理（確認・決定・修正）し、管理者のアクションが
-システムにどのような変化を与えるのかを説明してください。
+api_routesおよびrouter_mountsのうち /api/admin 配下を含む管理者向け機能について、
+###見出しで機能ごとに区切り、その機能がバックエンドのどの関数を呼び出し、DBの
+状態をどう変更するか（何を確認・決定・修正できるか）を具体的に記述してください。
 
 ## 4. データフロー
-ユーザー・管理者・AIが生成したデータが、フロントエンド、バックエンド、ワーカー、
-DB（SQLite/Firestore）をどのように流れるのかの全体図を説明してください。
+ユーザー・管理者・AIが生成したデータが、UI→バックエンド→ワーカー→DB
+(SQLite/Firestore)へと流れる代表的な経路を、簡潔に追跡してまとめてください。
 
 出力はプレーンテキスト(Markdown)のみとし、上記4セクション以外の前置き・後書き・
 断り書きは付けないでください。
@@ -114,12 +142,15 @@ def build_prompt(facts: dict) -> str:
 def call_gemini(prompt: str, api_key: str) -> str:
     """Gemini APIへプロンプトを送信し、生成されたプレーンテキストを返す。
     構造化出力(response_schema)は使わない(自由記述のMarkdown文章を求めているため)。
+    instructions/255: Fail-Closed。HttpOptions.timeoutで明示的なタイムアウトを
+    設定し、API呼び出しが無限に待機することを許容しない(超過時はSDKが例外を
+    送出し、main()側でそのまま失敗として扱う)。
     """
-    client = genai.Client(api_key=api_key)
+    client = genai.Client(api_key=api_key, http_options=HttpOptions(timeout=API_TIMEOUT_MS))
     response = client.models.generate_content(
         model=MODEL_NAME,
         contents=prompt,
-        config=GenerateContentConfig(temperature=0.3),
+        config=GenerateContentConfig(temperature=0.3, max_output_tokens=16384),
     )
     if not response.text:
         raise RuntimeError("Gemini APIから空の応答が返されました。")
