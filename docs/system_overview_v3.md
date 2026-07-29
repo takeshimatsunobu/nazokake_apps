@@ -18,10 +18,10 @@
 - **ステータス確認**: ユーザーのアクション → `GET /api/status/{doc_id}` → `get_status`。
 - **フィード取得**: ユーザーのアクション → `GET /api/feed/items` → `get_user_feed`、または `GET /api/feed/golden` → `get_golden_feed`。
 - **ユーザー評価**: ユーザーのアクション → `POST /api/feed/evaluate/{doc_id}` → `evaluate_user_item`。
-- **人間投稿**: ユーザーのアクション → `POST /api/submit_human` → `submit_human`。
-- **フィードバック**: ユーザーのアクション → `POST /api/feedback` → `submit_feedback`、または `POST /api/nazokake/{doc_id}/feedback` → `submit_user_feedback`。
+- **人間投稿**: ユーザーのアクション → `POST /api/submit_human` → `submit_human` → SQLiteの `nazokake_items` テーブルへUpsert(`async_upsert_item`、評価完了後に再度Upsert)、レスポンス後にBackgroundTasksでFirestoreへの同期(`sync_once_safe`)を試行。
+- **フィードバック**: ユーザーのアクション → `POST /api/feedback` → `submit_feedback` → Firestoreの `app_feedbacks` コレクションへ追加、または `POST /api/nazokake/{doc_id}/feedback` → `submit_user_feedback` → Firestoreの `user_feedbacks` コレクションへ追加。
 - **掲示板取得**: ユーザーのアクション → `GET /api/board/items` → `get_board_items`。
-- **掲示板投稿**: ユーザーのアクション → `POST /api/board/post` → `create_board_post`。
+- **掲示板投稿**: ユーザーのアクション → `POST /api/board/post` → `create_board_post` → Firestoreトランザクションで `board_posts`(新規投稿の作成、および親スレッドの`reply_count`/`hot_score`更新)と `board_quotas`(1日3回の投稿数制限カウント)を更新。
 
 ### apps/evaluator/frontend/public/research.html (および tab-*.html)
 - **記事一覧取得**: ユーザーのアクション → `GET /api/research/articles` → `list_research_articles`。
@@ -32,9 +32,9 @@
 
 ### public/cic_dashboard.html
 - **ヘルスチェック**: ユーザーのアクション → `GET /api/cic/health` → `health_check`。
-- **標的捕捉**: ユーザーのアクション → `POST /api/cic/webhook/share` → `receive_share`。
+- **標的捕捉**: ユーザーのアクション → `POST /api/cic/webhook/share` → `receive_share` → SQLiteの `tactical_missions` テーブルへInsert(status='forging')、幕僚AI処理(`analyze_target`/`run_mdmp_session`)完了後に同レコードをUpdate(status='ready')。
 - **監査**: ユーザーのアクション → `POST /api/cic/missions/{mission_id}/audit` → `audit_mission`。
-- **射出**: ユーザーのアクション → `POST /api/cic/missions/{mission_id}/fire` → `fire_mission`。
+- **射出**: ユーザーのアクション → `POST /api/cic/missions/{mission_id}/fire` → `fire_mission` → SQLiteの `tactical_missions` テーブルの該当レコードをUpdate(status='fired', selected_warhead, fired_at)。
 - **BDA取得**: ユーザーのアクション → `GET /api/cic/missions/{mission_id}/bda` → `get_bda`。
 
 ### apps/evaluator/frontend/public/admin.html
