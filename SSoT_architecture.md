@@ -121,6 +121,23 @@ pyright_tool.py (静的型検査): 変更適用前にPyrightをドライラン�
 - **【絶対制約】エージェントのサンドボックス保護:**
   - エージェントがいかに高度な推論を行おうとも、自分自身を律しているこの `tools/` ディレクトリ内のセキュリティロジック（ASTバリデーションの解除や、型チェックのバイパスなど）を自律的に書き換えることは完全にブロックされる。
 
+### 8.5. Local Port Assignments (ローカル開発ポートの決定論的割り当て)
+【instructions/260→261: ポート管理のSSoT化】以前は`run_api.ps1`・`tools/nazo_agent.py`・
+フロントエンドの複数JSファイルにポート番号が個別にハードコードされ、出自不明な別ポート
+との区別がつかない構成ドリフトの温床となっていた(instructions/260の調査で、正規の
+起動経路のどれとも一致しない`uv run uvicorn`残骸プロセスがポート8095を占有している
+ことが発覚)。正規の割り当ては以下の通りで、単一の正データは`tools/config.py`の
+`ToolsSettings`。
+- **`7800`:** ローカル開発用API(`run_api.ps1`が起動する`uvicorn main:app`)。SSoT:
+  `tools/config.py::ToolsSettings.api_dev_port`。
+- **`7300`:** ローカル開発用フロントエンド静的サーバー(`dev_server.py`)。SSoT:
+  `tools/config.py::ToolsSettings.frontend_dev_port`。
+- **`8080`:** Cloud Run本番環境(`PORT`環境変数、`apps/evaluator/Dockerfile`)。
+- **上記以外のポートで待ち受けるローカルの`uvicorn`/バックエンドプロセスは、正規の
+  起動経路を持たないゾンビとみなす。** `tools/manage_local_processes.ps1`が、SSoTの
+  `api_dev_port`と一致しないポート(既定では8095)を占有する該当プロセスを決定論的に
+  検出・終了する。
+
 ## 9. Local Cleanroom Infrastructure (`infra/`)
 なぞかけ生成および自己修正ループを、常設のローカルDockerインフラ（`infra/docker-compose.yml`）上で安全かつ独立に実行するためのクリーンルーム構成（instructions/001）。
 

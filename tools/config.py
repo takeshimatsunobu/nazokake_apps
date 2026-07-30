@@ -184,6 +184,18 @@ class ToolsSettings(BaseSettings):
     # 環境変数SHADOW_MODE=falseで明示的に上書きする。
     shadow_mode: bool = True
 
+    # 【instructions/261: ポート管理のSSoT化】ローカル開発用APIサーバー(run_api.ps1が
+    # 起動するuvicorn main:app)の正規リッスンポート。以前はrun_api.ps1・
+    # tools/nazo_agent.py・フロントエンドの複数JSファイルに7800という値が個別に
+    # ハードコードされており、出自不明な別ポート(instructions/260で発見した8095の
+    # ゾンビuvicorn等)との区別がつかない構成ドリフトの温床となっていた。
+    api_dev_port: int = 7800
+
+    # ローカル開発用フロントエンド静的サーバー(dev_server.py)の正規リッスンポート。
+    # api_dev_port と同じ理由でSSoT化するが、本設定を実際に参照するようリファクタ
+    # 済みなのは現時点でrun_api.ps1のみ(instructions/261 Step 2の対象範囲)。
+    frontend_dev_port: int = 7300
+
 
 def load_settings() -> ToolsSettings:
     """設定を読み込み検証する。失敗時は意味のあるメッセージを出してFail-Fastする。"""
