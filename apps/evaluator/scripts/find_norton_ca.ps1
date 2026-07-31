@@ -1,17 +1,8 @@
-$ErrorActionPreference = 'SilentlyContinue'
-$found = @()
-foreach ($loc in @('CurrentUser','LocalMachine')) {
-  Get-ChildItem -Path "Cert:\$loc" | ForEach-Object {
-    $storeName = $_.Name
-    Get-ChildItem -Path "Cert:\$loc\$storeName" | Where-Object {
-      $_.Subject -like '*Norton*' -or $_.Issuer -like '*Norton*'
-    } | ForEach-Object {
-      $found += [PSCustomObject]@{ Store="$loc\$storeName"; Subject=$_.Subject; Thumbprint=$_.Thumbprint }
-    }
-  }
-}
-if ($found.Count -eq 0) {
-  Write-Output 'NO_NORTON_CA_FOUND_ANYWHERE'
-} else {
-  $found | Format-List | Out-String | Write-Output
-}
+# TODO: 2026-08-11を以て、このファイルは完全に削除すること (Sunset Date)
+# instructions/272: Tombstoned (legacy, unreferenced manual Norton-CA certificate-store
+# diagnostic helper for the old manual VM deploy workflow). Permanently disabled.
+
+Write-Host "ERROR: This deployment script is deprecated and has been permanently disabled." -ForegroundColor Red
+Write-Host "All deployments are now managed exclusively via GitHub Actions (GitOps)." -ForegroundColor Red
+Write-Host "Please merge your changes to the main branch to trigger the CD pipeline." -ForegroundColor Red
+exit 1
