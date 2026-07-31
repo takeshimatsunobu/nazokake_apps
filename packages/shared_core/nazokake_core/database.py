@@ -661,10 +661,17 @@ async def async_get_item(doc_id: str) -> dict[str, Any] | None:
 
 # instructions/240: 起動時リストアで一括挿入する際、NOT NULL制約かつPython側
 # defaultを持つ列(feed_ready/status/is_user_edited/is_golden_data/is_approved/
-# sync_status/retry_count)は、Core経由の複数行insertではORMのdefault=が
-# 自動適用されない(キーが明示的にNoneだとNULLをそのままバインドしてしまい
-# NOT NULL制約違反になる)。Firestore側のドキュメントにキー自体が無かった場合
-# にのみ、この既定値で補う。
+# sync_status/retry_count/elyza_job_retry_count)は、Core経由の複数行insertでは
+# ORMのdefault=が自動適用されない(キーが明示的にNoneだとNULLをそのままバインド
+# してしまいNOT NULL制約違反になる)。Firestore側のドキュメントにキー自体が
+# 無かった場合にのみ、この既定値で補う。
+#
+# 【instructions/269: elyza_job_retry_countの欠落を修正】instructions/250で
+# elyza_job_retry_count列(NOT NULL, default=0)を新設した際、このリストへの
+# 追記が漏れていたため、その列を持たない旧Firestoreドキュメントのリストア時に
+# `NOT NULL constraint failed: nazokake_items.elyza_job_retry_count`で失敗して
+# いた。同じくinstructions/250で新設されたelyza_job_status/elyza_job_locked_at
+# は元々nullable=Trueのため対象外(キー不在時のNoneがそのまま許容される)。
 _NAZOKAKE_ITEM_BULK_DEFAULTS: dict[str, Any] = {
     "feed_ready": True,
     "status": "pending",
@@ -673,6 +680,7 @@ _NAZOKAKE_ITEM_BULK_DEFAULTS: dict[str, Any] = {
     "is_approved": False,
     "sync_status": "synced",  # Firestoreから来た時点で定義上「既に同期済み」
     "retry_count": 0,
+    "elyza_job_retry_count": 0,
 }
 
 
