@@ -29,6 +29,13 @@ tools/nazo_agent.pyが生成していた隔離ドラフトブランチの残存�
 合致するブランチのみ。main/master自身や開発者の作業ブランチ等はプレフィックスに
 合致しないため対象外。
 
+【instructions/268: git worktree pruneの追加】managed_git_worktreeのプロセスが
+SIGKILL等で強制終了し、worktreeの物理ディレクトリだけが手動/OS側で削除された場合、
+`git worktree list`上の登録(内部の.git/worktrees/配下の管理ファイル)がリンク切れの
+まま残存し得る。これは特定のブランチに紐づく`_find_worktree_path_for_branch`の
+探索対象外であるため、削除サイクルの冒頭で`git worktree prune`を実行し、リンク切れ
+worktree登録それ自体を(ブランチの削除可否とは無関係に)Gitの内部管理から掃除する。
+
 worktree自体はmanaged_git_worktreeのfinallyで既に破棄されている想定だが、プロセスが
 SIGKILL等で強制終了した場合はfinallyが走らず`git worktree list`上の登録が残存し得る。
 worktreeが紐づいたブランチは`git branch -d`が失敗するため、対象ブランチにworktreeが
@@ -48,6 +55,9 @@ CLI引数 --dry-run 指定時は、実際のgit worktree remove/git branch -dを
     uv run python tools/cleanup_git_resources.py             # 実際に削除を実行
     uv run python tools/cleanup_git_resources.py --dry-run   # 削除対象の一覧表示のみ
     DRY_RUN=true uv run python tools/cleanup_git_resources.py  # 同上(環境変数版)
+
+監査ログ: run/audit_reports/cleanup.log(instructions/268)。標準出力とは別に、
+削除・パージした対象を永続化しトリアージ可能にする。
 """
 
 from __future__ import annotations
@@ -72,12 +82,28 @@ TARGET_PREFIXES = ("escalation/", "draft/")
 # このモジュール専用のlogger。呼び出し元(mlops_trigger.py等)や実行時のlogging設定に
 # 依存せず、削除判断の理由を必ず標準出力へ記録するため、専用のStreamHandlerを明示的に
 # 付与しroot loggerへは伝播させない(他モジュールのログ設定を汚染しないため)。
+#
+# 【instructions/268: 揮発性ディレクトリへの監査ログ出力】標準出力(呼び出し元の
+# mlops_trigger.py/scheduler_daemon.pyの実行ログに混在し、サイクルが進むと過去分が
+# 流れて消える)とは別に、tools/nazo_agent.pyと同じ run/audit_reports/ 配下へ専用の
+# FileHandlerで永続化する。これにより「いつ・どのブランチ/worktreeを削除したか」を
+# 後からトリアージできる。tools/自体はRead-Only保護対象(SSoT §8.4)のため、ログの
+# 出力先は必ずtools/配下ではなく揮発性のrun/配下とする。
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 if not logger.handlers:
     _handler = logging.StreamHandler(sys.stdout)
     _handler.setFormatter(logging.Formatter("%(message)s"))
     logger.addHandler(_handler)
+
+    _log_file = BASE_DIR / "run" / "audit_reports" / "cleanup.log"
+    _log_file.parent.mkdir(parents=True, exist_ok=True)
+    _file_handler = logging.FileHandler(_log_file, encoding="utf-8")
+    _file_handler.setFormatter(
+        logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
+    )
+    logger.addHandler(_file_handler)
+
     logger.propagate = False
 
 
@@ -207,6 +233,30 @@ def _find_worktree_path_for_branch(repo_root: Path, branch_name: str) -> Path | 
     return None
 
 
+def _prune_worktrees(repo_root: Path, *, dry_run: bool) -> list[str]:
+    """`git worktree prune`を実行し、物理ディレクトリが消えてリンク切れとなった
+    worktree登録をGitの内部管理からパージする(instructions/268)。特定ブランチとの
+    紐付け(`_find_worktree_path_for_branch`)とは無関係に、SIGKILL等で異常終了し
+    managed_git_worktreeのfinallyが走らなかったケースの残骸を掃除する。dry_run時は
+    `--dry-run`を付与し、実際には削除せずパージ予定の内容だけをログ出力する。
+    """
+    args = ["worktree", "prune", "--verbose"]
+    if dry_run:
+        args.append("--dry-run")
+    result = _run_git(args, repo_root)
+    if result.returncode != 0:
+        logger.error(
+            f"⚠️  [cleanup] git worktree pruneの実行に失敗しました: {result.stderr.strip()}"
+        )
+        return []
+
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    prefix = "🧪 [dry-run]" if dry_run else "🧹 [cleanup]"
+    for line in lines:
+        logger.info(f"{prefix} git worktree prune: {line}")
+    return lines
+
+
 def cleanup_merged_git_resources(
     repo_root: Path | None = None, *, dry_run: bool | None = None
 ) -> dict:
@@ -226,9 +276,12 @@ def cleanup_merged_git_resources(
     result: dict = {
         "removed": [],
         "worktrees_removed": [],
+        "pruned_worktrees": [],
         "protected": [],
         "errors": [],
     }
+
+    result["pruned_worktrees"] = _prune_worktrees(root, dry_run=effective_dry_run)
 
     try:
         main_branch = _resolve_main_branch(root)
