@@ -1,0 +1,58 @@
+# .github/workflows/pyright_check.yml
+# ============================================
+# instructions/266: 型保証境界(CI/CDゲートキーパー)。
+# SSoT_architecture.md 8.4節「型保証境界」の一部。エージェントの自己修復ループ
+# (tools/agent_graph.py)に内蔵したPyrightチェックとは独立した、最終防衛ラインと
+# してのCI/CDゲート。既存のci_pr_check.yml(Dockerビルド+脆弱性スキャン)とは
+# 目的が異なり、GCP/Docker依存が一切ないため別ワークフローとして分離する
+# (apps/**以外[tools/**、packages/**]の変更でも起動させたいが、それらの変更で
+# 無関係なDockerビルド・脆弱性スキャンまで毎回走らせたくないため)。
+#
+# ラチェット方式(行単位): このPRで実際に追加・変更された行にかかる型エラーのみを
+# 対象に型検査する(tools/pyright_tool.py.check_types_for_gate_ratchet)。
+# 本ワークフロー導入時点で、tools/配下だけで338件の既存型エラー(主にanthropic
+# SDKのバージョン差異由来、38ファイルに分散)が確認されており、ファイル単位で
+# ブロックすると「既存debtを抱えたファイルに触れただけで無関係な既存エラーごと
+# ブロックされる」実用性のないゲートになってしまうため、行単位まで絞り込む
+# (既存debt自体の是正は別タスク)。
+
+name: CI - Pyright Type Check Gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "tools/**"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+jobs:
+  pyright-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # diffベースのラチェット判定(git diff origin/<base>...HEAD)のため、
+          # base側のコミット履歴も必要(既定のfetch-depth: 1では不足する)。
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv and Pyright gate dependencies
+        run: |
+          pip install uv
+          uv venv
+          uv pip install -r requirements_orchestrator.txt
+
+      # 変更ファイルの自動検出・行単位ラチェット判定は全てtools/pyright_tool.py
+      # --gate 内で完結する(CI側とHot Loop側で判定ロジックを二重実装しないため)。
+      - name: "Pyright type-check gate (ratchet: new/changed lines only)"
+        run: uv run python tools/pyright_tool.py --gate "origin/${{ github.base_ref }}"
