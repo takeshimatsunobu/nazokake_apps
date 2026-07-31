@@ -163,20 +163,28 @@ def test_escalation_worktree_never_mutates_main_checkout():
 
 def test_no_main_branch_write_or_automerge_capability_exists():
     """SSoT「6. Autonomous Repair & Escalation Loop」が要求する『隔離ブランチ+PR
-    ドラフト生成による一時停止』フローが、将来の変更によって『git push』『メイン
-    ブランチへの直接checkout』『自動マージ』のいずれかを獲得していないことを、
-    ソースコードへの静的走査で保証する回帰ガード。
+    ドラフト生成による一時停止』フローが、将来の変更によって『メインブランチへの
+    直接push』『メインブランチへの直接checkout』『自動マージ』のいずれかを
+    獲得していないことを、ソースコードへの静的走査で保証する回帰ガード。
 
     ゼロトラスト原則(instructions/159)上、これらの操作パターンが1つでもエスカレー
     ション経路の実装ファイルに出現した場合は、レビュー無しでのメインブランチ書き込み
     経路が生まれた可能性が高いため、ここで即座にfailさせる。
+
+    【instructions/271で是正】旧版は"git push"の出現そのものを一律禁止していたが、
+    instructions/245でnazo_agent.py::_create_and_open_prが専用の作業ブランチ
+    (branch_name、main/master以外の動的な一意名)へのみpush(`git push -u origin
+    branch_name`)する、SSoT第6項が求める意図的なPRベース運用を実装したことで、
+    この一律禁止パターンが本来無害な変更を誤検知するようになっていた(false
+    positiveであり、実際のリグレッションではない)。危険な経路(main/masterへの
+    直接push)は"push to origin main/master"パターンで既に個別かつ正確に検出
+    できるため、こちらのみに一本化する。
     """
     source_files = [
         BASE_DIR / "tools" / "agent_graph.py",
         BASE_DIR / "tools" / "nazo_agent.py",
     ]
     forbidden_patterns = {
-        "git push": re.compile(r"""["']git["']\s*,\s*["']push["']"""),
         "gh pr merge": re.compile(r"""["']gh["']\s*,\s*["']pr["']\s*,\s*["']merge["']"""),
         "--merge flag": re.compile(r"""["']--merge["']"""),
         "checkout main/master": re.compile(
