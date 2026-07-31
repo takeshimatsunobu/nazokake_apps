@@ -46,7 +46,7 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 EVALUATION_REPORT_PATH = BASE_DIR / "tools" / "audit_reports" / "evaluation_report.json"
-BASELINE_PATH = BASE_DIR / "tools" / "audit_reports" / "baseline_metrics_nazo.json"
+BASELINE_PATH = BASE_DIR / "run" / "audit_reports" / "baseline_metrics_nazo.json"
 EXTRACTION_STATS_PATH = BASE_DIR / "data" / "extraction_stats.json"
 BASE_MODEL = "elyza:8b"
 

@@ -9,7 +9,7 @@ Local-First SQLite(nazokake_local.db)を安全にスキーマ再構築するた�
           検知した場合は自動キルせず、プロセス名/PIDを警告してsys.exit(1)する(フェイルファスト)。
   Step 2: NazokakeItemORMの全レコードを一時JSON(data/db_backup_temp.json)へ退避する
           (DBが存在しない、または0件の場合はスキップする)。
-  Step 3: DB本体・WAL/SHM・tools/audit_reports/配下・__pycache__系キャッシュ・
+  Step 3: DB本体・WAL/SHM・run/audit_reports/配下・__pycache__系キャッシュ・
           all_source_code.txt を物理削除する。
   Step 4: ensure_db_ready()で最新スキーマのクリーンなDBを再作成し、Step2の一時JSONから
           全件を復元する。復元後、一時JSONは削除する。
@@ -149,7 +149,7 @@ def purge_infra(db_path: Path, project_root: Path) -> None:
             target.unlink()
             print(f"🗑️  削除しました: {target}")
 
-    audit_reports_dir = project_root / "tools" / "audit_reports"
+    audit_reports_dir = project_root / "run" / "audit_reports"
     if audit_reports_dir.exists():
         shutil.rmtree(audit_reports_dir)
     audit_reports_dir.mkdir(parents=True, exist_ok=True)

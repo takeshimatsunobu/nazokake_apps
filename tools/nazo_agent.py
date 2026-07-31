@@ -65,7 +65,6 @@ def _log_cache_usage(usage) -> None:
 
 # --- ターゲット環境の設定 ---
 BASE_DIR = Path(__file__).resolve().parent.parent
-TOOLS_DIR = Path(__file__).resolve().parent
 
 # モジュールレベルの定数(MAX_ERROR_LOG_LINES等)がos.getenvで.envの値を読み取れるよう、
 # インポート時点で早期に読み込む(main_flow内のload_dotenv呼び出しより前に必要)。
@@ -75,7 +74,7 @@ load_dotenv(BASE_DIR / ".env")
 # バックグラウンドタスク(フロントエンド起動等)の監視状態を、コンソールへの
 # print()ではなくファイルへ確実に記録する。コンソール用のStreamHandlerは
 # 意図的に設定しない(標準出力とのインターリーブ防止)。
-log_file = TOOLS_DIR / "audit_reports" / "nazo_agent_daemon.log"
+log_file = BASE_DIR / "run" / "audit_reports" / "nazo_agent_daemon.log"
 log_file.parent.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger("nazo_agent")
@@ -334,7 +333,7 @@ def build_static_context() -> Path:
         symbols = acd_extract_symbols(py_file)
         if symbols:
             lines.append(f"- {py_file.relative_to(target_dir)}: {', '.join(symbols)}")
-    audit_dir = TOOLS_DIR / "audit_reports"
+    audit_dir = BASE_DIR / "run" / "audit_reports"
     audit_dir.mkdir(exist_ok=True)
     out_file = audit_dir / "static_context.md"
     with open(out_file, "w", encoding="utf-8") as f:
@@ -529,7 +528,7 @@ async def startup_local_services():
     # Windows上の子プロセスはcp932コンソールにデフォルトなるため、rich等の絵文字出力で
     # UnicodeEncodeErrorを起こす。nazo_agent.py自身のUTF-8設定は子プロセスに伝播しないため明示する。
     utf8_env = {"PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
-    log_dir = TOOLS_DIR / "audit_reports"
+    log_dir = BASE_DIR / "run" / "audit_reports"
 
     await _ensure_service_alive(
         name="Ollama",
@@ -734,13 +733,13 @@ def _write_dead_letter(
 ) -> Path:
     """自己修正ループが最大リトライ回数に達し縮退運転へ移行する際、失敗時点の
     全文脈(システムプロンプト・会話履歴・最終エラー・Claudeの生の応答)を
-    tools/audit_reports/dead_letters/ 配下へ構造化JSONとして保存する。
+    run/audit_reports/dead_letters/ 配下へ構造化JSONとして保存する。
     なぜ自己修正しきれなかったかを事後分析できるようにする可観測性強化。
 
     書き込み前に sanitize_pii で全文字列値をマスキングし、メールアドレスや
     APIキー等の機密情報がDLQへ平文で漏洩することを防ぐ(Epic 4 - 追加課題K)。
     """
-    dead_letter_dir = TOOLS_DIR / "audit_reports" / "dead_letters"
+    dead_letter_dir = BASE_DIR / "run" / "audit_reports" / "dead_letters"
     dead_letter_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.datetime.now()
@@ -845,7 +844,7 @@ async def phase1_audit(is_final=False) -> Path:
     for tool, result in zip(tools, results):
         print(f"✅ {tool.upper()} の解析が完了しました。")
         report_lines.append(result)
-    audit_dir = TOOLS_DIR / "audit_reports"
+    audit_dir = BASE_DIR / "run" / "audit_reports"
     audit_dir.mkdir(exist_ok=True)
     out_file = audit_dir / ("final_error_log.txt" if is_final else "error_log.txt")
     with open(out_file, "w", encoding="utf-8") as f:
@@ -1189,7 +1188,7 @@ async def phase2_claude_translation(
     finally:
         await http_client.aclose()
 
-    triage_path = TOOLS_DIR / "audit_reports" / "triage_result.json"
+    triage_path = BASE_DIR / "run" / "audit_reports" / "triage_result.json"
     with open(triage_path, "w", encoding="utf-8") as f:
         json.dump(result_json, f, indent=2, ensure_ascii=False)
 
@@ -1534,7 +1533,7 @@ async def phase2_claude_tool_augmented(
     finally:
         await http_client.aclose()
 
-    triage_path = TOOLS_DIR / "audit_reports" / "triage_result.json"
+    triage_path = BASE_DIR / "run" / "audit_reports" / "triage_result.json"
     with open(triage_path, "w", encoding="utf-8") as f:
         json.dump(result_json, f, indent=2, ensure_ascii=False)
 
@@ -1718,7 +1717,7 @@ async def phase3_aider_execution(
                 )
                 continue
 
-            ast_instruction_path = TOOLS_DIR / "audit_reports" / f"_ast_task_{idx}.json"
+            ast_instruction_path = BASE_DIR / "run" / "audit_reports" / f"_ast_task_{idx}.json"
             ast_instruction_path.parent.mkdir(parents=True, exist_ok=True)
             with open(ast_instruction_path, "w", encoding="utf-8") as f:
                 json.dump(
@@ -1919,7 +1918,7 @@ def _has_staged_changes(cwd: Path, files: list[str]) -> bool:
 def _commit_or_shadow(target_dir: Path, files: list[str], commit_message: str) -> bool:
     """settings.shadow_mode(instructions/182)が有効な場合、実際のgit add/commitを
     一切行わず(インデックスへのステージすら行わない)、コミットされたはずの内容を
-    tools/shadow_mode_log.jsonlへ記録するのみに留める。無効な場合は従来通り一括
+    run/shadow_mode_log.jsonlへ記録するのみに留める。無効な場合は従来通り一括
     コミットを行う。戻り値は「実際にコミットが行われたか」(False=シャドウ抑止/
     ステージ済み変更なしのいずれか)。呼び出し元は、この戻り値でコミット後の
     後続処理(学習データ抽出フック等)を実行すべきかどうかを判断できる。

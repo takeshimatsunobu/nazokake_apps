@@ -5,16 +5,16 @@ Agentの決定論的な長期記憶(instructions/212: Phase 2アーキテクチ�
 
 【背景】これまでnazo_agent.py(Agent)の実行間で「現在のシステムステート・合意事項・
 バックログ」を引き継ぐ仕組みが存在せず、人間がセッション間でコンテキストを手動コピペ
-する運用(トイル)に依存していた。本モジュールは、これをtools/context_state.jsonへの
+する運用(トイル)に依存していた。本モジュールは、これをrun/context_state.jsonへの
 アトミックな読み書きに置き換え、Agent起動時の自動ロード・タスク完了時の自動保存を
 可能にする外部SSoTを提供する。
 
-アトミックI/Oと排他ロックの実装は、tools/preflight_check.py(tools/tasks_state.json)・
+アトミックI/Oと排他ロックの実装は、tools/preflight_check.py(run/tasks_state.json)・
 tools/scheduler_daemon.py._atomic_write_jsonと同一のパターン(filelock.FileLockで
 読み取りから書き込みまでの全区間を排他化し、tempfile+os.fsync+os.replaceの
 アトミックリネームで書き込む)を踏襲する。
 
-【Fail-Closedの適用範囲】tools/tasks_state.jsonとは異なり、tools/context_state.json
+【Fail-Closedの適用範囲】run/tasks_state.jsonとは異なり、run/context_state.json
 は本モジュール自身が初めて導入する状態ファイルであり、初回実行時点では物理的に
 まだ存在しない(これは異常ではなく正常な初期状態)。そのため、
 FileNotFoundError(不在)は空のデフォルト状態として扱ってFail-Openする一方、
@@ -43,7 +43,7 @@ from typing import Any
 import filelock
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-CONTEXT_STATE_PATH = BASE_DIR / "tools" / "context_state.json"
+CONTEXT_STATE_PATH = BASE_DIR / "run" / "context_state.json"
 # tools/preflight_check.py.TASKS_STATE_LOCK_TIMEOUT_SECと同じ桁数(小さなJSONファイル
 # 1個のみを保護するロックのため、長時間の保持は想定しない)。
 CONTEXT_STATE_LOCK_TIMEOUT_SEC = 10
@@ -55,7 +55,7 @@ if sys.platform == "win32":
 
 
 def _default_context() -> dict[str, Any]:
-    """tools/context_state.jsonが未だ存在しない(初回実行)場合のデフォルト状態。"""
+    """run/context_state.jsonが未だ存在しない(初回実行)場合のデフォルト状態。"""
     return {
         "system_state": {},
         "agreements": [],
@@ -65,7 +65,7 @@ def _default_context() -> dict[str, Any]:
 
 
 def load_context() -> dict[str, Any]:
-    """tools/context_state.jsonを読み込む。
+    """run/context_state.jsonを読み込む。
 
     不在(FileNotFoundError)の場合は初回実行とみなし、空のデフォルト状態を返す
     (Fail-Open)。既存ファイルのJSON破損(json.JSONDecodeError)は、外部SSoTが信頼
@@ -79,7 +79,7 @@ def load_context() -> dict[str, Any]:
 
 
 def save_context(context: dict[str, Any]) -> None:
-    """tools/context_state.jsonへ、排他ロック配下でアトミックに書き込む
+    """run/context_state.jsonへ、排他ロック配下でアトミックに書き込む
     (tools/preflight_check.py.update_task_stateと同じtempfile+os.fsync+os.replace
     パターン)。呼び出し元が渡したcontext全体を上書きする(read-modify-writeの
     "modify"部分は呼び出し元の責務)。

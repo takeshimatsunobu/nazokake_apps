@@ -60,10 +60,10 @@ OLLAMA_MODEL = "qwen2.5-coder:7b"
 GEMMA_MODEL = "gemma4:12b"
 CTO_MODEL = "claude-sonnet-5"
 BASE_DIR = Path(__file__).resolve().parent.parent
-DEAD_LETTER_DIR = BASE_DIR / "tools" / "audit_reports" / "dead_letters"
-PR_DRAFT_DIR = BASE_DIR / "tools" / "audit_reports" / "pr_drafts"
+DEAD_LETTER_DIR = BASE_DIR / "run" / "audit_reports" / "dead_letters"
+PR_DRAFT_DIR = BASE_DIR / "run" / "audit_reports" / "pr_drafts"
 SSOT_PATH = BASE_DIR / "SSoT_architecture.md"
-BENCHMARK_REPORTS_DIR = BASE_DIR / "tools" / "benchmark" / "reports"
+BENCHMARK_REPORTS_DIR = BASE_DIR / "run" / "benchmark" / "reports"
 
 # tools/nazo_agent.pyと同様、cto_node()のANTHROPIC_API_KEY(os.getenv経由)がインポート
 # 時点で確実にos.environへ反映されるよう、ここで明示的に.envを読み込む
@@ -858,7 +858,7 @@ def _write_gemma_dead_letter(
     gemma_analysis: str,
 ) -> Path:
     """Gemmaによる最終分析結果を、tools/nazo_agent.pyの_write_dead_letterと同じ
-    命名規則(dead_letter_YYYYMMDD_HHMMSS_UUID.json)でtools/audit_reports/dead_letters/
+    命名規則(dead_letter_YYYYMMDD_HHMMSS_UUID.json)でrun/audit_reports/dead_letters/
     へ構造化JSONとして保存する。
 
     ここに含まれるのはコード・エラーログ・診断テキストのみで、nazo_agent.py側の

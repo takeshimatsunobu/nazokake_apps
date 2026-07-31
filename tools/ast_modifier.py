@@ -38,6 +38,14 @@ from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_ex
 
 FILE_LOCK_TIMEOUT_SEC = 10
 
+# 【instructions/264→265: ツール保護境界】自分自身(ast_modifier.py)を含む tools/
+# ディレクトリ配下のセキュリティロジックを、エージェントが本ツール経由で書き換えて
+# しまうことを防ぐコードレベルの防御。以前はこの制約がプロンプト規約のみに依存し、
+# 実効的な担保が存在しなかった(instructions/262の監査で判明)。インフラ層でも
+# tools/ をRead-Only(:ro)マウントするが、こちらはコンテナ外でこのモジュールが直接
+# 呼び出されるケース(ローカル実行等)もFail-Fastで守るための二重の防御線。
+PROTECTED_TOOLS_DIR = Path(__file__).resolve().parent
+
 
 class AstModificationInstruction(BaseModel):
     """修正指示の厳格なスキーマ。Claude API の Tool Calling(構造化出力)でも
@@ -248,6 +256,13 @@ def apply_modification(instruction: dict) -> str:
     path = Path(file_path)
     if not path.exists():
         return f"Error: ファイル '{file_path}' が見つかりません。"
+
+    resolved_path = path.resolve()
+    if resolved_path == PROTECTED_TOOLS_DIR or PROTECTED_TOOLS_DIR in resolved_path.parents:
+        return (
+            f"Error: '{file_path}' は tools/ ディレクトリ配下(自己保護対象)のため、"
+            "本ツールによる自律的な書き換えは禁止されています。"
+        )
 
     try:
         new_node = _parse_new_node(new_code)

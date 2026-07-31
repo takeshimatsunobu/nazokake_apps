@@ -54,7 +54,7 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
-BENCHMARK_REPORTS_DIR = BASE_DIR / "tools" / "benchmark" / "reports"
+BENCHMARK_REPORTS_DIR = BASE_DIR / "run" / "benchmark" / "reports"
 BASELINE_PATH = BENCHMARK_REPORTS_DIR / "baseline_metrics_agent.json"
 AGENT_SFT_PATH = BASE_DIR / "tools" / "dataset" / "agent_sft.jsonl"
 BASE_MODEL = "qwen2.5-coder:7b"
@@ -154,7 +154,7 @@ def _record_experiment(report: dict | None, latency: float, *, pipeline_success:
     記録する。評価が完了しなかった場合(report=None)もsuccess_rate=Noneとして
     記録し、「実行したが評価不能だった」という事実自体を欠落させない。
 
-    dataset_sizeはtools/dataset/agent_sft.jsonlの累積行数(このパイプラインでは
+    dataset_sizeはrun/dataset/agent_sft.jsonlの累積行数(このパイプラインでは
     tools/extract_dataset.pyのようなコアーセット・リプレイの層化抽出を行わないため、
     coreset_ratioは常にNone)。
 

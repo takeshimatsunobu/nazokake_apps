@@ -42,7 +42,12 @@ services:
     volumes:
       - ../apps:/workspace/apps
       - ../packages:/workspace/packages
-      - ../tools:/workspace/tools
+      # 【instructions/265: ツール保護境界】エージェントの暴走による自己破壊を物理的に
+      # 防ぐため、tools/ はRead-Only(:ro)でマウントする。tools/配下のスクリプトが
+      # 生成する一時ファイル・ログ・状態ファイルはすべてrun/(揮発性、コンテナ内
+      # ローカル)へ出力するようリファクタリング済みのため、このRead-Only化によって
+      # 正規の処理が書き込みエラーでクラッシュすることはない。
+      - ../tools:/workspace/tools:ro
       - ../tests:/workspace/tests
       - ../SSoT_architecture.md:/workspace/SSoT_architecture.md:ro
     # 秘密情報(ANTHROPIC_API_KEY等)はイメージへCOPYせず、env_fileでホスト側の

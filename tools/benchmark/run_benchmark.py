@@ -58,7 +58,7 @@ from langgraph.graph import END, StateGraph  # noqa: E402
 from tools import agent_graph  # noqa: E402
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
-REPORTS_DIR = Path(__file__).resolve().parent / "reports"
+REPORTS_DIR = BASE_DIR / "run" / "benchmark" / "reports"
 DOCKER_IMAGE = "nazo-benchmark-sandbox"
 TARGET_TEST_NAME = "test_target_behavior"
 

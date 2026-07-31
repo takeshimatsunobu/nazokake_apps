@@ -5,7 +5,7 @@ tools/compile_knowledge.py
 スタンドアロンのビルドスクリプト(Dynamic Experience Replay)。
 
 tools/knowledge_retriever.py の軽量ローカル検索はこのスクリプトが事前生成する
-tools/ai_knowledge_base.json に対してのみ動作し、実行時にtools/instructions/を
+run/ai_knowledge_base.json に対してのみ動作し、実行時にtools/instructions/を
 再スキャンしない(推論時に大量のテキストファイルを毎回読み直すコストを避ける)。
 指示書が追加・変更された場合は、このスクリプトを再実行してai_knowledge_base.json
 を再ビルドすること。
@@ -24,7 +24,7 @@ from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 INSTRUCTIONS_DIR = BASE_DIR / "tools" / "instructions"
-KNOWLEDGE_BASE_PATH = BASE_DIR / "tools" / "ai_knowledge_base.json"
+KNOWLEDGE_BASE_PATH = BASE_DIR / "run" / "ai_knowledge_base.json"
 
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")

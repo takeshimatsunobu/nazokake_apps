@@ -6,7 +6,7 @@ tools/evaluate_model.py
 将来の拡張を前提とした基礎スケルトン: 最新のLoRAアダプタとテストデータセットを
 ロードして推論を実行し、簡易的な正解率を算出する。より厳密なスコアリング
 (ルーブリック評価等)は将来の拡張で差し替える想定。
-評価結果は tools/audit_reports/evaluation_report.json へ記録する。
+評価結果は run/audit_reports/evaluation_report.json へ記録する。
 """
 
 import gc
@@ -19,9 +19,8 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
-TOOLS_DIR = Path(__file__).resolve().parent
-BASE_DIR = TOOLS_DIR.parent
-REPORT_PATH = TOOLS_DIR / "audit_reports" / "evaluation_report.json"
+BASE_DIR = Path(__file__).resolve().parent.parent
+REPORT_PATH = BASE_DIR / "run" / "audit_reports" / "evaluation_report.json"
 
 ADAPTER_PATH = BASE_DIR / "apps" / "batch_factory" / "models" / "nazokake_elyza_lora"
 TEST_DATASET_PATH = BASE_DIR / "apps" / "evaluator" / "data" / "sft_dataset.jsonl"

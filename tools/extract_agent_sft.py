@@ -4,9 +4,9 @@ tools/extract_agent_sft.py
 Nazo-Agent(Claude)の推論軌跡(エラーログ+ASTマップ -> 修正指令)を、ローカルLLM
 ファインチューニング用のChatML形式JSONLとして抽出・蓄積する(Epic 1拡張)。
 
-入力: tools/audit_reports/error_log.txt, tools/audit_reports/static_context.md
-出力(記録元): tools/audit_reports/triage_result.json
-保存先: tools/dataset/agent_sft.jsonl (1レコード1行、追記)
+入力: run/audit_reports/error_log.txt, run/audit_reports/static_context.md
+出力(記録元): run/audit_reports/triage_result.json
+保存先: run/dataset/agent_sft.jsonl (1レコード1行、追記)
 """
 
 import json
@@ -17,9 +17,9 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
-TOOLS_DIR = Path(__file__).resolve().parent
-AUDIT_DIR = TOOLS_DIR / "audit_reports"
-DATASET_DIR = TOOLS_DIR / "dataset"
+BASE_DIR = Path(__file__).resolve().parent.parent
+AUDIT_DIR = BASE_DIR / "run" / "audit_reports"
+DATASET_DIR = BASE_DIR / "run" / "dataset"
 
 ERROR_LOG_PATH = AUDIT_DIR / "error_log.txt"
 STATIC_CONTEXT_PATH = AUDIT_DIR / "static_context.md"

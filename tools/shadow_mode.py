@@ -34,7 +34,7 @@ from typing import Any
 import filelock
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-SHADOW_LOG_PATH = BASE_DIR / "tools" / "shadow_mode_log.jsonl"
+SHADOW_LOG_PATH = BASE_DIR / "run" / "shadow_mode_log.jsonl"
 SHADOW_LOG_LOCK_PATH = Path(f"{SHADOW_LOG_PATH}.lock")
 # tools/preflight_check.py.TASKS_STATE_LOCK_TIMEOUT_SECと同じ桁数(小さなログファイル
 # 1個への追記のみを保護するロックのため、長時間の保持は想定しない)。
