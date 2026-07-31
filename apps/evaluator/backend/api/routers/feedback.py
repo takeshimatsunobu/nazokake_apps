@@ -14,12 +14,15 @@ from models.schemas import FeedbackRequest
 
 router = APIRouter()
 
+# SSoT §8.2: ハイブリッド境界の例外として直接書き込みが許可された周辺機能ドメイン。
+_APP_FEEDBACKS_COLLECTION = "app_feedbacks"
+
 
 @router.post("/feedback")
 @handle_exceptions
 def submit_feedback(req: FeedbackRequest, db=Depends(get_db)):
     clean_comment = html.escape(str(req.comment or "").strip())
-    db.collection("app_feedbacks").document().set(
+    db.collection(_APP_FEEDBACKS_COLLECTION).document().set(
         {
             "score": req.score,
             "comment": clean_comment,

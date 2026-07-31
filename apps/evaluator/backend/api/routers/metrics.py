@@ -13,11 +13,14 @@ from nazokake_core.database import sync_upsert_item
 
 router = APIRouter()
 
+# SSoT §8.2: ハイブリッド境界の例外として直接書き込みが許可された周辺機能ドメイン。
+_TELEMETRY_LOGS_COLLECTION = "telemetry_logs"
+
 
 @router.post("/metrics/log")
 @handle_exceptions
 def log_telemetry(req: TelemetryLogRequest, db=Depends(get_db)):
-    db.collection("telemetry_logs").document().set(
+    db.collection(_TELEMETRY_LOGS_COLLECTION).document().set(
         {
             "user_slug": req.user_slug,
             "event_name": req.event_name,

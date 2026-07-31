@@ -88,6 +88,9 @@ Criticトリアージ (Human-in-the-Loop): SSoTの動的注入によるテスト
   - この例外を許容してもなお二重書き込みによる破壊を避けるため、`sync_once`のFirestoreへの書き込みは`merge=True`(フィールド単位マージ)を用いる。これにより、Cloud Run側の定期的なバックアップPushが、ワーカーが書き込んだ上記フィールドを意図せず上書き・消去することを防ぐ。
   - `elyza_status`(既存カラム)は本例外とは無関係の別概念(golden feedのキュレーションフラグ、後述参照)であるため、意図的に別カラム`elyza_job_status`を新設して衝突を避けている。
 - **【instructions/264: データ同期境界の例外化(絶対ルール)】** なぞかけ「評価データ」本体（`NazokakeItem`のGemini/主系フィールド）については、引き続きクラウド側からの新規書き込みを一切禁止しSQLite一元管理を維持する。一方、`apps/evaluator/backend/api/routers/{feedback.py, metrics.py, board.py}`が扱う「フィードバック・テレメトリ・掲示板」等の周辺機能ドメイン（`app_feedbacks`/`telemetry_logs`/`board_posts`/`board_quotas`コレクション）に限り、Cloud RunからFirestoreへの直接書き込みを正式に許可するハイブリッド構成とする(instructions/262の監査で発覚した既存の実装を、意図的な設計として追認・明文化するもの)。この例外は上記コレクションに厳格に限定され、なぞかけ評価データのコレクション(`nazokake_items`)には一切適用されない。
+- **【instructions/267: 上記例外リストへの追記(絶対ルール)】** instructions/267のAST監査で、`apps/evaluator/backend/api/routers/*`配下に上記4コレクション以外への直接書き込みが追加で2箇所発見されたが、いずれも`nazokake_items`本体とは無関係な、既存の意図的設計であることを確認し、正式にハイブリッド境界の例外として追認する。
+  - **`user_feedback.py` → `user_feedbacks`コレクション:** Phase 4自己進化ループの入力口。`app_feedbacks`（アプリ全体への自由記述フィードバック）とは異なる、なぞかけ単体(`doc_id`)に対する構造化評価(`axis_feedback`等)を扱う独立したFirestoreドメインであり、`nazokake_items`とは別コレクションのため一方向同期原則の対象外。
+  - **`admin.py` → `system_configs`(`deploy_state`ドキュメント):** instructions/203のSRE監査で確立された、任意コード実行(RCE)リスクを排除するためのデプロイ要求IPCチャネル。Cloud RunはFirestoreへ「pending」要求を書き込むのみで、実際のデプロイスクリプト実行はネットワークから到達不能なローカル常駐の`tools/deploy_poll_daemon.py`がFirestoreをポーリングして引き受ける。ローカルSQLite経由に置き換えると、Cloud Run側のSQLiteはエフェメラルであり、かつ`deploy_poll_daemon.py`はFirestoreしかポーリングしないため、デプロイ要求の伝達手段そのものが消失し機能が破壊される。
 - **非同期バックアップ同期:** ローカルDBに変更が加わった際、非同期ジョブ（`workers/`）を利用してFirestoreへデータをPush（上書き）する。
 - **同期失敗時のフェイルセーフ:** 通信エラー等でFirestoreへの同期が失敗した場合は、ローカルの「デッドレターキュー（DLQ）」への退避、または当該レコードへの「未同期フラグ（`sync_status = "pending"`）」の記録によって失敗を可視化する。
 - **リトライ機構 (冪等同期):** ネットワーク復旧時、ワーカーが `sync_status = "pending"` の未同期データを拾い上げ、Firestoreに対して冪等（何度実行しても結果が同じ）な上書き操作で同期を再試行する。
