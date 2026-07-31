@@ -785,6 +785,18 @@ def sandbox_verify_node(state: AuditState) -> dict:
     このノードに到達するのはcto_instructionが設定されている場合のみ(_route_after_cto)。
     worktree自体は managed_git_worktree により処理の成功・失敗に関わらず必ず破棄される
     (使い捨て)。人間レビューのために残るのはGitブランチのみ。
+
+    【instructions/270で再確認・意図的据え置き】tools/nazo_agent.py の
+    _create_and_open_pr(instructions/245、Gemma/Qwenの通常修正パス)は既に
+    git push + `gh pr create --draft` まで自動化済みだが、このノード(CTOへ
+    エスカレーションされた最難関のケース専用)は意図的にそこで止め、実際の
+    Push/PR作成は人間の手動操作に委ねる。ブランチ自動作成・個別パスでの
+    `git add`・ローカルコミットまでは同じ安全策を共有しつつ、Qwenが解決できず
+    Claudeまでエスカレーションされた=最もリスクの高い修正群についてのみ、
+    リモートへの反映(Push)を人間の意思決定なしに行わない、という二段構えの
+    保守性を意図的に維持している。将来の指示でこの手動ハンドオフを「未実装の
+    ギャップ」として再度自動化しようとする前に、これが2026-08-01にユーザーの
+    明示的な確認を得た上での意図的な設計判断であることを踏まえること。
     """
     instruction = state["cto_instruction"]
     repo_root = _find_git_repo_root(state["file_path"])
