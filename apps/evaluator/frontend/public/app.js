@@ -8,7 +8,7 @@ import { apiLogEvent, apiGenerate, apiGetStatus, apiSubmitHumanRiddle, apiFetchF
 import { uiSwitchTab } from "ui/tabs";
 import {
     uiGenReset, uiGenLoadingStart, uiGenLoadingStop, uiRenderGenResult, uiShowResult,
-    setSubmitModelRatingHandler,
+    uiMarkGenPollFailed, setSubmitModelRatingHandler,
 } from "ui/result";
 import {
     uiFeedClear, uiFeedShowLoading, uiFeedShowEnd, uiFeedShowEmpty, uiRenderFeed,
@@ -85,7 +85,14 @@ async function pollStatus(taskId) {
         const overallDone = data.status === 'all_completed' || data.status === 'completed';
         if (overallDone && isElyzaSideDone(data)) { return; } // 全完了（Gemini・ELYZA双方）。ポーリング終了
         setTimeout(() => pollStatus(taskId), 2000);
-    } catch (e) { showError(e.message); }
+    } catch (e) {
+        // 【instructions/289】ポーリングが例外(Fetch通信エラー、または上のstatus==='error'
+        // 判定による明示的throw)で中断した場合、トップレベルのローディング解除(showError内)
+        // だけでなく、まだ「生成中/採点中」スピナーを表示している個別カード(Gemini/ELYZA)も
+        // フォールバック表示へ遷移させる。
+        uiMarkGenPollFailed(taskId);
+        showError(e.message);
+    }
 }
 
 // 鑑定フォームの送信ロジック（ビジネスロジック）。UI制御は ui/form.js が担当し、
