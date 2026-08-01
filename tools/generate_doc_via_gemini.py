@@ -47,8 +47,10 @@ from google import genai
 from google.genai.types import GenerateContentConfig, HttpOptions
 
 if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
+    # typeshedのsys.stdout/stderrはTextIOとして型付けされreconfigure()を
+    # 宣言していないが、実行時は実際にTextIOWrapperであり存在する。
+    sys.stdout.reconfigure(encoding="utf-8")  # pyright: ignore[reportAttributeAccessIssue]
+    sys.stderr.reconfigure(encoding="utf-8")  # pyright: ignore[reportAttributeAccessIssue]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 FACTS_PATH = REPO_ROOT / "docs" / "architecture_facts.json"

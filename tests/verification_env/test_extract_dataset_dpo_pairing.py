@@ -34,7 +34,9 @@ def _candidate(**overrides) -> Candidate:
         engine_score=None,
     )
     base.update(overrides)
-    return Candidate(**base)
+    # dict[str, Any]的な**展開のため、Pyrightはbase各キーの値を個別に検証できず
+    # Candidateの各フィールド型との不一致を報告する(実際の値は各キーとも正しい型)。
+    return Candidate(**base)  # pyright: ignore[reportArgumentType]
 
 
 def test_same_dpo_pair_id_with_differing_engine_scores_forms_a_pair():

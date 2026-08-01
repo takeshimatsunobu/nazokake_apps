@@ -73,6 +73,8 @@ def main() -> int:
 
 if __name__ == "__main__":
     if sys.platform == "win32":
-        sys.stdout.reconfigure(encoding="utf-8")
-        sys.stderr.reconfigure(encoding="utf-8")
+        # typeshedのsys.stdout/stderrはTextIOとして型付けされreconfigure()を
+        # 宣言していないが、実行時は実際にTextIOWrapperであり存在する。
+        sys.stdout.reconfigure(encoding="utf-8")  # pyright: ignore[reportAttributeAccessIssue]
+        sys.stderr.reconfigure(encoding="utf-8")  # pyright: ignore[reportAttributeAccessIssue]
     sys.exit(main())

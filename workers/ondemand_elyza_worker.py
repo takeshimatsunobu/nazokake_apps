@@ -163,7 +163,9 @@ def _claim_job_sync(db, collection: str, doc_id: str) -> dict[str, Any] | None:
     doc_ref = db.collection(collection).document(doc_id)
     stale_cutoff = _stale_cutoff_iso()
 
-    @firestore.transactional
+    # google-cloud-firestoreの型スタブがtransactionalを宣言していないためのfalse
+    # positive(実行時には存在する。board.pyの同一パターンで動作確認済み)。
+    @firestore.transactional  # pyright: ignore[reportAttributeAccessIssue]
     def _txn(transaction) -> dict[str, Any] | None:
         snapshot = doc_ref.get(transaction=transaction)
         if not snapshot.exists:
