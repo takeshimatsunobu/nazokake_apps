@@ -31,9 +31,15 @@
 #      set -eによって後続ステップの失敗でスクリプト全体が中断されても、この
 #      安全装置だけは既に設定済みであることを保証するため、必ず最初に実行する。
 #   2. Bareリポジトリ(~/nazokake_apps.git)の初期化(冪等)。
-#      infra/verification_env/deploy_pull.shはこのBareリポジトリの存在を前提とする
-#      (deploy_to_vm.ps1からのgit push --forceの受け先)。
-#   3. Firestore監視(instructions/212: deploy_status_sync.py)に必要な
+#      【instructions/299で不使用に】deploy_pull.shはGitHub本体を直接fetch元とする
+#      よう改修済みのため、このBareリポジトリは現在どこからも参照されない残置物
+#      である(削除は別チケットで対応、instructions/299のPR参照)。
+#   3. nazokake-deploy.service(systemd user unit、instructions/300)の
+#      ~/.config/systemd/user/への導入とlinger有効化(冪等)。deploy_pull.sh自身も
+#      毎回のデプロイでこのユニットを同期するが、それが一度も走っていない新規VMの
+#      ためのフォールバック。作業ディレクトリが未クローンの場合はユニット導入のみ
+#      スキップする(linger有効化はリポジトリの有無に依存しないため常に実行)。
+#   4. Firestore監視(instructions/212: deploy_status_sync.py)に必要な
 #      firebase-admin等の依存関係解決(冪等)。
 #      作業ディレクトリ(~/nazokake_apps)が未クローンの場合はスキップし、次回起動時
 #      (deploy_pull.shによる初回クローン後)に収束する(Fail-Open、instructions/212の
@@ -67,7 +73,7 @@ if [[ -z "${VERIFICATION_HOME}" ]]; then
     exit 1
 fi
 
-echo "=== [1/3] デッドマンズスイッチ(TTL自動シャットダウン)の設定 ==="
+echo "=== [1/4] デッドマンズスイッチ(TTL自動シャットダウン)の設定 ==="
 # 【最優先・無条件】以下のBareリポジトリ初期化・依存関係解決がset -euo pipefail
 # により途中で失敗しても、この安全装置だけは常に設定済みの状態にするため、他の
 # どのステップよりも先に実行する。
@@ -86,7 +92,7 @@ shutdown -h "+${DEADMAN_SWITCH_MINUTES}" \
     || echo "[startup-script] WARN: シャットダウン予約に失敗しました。" >&2
 echo "[startup-script] デッドマンズスイッチを設定しました(起動から${DEADMAN_SWITCH_MINUTES}分後に自動シャットダウン)。"
 
-echo "=== [2/3] Bareリポジトリの初期化(冪等) ==="
+echo "=== [2/4] Bareリポジトリの初期化(冪等、instructions/299で不使用になった残置物) ==="
 if [[ -d "${BARE_REPO_DIR}" ]]; then
     echo "[startup-script] Bareリポジトリは既に存在します: ${BARE_REPO_DIR}(スキップ)"
 else
@@ -94,7 +100,41 @@ else
     echo "[startup-script] Bareリポジトリを初期化しました: ${BARE_REPO_DIR}"
 fi
 
-echo "=== [3/3] Firestore監視用の依存関係解決(firebase-admin等、冪等) ==="
+echo "=== [3/4] nazokake-deploy.serviceの導入とlinger有効化(instructions/300、冪等) ==="
+# 【新規VM向けフォールバック】infra/verification_env/deploy_pull.sh自身も毎回の
+# デプロイでこのユニットを~/.config/systemd/user/へ同期するが、deploy_pull.shが
+# 一度も走っていない新規VM(初回クローン前)ではそちらの同期が実行できない。
+# 本ステップはそのための起動時フォールバックであり、リポジトリが既にクローン
+# 済みの場合のみ実行する(instructions/212のFirestore依存関係解決と同じFail-Open、
+# 未クローン時は次回のdeploy_pull.sh初回クローン後・次回起動時に収束する)。
+if [[ ! -d "${REPO_DIR}/.git" ]]; then
+    echo "[startup-script] INFO: ${REPO_DIR} が未クローンのためスキップします。" \
+        "deploy_pull.shによる初回クローン後、次回のVM再起動時に収束します。"
+else
+    SYSTEMD_USER_UNIT_DIR="${VERIFICATION_HOME}/.config/systemd/user"
+    sudo -u "${VERIFICATION_USER}" mkdir -p "${SYSTEMD_USER_UNIT_DIR}"
+    sudo -u "${VERIFICATION_USER}" install -m 644 \
+        "${REPO_DIR}/infra/verification_env/nazokake-deploy.service" \
+        "${SYSTEMD_USER_UNIT_DIR}/nazokake-deploy.service"
+    # 【Fail-Open】起動シーケンスの早い段階ではlinger/ユーザーマネージャがまだ
+    # 立ち上がっていない可能性があり、その場合のバス接続失敗でブート全体を
+    # 止めるべきではない(ユニットファイル自体は既に配置済みで、次回の
+    # deploy_pull.sh実行時にdaemon-reloadが再試行される)。
+    sudo -u "${VERIFICATION_USER}" env XDG_RUNTIME_DIR="/run/user/$(id -u "${VERIFICATION_USER}")" \
+        systemctl --user daemon-reload \
+        || echo "[startup-script] WARN: systemctl --user daemon-reloadに失敗しました(次回deploy_pull.sh実行時に再同期されます)。" >&2
+    echo "[startup-script] ${SYSTEMD_USER_UNIT_DIR}/nazokake-deploy.service を導入しました。"
+fi
+
+# 【instructions/300: linger有効化】gcloud compute ssh --command="..."経由の短命な
+# 非対話セッションでも`systemctl --user start`が到達できるよう、アクティブな
+# ログインセッションの有無に関わらずこのユーザーのsystemdユーザーマネージャを
+# 常駐させる(loginctl enable-lingerは複数回実行しても安全な冪等操作)。
+loginctl enable-linger "${VERIFICATION_USER}" \
+    || echo "[startup-script] WARN: linger有効化に失敗しました。" >&2
+echo "[startup-script] ${VERIFICATION_USER}のlingerを有効化しました。"
+
+echo "=== [4/4] Firestore監視用の依存関係解決(firebase-admin等、冪等) ==="
 if [[ ! -d "${REPO_DIR}/.git" ]]; then
     echo "[startup-script] INFO: ${REPO_DIR} が未クローンのためスキップします。" \
         "deploy_pull.shによる初回クローン後、次回のVM再起動時に収束します。"

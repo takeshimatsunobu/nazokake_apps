@@ -2,8 +2,9 @@
 .SYNOPSIS
     Nazo-Agent verification server (GCP L4 GPU VM) closed-network GitOps
     kick script (instructions/187, refactored to direct-from-GitHub pull by
-    instructions/299). Fully replaces tools/deploy/run_verification_server.ps1
-    (ZIP compression + direct file transfer via gcloud compute scp/pscp.exe).
+    instructions/299, and to a systemd user unit kick by instructions/300).
+    Fully replaces tools/deploy/run_verification_server.ps1 (ZIP compression +
+    direct file transfer via gcloud compute scp/pscp.exe).
 
 .DESCRIPTION
     The legacy approach (instructions/164-167) ran ClickOps: git archive the
@@ -28,10 +29,24 @@
          implementation to Step 1 of run_verification_server.ps1).
       2. Wait loop for port 22 (SSH) to open (identical to the same Step 2).
       3. Kick infra/verification_env/deploy_pull.sh on the server
-         asynchronously over SSH (nohup + disown). deploy_pull.sh itself is
-         now solely responsible for `git fetch origin` + `git reset --hard
-         origin/main` directly against GitHub, followed by
-         setup_verification_env.sh -> docker compose up --build.
+         asynchronously over SSH. deploy_pull.sh itself is solely responsible
+         for `git fetch origin` + `git reset --hard origin/main` directly
+         against GitHub, followed by setup_verification_env.sh -> docker
+         compose up --build.
+
+    [instructions/300] Step 3's kick command changed from a raw
+    `nohup bash deploy_pull.sh & disown` to `systemctl --user start --no-block
+    nazokake-deploy.service`. deploy_pull.sh's docker compose calls (Rootless
+    Docker) need DOCKER_HOST/PATH that were previously expected to come from
+    ~/.bashrc, but `gcloud compute ssh --command=...` runs a non-login,
+    non-interactive shell that never sources it -- an SRE audit flagged this
+    as invocation-dependent hardcoding. infra/verification_env/nazokake-
+    deploy.service (a systemd user unit whose ExecStart is deploy_pull.sh)
+    declares that environment via Environment= directives instead, decoupled
+    from any shell startup file. $OutputEncoding is also forced to BOM-less
+    UTF-8 so the Japanese-language text this script relays back from the VM
+    (via journalctl/systemctl) doesn't get mangled by PowerShell's default
+    pipe encoding.
 
     [ABSOLUTE CONSTRAINT] This script must never include ZIP compression
     (git archive/Compress-Archive), direct file transfer logic such as
@@ -39,14 +54,15 @@
     pulling directly from GitHub; this script only starts it and tells it to
     pull.
 
-    [KNOWN LIMITATION (out of scope for instructions/187/299)] Step 3 only
-    kicks deploy_pull.sh asynchronously on the VM side; this script itself
-    does not wait for its completion (success/failure of docker compose up
-    --build). Therefore the dashboard that polls this process's stdout
-    (apps/evaluator/backend/api/routers/admin.py: deploy.log) will only show
-    that the kick happened, while the VM side's actual build progress is
-    recorded only in ~/nazokake_apps_deploy_pull.log on the VM. Relaying that
-    log to the dashboard is out of scope and tracked as a separate ticket.
+    [KNOWN LIMITATION (out of scope for instructions/187/299/300)] Step 3
+    only kicks nazokake-deploy.service asynchronously on the VM side; this
+    script itself does not wait for its completion (success/failure of
+    docker compose up --build). Therefore the dashboard that polls this
+    process's stdout (apps/evaluator/backend/api/routers/admin.py: deploy.log)
+    will only show that the kick happened, while the VM side's actual build
+    progress lives in `journalctl --user -u nazokake-deploy.service` on the
+    VM (see the command this script prints at the end). Relaying that log to
+    the dashboard is out of scope and tracked as a separate ticket.
 
 .EXAMPLE
     .\tools\deploy\deploy_to_vm.ps1
@@ -70,6 +86,13 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+
+# [instructions/300: encoding hardening] Force BOM-less UTF-8 for text this
+# script sends to/receives from native command pipes (git/gcloud, and the
+# Japanese-language stdout that `gcloud compute ssh --command=...` relays
+# back from journalctl/systemctl on the VM). Without this, PowerShell's
+# default pipe encoding can mangle that non-ASCII output into mojibake.
+$OutputEncoding = [System.Text.Encoding]::UTF8
 
 # [instructions/201: handling ZONE_RESOURCE_POOL_EXHAUSTED]
 # The originally considered approach (auto-retry by switching --zone on
@@ -293,23 +316,27 @@ Write-Host "[OK] SSH is open." -ForegroundColor Green
 # config state afterwards, regardless of how this block exits.
 Set-IapTlsTrust -CaBundlePath $CaCertBundlePath
 try {
-    # --- Step 3: Asynchronously kick deploy_pull.sh on the server -----------
+    # --- Step 3: Asynchronously kick nazokake-deploy.service on the server --
     # [instructions/299] No bare-repo init and no git push happen here anymore.
     # deploy_pull.sh itself now fetches directly from GitHub on the VM side,
     # so this script's only remaining job (beyond starting the VM and waiting
     # for SSH) is to tell the VM to go pull and rebuild.
-    Write-Host "[3/3] Kicking deploy_pull.sh asynchronously..." -ForegroundColor Cyan
+    # [instructions/300] The kick itself no longer runs deploy_pull.sh directly
+    # via nohup/disown. deploy_pull.sh's docker compose calls (Rootless Docker)
+    # need DOCKER_HOST/PATH that only got resolved if the invoking shell
+    # happened to source ~/.bashrc -- but `gcloud compute ssh --command=...`
+    # spawns a non-login, non-interactive shell that does NOT source it, which
+    # an SRE audit flagged as invocation-dependent hardcoding. Starting the
+    # systemd user unit infra/verification_env/nazokake-deploy.service instead
+    # (whose Environment= directives declare that environment declaratively)
+    # removes that dependency entirely. `--no-block` preserves the same
+    # "fire and forget" semantics as the old nohup + disown.
+    Write-Host "[3/3] Kicking nazokake-deploy.service asynchronously..." -ForegroundColor Cyan
 
-    # Using nohup + disown lets this run continue on the VM side without waiting
-    # for this SSH command itself (i.e. the gcloud compute ssh process) to exit
-    # ("asynchronous kick", instructions/187). deploy_pull.sh's own stdout/stderr
-    # accumulates in ~/nazokake_apps_deploy_pull.log on the VM (not relayed to
-    # this dashboard's deploy.log; see the known limitation in .SYNOPSIS).
-    $kickCommand = 'nohup bash ~/nazokake_apps/infra/verification_env/deploy_pull.sh ' +
-        '> ~/nazokake_apps_deploy_pull.log 2>&1 < /dev/null & disown; ' +
-        'echo "Kicked deploy_pull.sh in the background (PID: $!)"'
+    $kickCommand = 'systemctl --user start --no-block nazokake-deploy.service; ' +
+        'echo "Kicked nazokake-deploy.service (systemd user unit)."'
 
-    Invoke-GcloudWithRetry -Description "Asynchronous kick of deploy_pull.sh" -ScriptBlock {
+    Invoke-GcloudWithRetry -Description "Asynchronous kick of nazokake-deploy.service" -ScriptBlock {
         gcloud compute ssh $InstanceName --project=$ProjectId --zone=$Zone `
             --tunnel-through-iap --command=$kickCommand 2>&1
     }
@@ -317,6 +344,7 @@ try {
     Restore-IapTlsTrust
 }
 
-Write-Host "[DONE] GitOps deploy kick complete. See VM-side progress at " -ForegroundColor Green -NoNewline
-Write-Host "~/nazokake_apps_deploy_pull.log" -ForegroundColor Green -NoNewline
-Write-Host " on the VM." -ForegroundColor Green
+$journalctlCommand = "gcloud compute ssh $InstanceName --project=$ProjectId --zone=$Zone " +
+    "--tunnel-through-iap --command='journalctl --user -u nazokake-deploy.service -f'"
+Write-Host "[DONE] GitOps deploy kick complete. Follow VM-side progress with:" -ForegroundColor Green
+Write-Host "  $journalctlCommand" -ForegroundColor Green
