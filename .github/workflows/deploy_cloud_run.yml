@@ -137,3 +137,29 @@ jobs:
           env_vars: |
             EXCHANGE_RATE_USD_JPY=160.0
             SERVER_COST_PER_HOUR_JPY=5.0
+
+      # 【instructions/291】instructions/290で確定した「片肺デプロイ」(バックエンドの
+      # みが自動デプロイされ、Firebase Hostingへのフロントエンド配信が
+      # instructions/272の対応で誤って断絶していた)の復旧。バックエンドのデプロイが
+      # 成功した後にのみ実行することで、フロントエンド(API_BASE等)とバックエンドの
+      # 契約が食い違った状態が本番に公開される窓を作らない。
+      - name: Setup Node.js (for firebase-tools)
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install firebase-tools
+        run: npm install -g firebase-tools
+
+      # firebase-tools は GOOGLE_APPLICATION_CREDENTIALS (google-github-actions/auth
+      # が上のauthステップで既にエクスポート済み)を自動的に検出して認証するため、
+      # firebase login:ci のトークンやサービスアカウントキーの追加設定は不要
+      # (実際にこのステップが本番へデプロイまで通ることは、Firebase Hosting用の
+      # IAMロールがWIFサービスアカウントに付与済みであるかにも依存するため、
+      # この開発機では動的に検証できていない。deploy_cloud_run.yml冒頭の既存の
+      # 注記と同じ制約)。firebase.json/.firebaserc は apps/evaluator 配下にあり、
+      # hosting.public が frontend/public を指すため、そのディレクトリを
+      # working-directory とする。
+      - name: Deploy frontend to Firebase Hosting
+        working-directory: apps/evaluator
+        run: firebase deploy --only hosting --project "${{ env.PROJECT_ID }}" --non-interactive
