@@ -20,6 +20,14 @@ on:
     paths:
       - "apps/**"
       - ".github/workflows/**"
+      # 【instructions/293】このワークフロー自体はpyrightconfig.jsonの内容を一切
+      # 参照しない(Dockerビルド+脆弱性スキャン専用)が、もしこのジョブがGitHubの
+      # Required Status Checksに設定されている場合、パスフィルタで発火しない
+      # PR(pyrightconfig.jsonのみの変更等)はチェックが永久に「待機中」のまま
+      # マージをブロックし得る。この環境からはリポジトリのブランチ保護設定
+      # (どのチェックがRequiredか)を直接確認できなかったため、実害の有無に
+      # 関わらず予防的に追加する(コストは低頻度の余分なDockerビルドのみ)。
+      - "pyrightconfig.json"
 
 permissions:
   id-token: write
