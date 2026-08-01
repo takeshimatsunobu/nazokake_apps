@@ -1,0 +1,115 @@
+<#
+.SYNOPSIS
+    workers/ondemand_elyza_worker.py --loop をローカルPC(ワーカーサーバー)上で
+    確実かつ安全に起動・常駐させるためのラッパースクリプト(instructions/296)。
+
+.DESCRIPTION
+    tools/manage_local_processes.ps1(instructions/261)は本ワーカーの冪等な
+    バックグラウンド起動とゾンビポート浄化を担うが、起動後にワーカーが異常終了した
+    場合の自動再起動(クラッシュ耐性)は持たない。本スクリプトはその欠落を補う、
+    単体でも直接実行できる起動ラッパーである。
+
+    1. 【環境ガード】 run_api.ps1 / tools/manage_local_processes.ps1 と同じ規約で、
+       仮想環境(.venv)とワーカー本体の存在を検証し、欠落時は即座に exit 1 する。
+    2. 【PYTHONPATH】 プロジェクトルートを PYTHONPATH の先頭に追加する(既存の値が
+       あれば維持したまま先頭に足すのみで、他ツールの設定を壊さない)。
+       ※ ondemand_elyza_worker.py 自身も起動時に sys.path へ自己解決した絶対パスを
+       挿入するため実行上は必須ではないが、他プロセス/子プロセスから同モジュール群を
+       import する将来のユースケースに備え、指示された責務として明示的に設定する。
+    3. 【ログ出力】 標準出力/標準エラーを run/audit_reports/(instructions/265で
+       state配置先として定められた既存の安全なディレクトリ。tools/配下には書かない)
+       の専用ログファイルへ追記する。
+    4. 【クラッシュ耐性】 ワーカーが異常終了(非0終了)した場合のみ、$RestartDelaySec
+       秒待って自動再起動するループを回す。Ctrl+C等によるGraceful Shutdown
+       (ondemand_elyza_worker.py側でSIGINT/SIGTERMをハンドルし、正常終了時はexit 0を
+       返す)ではループを終了する。
+
+.EXAMPLE
+    .\scripts\start_elyza_worker.ps1
+    .\scripts\start_elyza_worker.ps1 -Interval 30 -RestartDelaySec 30
+#>
+
+[CmdletBinding(PositionalBinding = $false)]
+param(
+    # 0 は「未指定」を表すセンチネル値。省略時は workers/ondemand_elyza_worker.py
+    # 側の DEFAULT_POLL_INTERVAL_SEC をそのまま使わせ、既定値をここへ重複して
+    # ハードコードしない(run_api.ps1 の -Port と同じSSoT尊重の考え方)。
+    [double]$Interval = 0,
+    [int]$RestartDelaySec = 15
+)
+
+# native実行ファイルの非0終了やstderr出力を、PowerShell側の$ErrorActionPreference
+# 経由でterminating errorに昇格させない(PowerShell 7.3+のPSNativeCommandUseError
+# ActionPreference対策)。$LASTEXITCODEによる明示的な分岐のみで再起動可否を判定する。
+$PSNativeCommandUseErrorActionPreference = $false
+
+$env:PYTHONUTF8 = "1"
+$env:PYTHONIOENCODING = "utf-8"
+
+$ProjectRoot = Split-Path -Parent $PSScriptRoot
+$VenvDir = Join-Path $ProjectRoot ".venv"
+$VenvPython = Join-Path $VenvDir "Scripts\python.exe"
+$WorkerScript = Join-Path $ProjectRoot "workers\ondemand_elyza_worker.py"
+$LogDir = Join-Path $ProjectRoot "run\audit_reports"
+$LogFile = Join-Path $LogDir "start_elyza_worker.log"
+$PidFile = Join-Path $LogDir "start_elyza_worker.pid"
+
+# --- 【環境ガード】 (run_api.ps1と同じ規約) ---------------------------------
+$venvActive = [bool]$env:VIRTUAL_ENV
+$venvDirExists = Test-Path $VenvDir
+
+if (-not $venvActive -and -not $venvDirExists) {
+    Write-Error "仮想環境がアクティベートされていません。'.venv\Scripts\Activate.ps1' を実行してから再試行してください。"
+    exit 1
+}
+
+if (-not (Test-Path $VenvPython)) {
+    Write-Error "仮想環境のPythonが見つかりません: $VenvPython (.venv が壊れている可能性があります)"
+    exit 1
+}
+
+if (-not (Test-Path $WorkerScript)) {
+    Write-Error "ELYZAワーカーが見つかりません: $WorkerScript"
+    exit 1
+}
+
+New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+
+# --- 【PYTHONPATH】 ----------------------------------------------------------
+$env:PYTHONPATH = if ($env:PYTHONPATH) { "$ProjectRoot;$env:PYTHONPATH" } else { $ProjectRoot }
+
+$workerArgs = @("--loop")
+if ($Interval -gt 0) {
+    $workerArgs += @("--interval", "$Interval")
+}
+
+Set-Content -Path $PidFile -Value $PID -NoNewline
+Write-Host "起動: ondemand_elyza_worker.py $($workerArgs -join ' ') (PID=$PID, cwd=$ProjectRoot, log=$LogFile)"
+
+try {
+    while ($true) {
+        $startedAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        Add-Content -Path $LogFile -Value "[start_elyza_worker] $startedAt 起動します。"
+
+        Push-Location $ProjectRoot
+        try {
+            & $VenvPython $WorkerScript @workerArgs 2>&1 | Tee-Object -FilePath $LogFile -Append
+            $exitCode = $LASTEXITCODE
+        } finally {
+            Pop-Location
+        }
+
+        if ($exitCode -eq 0) {
+            Add-Content -Path $LogFile -Value "[start_elyza_worker] ワーカーが正常終了しました(exit=0)。再起動ループを終了します。"
+            break
+        }
+
+        $retryAt = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
+        $message = "[start_elyza_worker] $retryAt ワーカーが異常終了しました(exit=$exitCode)。${RestartDelaySec}秒後に自動再起動します。"
+        Add-Content -Path $LogFile -Value $message
+        Write-Warning $message
+        Start-Sleep -Seconds $RestartDelaySec
+    }
+} finally {
+    Remove-Item -Path $PidFile -ErrorAction SilentlyContinue
+}
