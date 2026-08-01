@@ -1,5 +1,13 @@
 // @ts-nocheck -- 未移行(段階的にJSDoc型付けを進める対象。ServiceWorker専用グローバルのため)
 // キャッシュ地獄を防ぐための最小構成 (Network-Only + オフライン審査突破用動的レスポンス)
+//
+// 【instructions/295】このファイルはCache Storage API(caches.open/caches.match等)を
+// 一切使用しない設計のため、旧バージョンのキャッシュパージ処理は該当なし(instructions/295
+// Step2の「使用していなければスキップでよい」に該当)。代わりに、ブラウザがこのSW自体を
+// 「変更された」と検知して更新サイクル(install→activate)を起動できるよう、このバージョン
+// マーカーをバイト変更する。更新時は必ずこの値も更新すること(index.html/admin.htmlの
+// import mapバージョンと合わせておくと追跡しやすい)。
+const SW_VERSION = 'v20260802';
 self.addEventListener('install', (event) => {
     self.skipWaiting();
 });
