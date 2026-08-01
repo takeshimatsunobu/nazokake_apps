@@ -22,8 +22,8 @@ if sys.platform == "win32":
 BASE_DIR = Path(__file__).resolve().parent.parent
 REPORT_PATH = BASE_DIR / "run" / "audit_reports" / "evaluation_report.json"
 
-ADAPTER_PATH = BASE_DIR / "apps" / "batch_factory" / "models" / "nazokake_elyza_lora"
-TEST_DATASET_PATH = BASE_DIR / "apps" / "evaluator" / "data" / "sft_dataset.jsonl"
+ADAPTER_PATH = BASE_DIR / "models" / "nazo_lora"
+TEST_DATASET_PATH = BASE_DIR / "data" / "sft_dataset.jsonl"
 MAX_SEQ_LENGTH = 1024
 HOLDOUT_RATIO = 0.1  # 末尾側N%をホールドアウト検証用に使う(スケルトン方針)
 

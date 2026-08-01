@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -47,7 +48,7 @@ from tools.exceptions import MLOpsInfrastructureError, PipelineExecutionError  #
 if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
-EVALUATION_REPORT_PATH = BASE_DIR / "tools" / "audit_reports" / "evaluation_report.json"
+EVALUATION_REPORT_PATH = BASE_DIR / "run" / "audit_reports" / "evaluation_report.json"
 BASELINE_PATH = BASE_DIR / "run" / "audit_reports" / "baseline_metrics_nazo.json"
 EXTRACTION_STATS_PATH = BASE_DIR / "data" / "extraction_stats.json"
 BASE_MODEL = "elyza:8b"
@@ -146,6 +147,11 @@ def main() -> int:
     mlops_common.preflight_gpu_cleanup()
 
     lock = mlops_common.acquire_vram_lock_with_backoff()
+    # 【instructions/275】このプロセスは既にVRAMロックを保持している。学習
+    # サブプロセス(tools/train_nazo_model.py)が自身でも取得を試みて自己
+    # デッドロックに陥らないよう、既に保持済みであることを子プロセスへ伝える
+    # (env=Noneのsubprocess.Popenは既定でこの環境変数をそのまま継承する)。
+    os.environ[mlops_common.VRAM_LOCK_HELD_BY_PARENT_ENV] = "1"
     try:
         try:
             mlops_common.run_step(

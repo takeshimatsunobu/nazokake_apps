@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -203,6 +204,11 @@ def main() -> int:
     mlops_common.preflight_gpu_cleanup()
 
     lock = mlops_common.acquire_vram_lock_with_backoff()
+    # 【instructions/275】このプロセスは既にVRAMロックを保持している。学習
+    # サブプロセス(tools/train_agent_model.py)が自身でも取得を試みて自己
+    # デッドロックに陥らないよう、既に保持済みであることを子プロセスへ伝える
+    # (env=Noneのsubprocess.Popenは既定でこの環境変数をそのまま継承する)。
+    os.environ[mlops_common.VRAM_LOCK_HELD_BY_PARENT_ENV] = "1"
     try:
         try:
             mlops_common.run_step(

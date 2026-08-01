@@ -34,6 +34,20 @@ if sys.platform == "win32":
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+# 【instructions/275: VRAM排他制御の防弾化】tools/mlops_pipeline_nazo.py /
+# tools/mlops_pipeline_agent.py は、抽出・学習・評価の全ステップをrun_step()経由で
+# サブプロセス実行する前に、この呼び出し元プロセス自身が既にVRAMロックを保持している
+# (acquire_vram_lock_with_backoff()参照)。学習エントリーポイント
+# (tools/train_nazo_model.py / tools/train_agent_model.py)は単独実行時にも自衛的に
+# 同じロックを取得すべきだが、そのまま無条件に取得すると、既にロックを保持している
+# 親プロセスの子として起動された場合(通常のオーケストレーション経路)、親がロックを
+# 解放するのを子が待ち、子の完了を親が待つという自己デッドロックに陥る。
+# このため、親プロセスは子プロセス起動前にこの環境変数を立てて「ロックは既に
+# 保持済みである」ことを子へ伝え、子側はこの値が真の場合は自身でのロック取得を
+# スキップする(env=Noneのsubprocess.Popenは既定で親の環境変数をそのまま継承する
+# ため、run_step()/ManagedProcess側の変更は不要)。
+VRAM_LOCK_HELD_BY_PARENT_ENV = "VRAM_LOCK_HELD_BY_PARENT"
+
 # nvidia-smiのPIDが「不要なPythonプロセス」かどうかの判定に使う部分一致キーワード。
 # tools/safe_reset_infra.py の LOCK_CANDIDATE_NAME_KEYWORDS と同じ考え方: 無差別に
 # システムプロセス全体を対象にせず、明らかに学習/推論用途のPythonプロセスだけに絞る
