@@ -24,6 +24,8 @@ import os
 import random
 import uuid
 from datetime import datetime, timezone
+from typing import Any
+
 from loguru import logger
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -35,7 +37,12 @@ from models.schemas import GenerateRequest
 from services.generation import generate_via_gemini, generate_via_llmjp
 from services.evaluation import run_evaluation, AXES
 from nazokake_core.database import async_get_item, async_upsert_item
-from nazokake_core.firestore_sync import _ensure_firebase_app, _resolve_collection, sync_once_safe
+from nazokake_core.firestore_sync import (
+    _ensure_firebase_app,
+    _normalize_for_sqlite,
+    _resolve_collection,
+    sync_once_safe,
+)
 from nazokake_core.quality_circuit_breaker import async_record_evaluation_score
 from nazokake_core.schemas import Result, Scores
 
@@ -264,6 +271,38 @@ async def _fetch_completed_elyza_job(doc_id: str) -> dict | None:
         return None
 
 
+def _fetch_full_document_sync(doc_id: str) -> dict[str, Any] | None:
+    """Firestoreの該当ドキュメントを全フィールド取得する(読み取り専用)。
+
+    【instructions/285】Cloud Runはマルチインスタンスで稼働し得るため、
+    POST /generateを処理したインスタンスと、後続のGET /status/{doc_id}を
+    ルーティングされるインスタンスが異なる場合がある。各インスタンスの
+    ローカルSQLite(/tmp)はインスタンス間で共有されないエフェメラルストレージの
+    ため、このインスタンスのローカルにdoc_idが存在しなくても、既に他インスタンスが
+    Firestoreへバックアップ済みであれば復元できる可能性がある(_fetch_completed_
+    elyza_job_syncと異なり、こちらは狭いフィールド集合ではなく全件を対象とする)。
+    """
+    _ensure_firebase_app()
+    db = firestore.client()
+    snapshot = db.collection(_resolve_collection()).document(doc_id).get()
+    if not snapshot.exists:
+        return None
+    data = snapshot.to_dict() or {}
+    data["doc_id"] = doc_id
+    return {k: _normalize_for_sqlite(v) for k, v in data.items()}
+
+
+async def _fetch_full_document(doc_id: str) -> dict[str, Any] | None:
+    """_fetch_completed_elyza_jobと同じ方針: Firestore参照失敗は吸収してNoneを返す
+    (呼び出し元は「復元できなかった」として通常の404フローへフォールバックする)。
+    """
+    try:
+        return await asyncio.to_thread(_fetch_full_document_sync, doc_id)
+    except Exception as e:
+        logger.warning(f"⚠️ [Status Pull] Firestoreからの全件取得に失敗: {e}")
+        return None
+
+
 @router.get("/status/{doc_id}")
 @handle_exceptions
 async def get_status(doc_id: str):
@@ -279,15 +318,48 @@ async def get_status(doc_id: str):
     # 同期を完結させる。
     await sync_once_safe()
     data = await async_get_item(doc_id)
-    if data is None:
-        raise HTTPException(status_code=404, detail="Not found")
 
-    # 【instructions/250】ローカルSQLite側でELYZAがまだ完了していない場合のみ、
-    # オンデマンドワーカーがFirestoreへ書き戻した結果がないか確認してマージする
-    # (ローカルが既に完了済みならFirestoreへは問い合わせない: 無駄なAPI呼び出し削減)。
-    if data.get("llmjp_status") != "completed":
+    if data is None:
+        # 【instructions/285】Cloud Runはマルチインスタンスで稼働し得るため、
+        # POST /generateを処理したインスタンスと異なるインスタンスへこの
+        # ポーリングがルーティングされた場合、このインスタンスのローカルSQLite
+        # (インスタンス間で共有されないエフェメラルストレージ)にはdoc_idが
+        # 存在しない。即座に404とはせず、まずFirestoreへフォールバックし、
+        # 存在すればローカルSQLiteへ取り込んで(能動的Pull)処理を継続する。
+        # Firestoreにも存在しない場合のみ、本当に404とする。
+        remote_full = await _fetch_full_document(doc_id)
+        if remote_full is not None:
+            try:
+                await async_upsert_item(remote_full)
+                data = await async_get_item(doc_id)
+            except Exception as e:
+                logger.warning(
+                    f"⚠️ [Status Pull] Firestoreから復元したドキュメントのローカル"
+                    f"SQLiteへの保存に失敗(doc_id={doc_id}): {e}"
+                )
+                data = None
+        if data is None:
+            raise HTTPException(status_code=404, detail="Not found")
+
+    # 【instructions/250→285】ローカルSQLite側にデータはあっても、オンデマンド
+    # ELYZAワーカーがまだジョブを完了させていない(elyza_job_statusがpending/
+    # processing等の未終端状態)場合、ワーカーがFirestoreへ直接書き込んだ最新の
+    # 進捗(completed等)を能動的にPullし、ローカルSQLiteへ上書き同期してから
+    # レスポンスを返す(llmjp_status=="completed"の場合は、ローカルの直接生成
+    # パスで既に完結しているため、無駄なFirestore問い合わせを行わない)。
+    if data.get("llmjp_status") != "completed" and data.get("elyza_job_status") in (
+        "pending",
+        "processing",
+    ):
         elyza_job_result = await _fetch_completed_elyza_job(doc_id)
         if elyza_job_result is not None:
+            try:
+                await async_upsert_item({"doc_id": doc_id, **elyza_job_result})
+            except Exception as e:
+                logger.warning(
+                    f"⚠️ [ELYZA Job] Firestoreから取得した進捗のローカルSQLiteへの"
+                    f"上書き同期に失敗(doc_id={doc_id}): {e}"
+                )
             data = {**data, **elyza_job_result}
 
     return {
