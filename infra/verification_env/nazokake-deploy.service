@@ -1,0 +1,55 @@
+# infra/verification_env/nazokake-deploy.service
+# ====================================================
+# systemd user unit that runs infra/verification_env/deploy_pull.sh
+# (instructions/300).
+#
+# 【背景: なぜsystemd user unitへ移行するか】deploy_pull.shのdocker compose呼び出し
+# (Rootless Docker)はDOCKER_HOSTと拡張PATH(rootless dockerdインストーラが追記する
+# ~/bin)を必要とする。従来はtools/deploy/deploy_to_vm.ps1がgcloud compute ssh
+# --command="nohup bash .../deploy_pull.sh & disown"という非ログイン・非対話シェルで
+# これをキックしており、この種のシェルは~/.bashrc等の起動ファイルを読み込まないため、
+# 環境変数解決が「たまたま動く」invocation依存のハードコード("秘伝のタレ")になって
+# いた(SRE監査で指摘)。本ユニットはこれらの環境変数をEnvironmentディレクティブで
+# 宣言的に注入することで、シェル起動ファイルのsource有無に一切依存しない決定論的な
+# 環境解決へ置き換える。XDG_RUNTIME_DIRはsystemdユーザーマネージャが自動的に
+# 正しく設定するため、ここで明示する必要はない。
+#
+# 【インストール(初回のみ、冪等)】infra/verification_env/deploy_pull.shが毎回の
+# デプロイでこのファイルを ~/.config/systemd/user/ へ同期する(auto_shutdown.pyの
+# IaC同期パターンと同じ、instructions/200)。まだ一度もdeploy_pull.shが走っていない
+# 新規VMでは、infra/verification_env/startup-script.sh(VM起動時に自律実行)が
+# 同じ同期処理のフォールバックを担う。
+#
+# 【手動インストール(緊急時)】
+#   mkdir -p ~/.config/systemd/user
+#   cp infra/verification_env/nazokake-deploy.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   loginctl enable-linger "$USER"   # アクティブなログインセッションが無くても
+#                                     # ユーザーマネージャを常駐させる(SSH経由の
+#                                     # 短命なキックセッションでも動作させるために必須)。
+#
+# 【使い方】tools/deploy/deploy_to_vm.ps1(instructions/300)経由で以下が実行される:
+#   systemctl --user start --no-block nazokake-deploy.service
+#   journalctl --user -u nazokake-deploy.service -f
+
+[Unit]
+Description=Nazokake verification server pull-based deploy (instructions/299/300)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/nazokake_apps
+ExecStart=/bin/bash %h/nazokake_apps/infra/verification_env/deploy_pull.sh
+
+# 【Rootless Docker向け環境変数の宣言的注入(instructions/300)】非対話SSHシェルが
+# ~/.bashrcを読み込まないことに一切依存しない、決定論的な環境変数解決。
+Environment=DOCKER_HOST=unix:///run/user/%U/docker.sock
+Environment=PATH=%h/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# deploy_pull.sh自体の出力(日本語ログ含む)がロケール依存で文字化けしないようにする。
+Environment=LANG=C.UTF-8
+Environment=LC_ALL=C.UTF-8
+
+StandardOutput=journal
+StandardError=journal

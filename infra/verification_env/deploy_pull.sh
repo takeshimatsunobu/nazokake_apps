@@ -2,7 +2,8 @@
 # infra/verification_env/deploy_pull.sh
 # =========================================
 # 検証サーバー(GCP VM)側のPull型デプロイスクリプト
-# (instructions/187、instructions/299でVM内Bareリポジトリの中継を完全に廃止)。
+# (instructions/187、instructions/299でVM内Bareリポジトリの中継を完全に廃止、
+# instructions/300でsystemd user unit(nazokake-deploy.service)経由の起動へ移行)。
 #
 # 【背景】従来のtools/deploy/run_verification_server.ps1は、Windows側でgit archiveした
 # HEADスナップショットをZIP化しgcloud compute scpで転送、リモートでunzip -oするだけの
@@ -24,8 +25,10 @@
 # 行わなくなった(instructions/270のPRベース運用と合わせ、デプロイはGitHub main への
 # マージ後にこのスクリプトを呼ぶだけで完結する)。
 #
-# 使い方(検証サーバー上、通常はtools/deploy/deploy_to_vm.ps1からSSH経由で非同期に
-# キックされる。手動実行も可):
+# 使い方(検証サーバー上、通常はtools/deploy/deploy_to_vm.ps1からSSH経由で
+# `systemctl --user start --no-block nazokake-deploy.service`としてキックされる
+# (instructions/300、このファイル自体がnazokake-deploy.serviceのExecStart)。
+# 手動実行も可:
 #   bash infra/verification_env/deploy_pull.sh
 
 set -euo pipefail
@@ -57,7 +60,7 @@ if ! flock -n "${DEPLOY_LOCK_FD}"; then
     exit 1
 fi
 
-echo "=== [1/5] GitHubからの稼働ディレクトリ同期(Pull、instructions/299) ==="
+echo "=== [1/6] GitHubからの稼働ディレクトリ同期(Pull、instructions/299) ==="
 
 if [[ ! -d "${REPO_DIR}/.git" ]]; then
     echo "ℹ️  ${REPO_DIR} が未クローンのため、GitHubから初回クローンします。"
@@ -85,7 +88,7 @@ echo "♻️  git reset --hard origin/${DEPLOY_TARGET_BRANCH} ..."
 git reset --hard "origin/${DEPLOY_TARGET_BRANCH}"
 echo "✅ 稼働ディレクトリを $(git rev-parse --short HEAD) へ同期しました。"
 
-echo "=== [2/5] auto_shutdown.pyをCron参照パスへ同期 ==="
+echo "=== [2/6] auto_shutdown.pyをCron参照パスへ同期 ==="
 # 【IaCとランタイムの構成同期(instructions/200)】instructions/199でauto_shutdown.py
 # をリポジトリ管理下に置きflockによる排他制御を実装したが、本スクリプトは
 # git reset --hardでREPO_DIR配下を更新するのみで、実際にtakesユーザーのcrontabが
@@ -98,7 +101,26 @@ mkdir -p "$(dirname "${AUTO_SHUTDOWN_DEST}")"
 install -m 755 "${REPO_DIR}/infra/verification_env/scripts/auto_shutdown.py" "${AUTO_SHUTDOWN_DEST}"
 echo "✅ ${AUTO_SHUTDOWN_DEST} を最新化しました。"
 
-echo "=== [3/5] setup_verification_env.sh(初回のみ、冪等性センチナル) ==="
+echo "=== [3/6] nazokake-deploy.serviceをsystemdユーザーユニットへ同期(instructions/300) ==="
+# 【IaCとランタイムの構成同期】auto_shutdown.pyと全く同じ理由: git reset --hardは
+# REPO_DIR配下を更新するのみで、systemdが実際に読むユニット探索パス
+# (~/.config/systemd/user/)へは配置しない。ここで同期しないと、リポジトリ側の
+# ユニット定義を更新しても次回デプロイ以降のsystemctl --user startに反映されない。
+# 新規VM(deploy_pull.shが一度も走っていない)向けのフォールバックとして、
+# infra/verification_env/startup-script.sh(VM起動時)も同じ同期を行う。
+SYSTEMD_USER_UNIT_DIR="${SYSTEMD_USER_UNIT_DIR:-${VERIFICATION_HOME}/.config/systemd/user}"
+mkdir -p "${SYSTEMD_USER_UNIT_DIR}"
+install -m 644 "${REPO_DIR}/infra/verification_env/nazokake-deploy.service" \
+    "${SYSTEMD_USER_UNIT_DIR}/nazokake-deploy.service"
+# 【Fail-Open】本スクリプトを暫定的にsystemd経由以外(手動bash実行等)でキックした
+# 場合、systemdユーザーマネージャのバスに接続できないことがある。この同期自体の
+# 失敗でデプロイ本体(git同期・docker compose up)まで止めるべきではないため、
+# 警告のみ出して継続する(instructions/212のFirestore記録と同じFail-Open方針)。
+systemctl --user daemon-reload \
+    || echo "⚠️  [WARN] systemctl --user daemon-reloadに失敗しました(systemdユーザーマネージャに未接続の可能性)。" >&2
+echo "✅ ${SYSTEMD_USER_UNIT_DIR}/nazokake-deploy.service を最新化しました。"
+
+echo "=== [4/6] setup_verification_env.sh(初回のみ、冪等性センチナル) ==="
 # 【冪等性(instructions/165を継承)】OSレベルのプロビジョニング(cgroup委譲・NVIDIA
 # Container Toolkit登録)は1度で十分であり、繰り返しdockerdを再起動するリスクそのものを
 # 構造的に無くすため、センチナルファイルにより初回のみ実行する。
@@ -110,7 +132,7 @@ else
     echo "ℹ️  setup_verification_env.sh は既に適用済みのためスキップします(冪等性)。"
 fi
 
-echo "=== [4/5] mlops-schedulerサイドカーの再起動 ==="
+echo "=== [5/6] mlops-schedulerサイドカーの再起動 ==="
 # docker compose up --buildはVM状態に関わらず毎回実行する(コードの再デプロイ自体は
 # 毎回反映させる必要があり、Compose自体は冪等かつtools/scheduler_daemon.pyの
 # Graceful Shutdown対応済みのため安全、instructions/165と同じ方針)。
@@ -118,7 +140,7 @@ docker compose -f infra/verification_env/docker-compose.yml up -d --build mlops-
 
 DEPLOYED_COMMIT="$(git rev-parse --short HEAD)"
 
-echo "=== [5/5] デプロイ状態をFirestoreへ記録(instructions/212: SSH無しのDoD検証用) ==="
+echo "=== [6/6] デプロイ状態をFirestoreへ記録(instructions/212: SSH無しのDoD検証用) ==="
 # 【絶対制約に抵触しない範囲でのFail-Open】ここでの失敗(firebase_admin未導入、
 # サービスアカウント権限不足等)は、直前まで成功していたデプロイ自体を無効化すべき
 # ではない(観測性の記録が、デプロイという実体のある成功を覆い隠してはならない)。
