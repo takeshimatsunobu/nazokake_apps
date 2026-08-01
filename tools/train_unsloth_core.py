@@ -26,7 +26,12 @@ run_dpo_training()(なぞかけ学習、prompt/chosen/rejected形式)。共通�
 import・4bit量子化ロード・LoRA(PEFT)設定・VRAM解放は、両関数から使う非公開ヘルパーへ
 集約し重複を避ける(Trainerクラス・データセット処理は各関数で完全に独立させる)。
 
-【VRAM 8GB防弾仕様(instructions/276、両関数で維持)】
+【instructions/278→279: なぞかけSFT専用関数の追加】instructions/278の調査で、
+data/sft_dataset.jsonl(tools/extract_dataset.pyの実際の出力)がChatMLの"messages"では
+なく{"prompt","completion"}のフラット2キーであることが判明した。run_sft_training()
+(Agent学習、ChatML専用)とは別に、この形状専用のrun_nazo_sft_training()を追加する。
+
+【VRAM 8GB防弾仕様(instructions/276、全関数で維持)】
 - モデルロード: max_seq_length=1024, load_in_4bit=True(VRAM枯渇防止)。
 - PEFT: r=16, target_modules=(7種のattention/MLP射影層), lora_alpha=16。
 - Trainer: per_device_train_batch_size=2, gradient_accumulation_steps=4,
@@ -157,6 +162,60 @@ def run_sft_training(base_model: str, dataset_path: Path, output_lora_path: Path
         print("[Action] Saving LoRA adapter")
         trainer.model.save_pretrained(str(output_lora_path))
         print(f"✅ SFT学習が完了しました: output_lora_path={output_lora_path}")
+    finally:
+        _cleanup_vram(model, tokenizer)
+
+
+def run_nazo_sft_training(base_model: str, dataset_path: Path, output_lora_path: Path) -> None:
+    """なぞかけSFT専用: {"prompt","completion"}の2カラムを持つデータセットに対する
+    SFTTrainer(instructions/278の調査で判明、tools/extract_dataset.pyが実際に出力する
+    data/sft_dataset.jsonlの形状はChatMLの"messages"ではなくこのフラット2キーだった)。
+
+    run_sft_training()(Agent学習、ChatML)とは別関数として分離する: なぞかけSFTには
+    チャットテンプレートを適用する対象("messages")が存在せず、単純な固定テンプレートで
+    1つのtextフィールドへ組み立てるだけで足りるため。
+    """
+    from datasets import load_dataset  # pyright: ignore[reportMissingImports]
+    from trl import SFTConfig, SFTTrainer  # pyright: ignore[reportMissingImports]
+
+    print(f"🧠 なぞかけSFT学習を開始します: base_model={base_model}, dataset_path={dataset_path}")
+
+    model, tokenizer = _load_model_with_lora(base_model)
+
+    print(f"[Action] Loading dataset: {dataset_path}")
+    dataset = load_dataset("json", data_files=str(dataset_path), split="train")
+
+    def _build_text(example: dict) -> dict:
+        text = f"### お題:\n{example['prompt']}\n\n### なぞかけ:\n{example['completion']}"
+        return {"text": text}
+
+    dataset = dataset.map(_build_text, remove_columns=dataset.column_names)
+
+    output_lora_path.mkdir(parents=True, exist_ok=True)
+
+    print("[Action] Initializing SFTTrainer")
+    trainer = SFTTrainer(
+        model=model,
+        tokenizer=tokenizer,
+        train_dataset=dataset,
+        dataset_text_field="text",
+        args=SFTConfig(
+            output_dir=str(output_lora_path),
+            per_device_train_batch_size=2,
+            gradient_accumulation_steps=4,
+            optim="paged_adamw_8bit",
+            max_steps=60,
+            seed=42,
+            report_to="none",
+        ),
+    )
+
+    print("[Action] Training started...")
+    try:
+        trainer.train()
+        print("[Action] Saving LoRA adapter")
+        trainer.model.save_pretrained(str(output_lora_path))
+        print(f"✅ なぞかけSFT学習が完了しました: output_lora_path={output_lora_path}")
     finally:
         _cleanup_vram(model, tokenizer)
 
