@@ -18,23 +18,32 @@
         <link href="https://fonts.googleapis.com/css2?family=Noto+Serif+JP:wght@400;700;900&display=swap" rel="stylesheet">
         <script src="https://cdn.tailwindcss.com"></script>
         <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <!-- 【instructions/295】ビルド/デプロイフローが存在しない素のJS配信のため、
+             ファイル名ハッシュ化によるキャッシュバスティングができない。代わりに
+             ローカルJSファイルのimport map解決先へ静的なバージョンクエリ文字列
+             (?v=YYYYMMDD)を付与し、ブラウザ/CDNキャッシュにこのHTML自体が更新
+             されるたびに強制的に新しいURLとして再フェッチさせる(instructions/290,
+             294で確定したアセット・スキュー対策)。次回このHTMLへ変更を加える際は
+             このバージョン文字列を更新すること(全エントリで同一の値に統一)。
+             外部CDN(firebase/app, firebase/auth)は既にURL自体にバージョンが
+             含まれているため対象外。 -->
         <script type="importmap">
         {
             "imports": {
-                "config": "/config.js",
-                "state": "/state.js",
-                "api": "/api.js",
-                "app": "/app.js",
-                "admin": "/admin.js",
-                "firebase-config": "/firebase-config.js",
-                "ui/auth": "/ui/auth.js",
-                "ui/toast": "/ui/toast.js",
-                "ui/tabs": "/ui/tabs.js",
-                "ui/feed": "/ui/feed.js",
-                "ui/board": "/ui/board.js",
-                "ui/form": "/ui/form.js",
-                "ui/result": "/ui/result.js",
-                "ui/feedback": "/ui/feedback.js",
+                "config": "/config.js?v=20260802",
+                "state": "/state.js?v=20260802",
+                "api": "/api.js?v=20260802",
+                "app": "/app.js?v=20260802",
+                "admin": "/admin.js?v=20260802",
+                "firebase-config": "/firebase-config.js?v=20260802",
+                "ui/auth": "/ui/auth.js?v=20260802",
+                "ui/toast": "/ui/toast.js?v=20260802",
+                "ui/tabs": "/ui/tabs.js?v=20260802",
+                "ui/feed": "/ui/feed.js?v=20260802",
+                "ui/board": "/ui/board.js?v=20260802",
+                "ui/form": "/ui/form.js?v=20260802",
+                "ui/result": "/ui/result.js?v=20260802",
+                "ui/feedback": "/ui/feedback.js?v=20260802",
                 "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
                 "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
             }
@@ -415,6 +424,7 @@
         <span class="text-[9px] sm:text-[10px] font-bold truncate w-full text-center">掲示板</span>
     </button>
 </nav>
-        <script type="module" src="/main_index.js"></script>
+        <!-- import mapを経由しないエントリーポイント自体もキャッシュバスティング対象に含める -->
+        <script type="module" src="/main_index.js?v=20260802"></script>
     </body>
 </html>
