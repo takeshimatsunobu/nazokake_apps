@@ -9,17 +9,26 @@ tools/mlops_pipeline_nazo.py
      tools/mlops_pipeline_agent.py が使用中の場合は、指数的バックオフで
      ポーリング待機してから取得する(限られたVRAM 8GBの排他制御)。
   3. データ抽出: tools/extract_dataset.py(SFT/DPOデータセット)をサブプロセスで実行する。
-  4. 学習: tools/train_nazo_model.py(なぞかけ学習専用エントリーポイント。内部で
-     共用コアエンジンtools/train_unsloth_core.pyを呼び出す、instructions/274)を
-     サブプロセスで実行する。
-  5. 自動評価(定量ゲート): tools/evaluate_model.py でホールドアウト正解率を計測し、
-     ベースラインを下回っていない場合のみ「学習成功およびデプロイ承認」とする。
+  4. 学習(instructions/280: SFT->DPO直列パイプライン):
+     4a. tools/train_nazo_sft_model.py(事前学習: SFT、tools/extract_dataset.pyの
+         data/sft_dataset.jsonlを使用)
+     4b. tools/train_nazo_model.py(選好最適化: DPO、data/dpo_dataset.jsonlを使用)
+     いずれも内部で共用コアエンジンtools/train_unsloth_core.pyを呼び出す
+     (instructions/274)。このプロセス自身が既にVRAMロックを保持したまま両ステップを
+     直列実行するため、GPUの同時競合(OOM)は発生しない。
+  5. 自動評価(定量ゲート、instructions/280): tools/evaluate_model.py が実推論で
+     Format Adherence Rateを測り、ベースラインとの比較・合否判定・ベースライン更新まで
+     自己完結して行い、合否を自身の終了コード(0=合格/1=不合格)で通知する
+     (mlops_common.run_step()が非0終了コードを検知しPipelineExecutionErrorとして
+     伝播させるため、ここでの合否の再判定は行わない。同一baseline_metrics_nazo.jsonを
+     このプロセス側でも二重に読み書きすると、「今回の値」を「今回の値」と比較して
+     常にdelta=0になるゲート形骸化バグを生むため、判定責務はevaluate_model.py側に
+     完全に一本化してある)。
 
 旧 tools/mlops_pipeline.py は、なぞかけ生成モデルを学習しながらNazo-Agentの
 AST自己修復ベンチマーク(tools/benchmark/run_benchmark.py)で評価するという、
 学習対象と評価対象が食い違ったパイプラインだった。この分離により、なぞかけ生成の
-品質はなぞかけ生成モデル自身のホールドアウト正解率(tools/evaluate_model.py)で
-正しく評価する。
+品質はなぞかけ生成モデル自身の実推論評価(tools/evaluate_model.py)で正しく評価する。
 """
 
 from __future__ import annotations
@@ -49,55 +58,8 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 EVALUATION_REPORT_PATH = BASE_DIR / "run" / "audit_reports" / "evaluation_report.json"
-BASELINE_PATH = BASE_DIR / "run" / "audit_reports" / "baseline_metrics_nazo.json"
 EXTRACTION_STATS_PATH = BASE_DIR / "data" / "extraction_stats.json"
 BASE_MODEL = "elyza:8b"
-
-
-def _load_baseline() -> dict | None:
-    if not BASELINE_PATH.exists():
-        return None
-    return json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
-
-
-def _save_baseline(metrics: dict) -> None:
-    BASELINE_PATH.parent.mkdir(parents=True, exist_ok=True)
-    BASELINE_PATH.write_text(
-        json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-
-
-def evaluate_quality_gate(report: dict) -> bool:
-    """定量評価ゲート: ホールドアウト正解率が既存ベースラインを下回っていないかを判定する。
-
-    report["status"] が "completed" でない場合(アダプタ未検出/テストデータ無し等)は、
-    正解率そのものを計測できていないため、非退行を確認できず安全側に倒して不合格とする。
-    """
-    if report.get("status") != "completed":
-        print(
-            f"🚨 [ゲート判定] 評価が完了しませんでした(status={report.get('status')}, "
-            f"reason={report.get('reason')})。非退行を確認できないため、"
-            "安全側に倒して不合格とします。"
-        )
-        return False
-
-    accuracy = report.get("metrics", {}).get("accuracy")
-    baseline = _load_baseline()
-    baseline_accuracy = baseline.get("accuracy") if baseline else None
-
-    print(f"📊 Accuracy: {accuracy} (ベースライン: {baseline_accuracy})")
-
-    if baseline_accuracy is None:
-        print("ℹ️  ベースラインが存在しないため、Accuracy Deltaの判定はスキップします。")
-    else:
-        delta = accuracy - baseline_accuracy
-        print(f"📊 Accuracy Delta: {delta}")
-        if delta < 0:
-            print("🚨 [ゲート判定] Accuracyが現行ベースラインを下回りました。")
-            return False
-
-    _save_baseline({"accuracy": accuracy})
-    return True
 
 
 def _record_experiment(report: dict | None, latency: float, *, pipeline_success: bool) -> None:
@@ -116,16 +78,16 @@ def _record_experiment(report: dict | None, latency: float, *, pipeline_success:
     if EXTRACTION_STATS_PATH.exists():
         extraction_stats = json.loads(EXTRACTION_STATS_PATH.read_text(encoding="utf-8"))
 
-    accuracy = None
+    format_adherence_rate = None
     if report is not None and report.get("status") == "completed":
-        accuracy = report.get("metrics", {}).get("accuracy")
+        format_adherence_rate = report.get("metrics", {}).get("format_adherence_rate")
 
     mlops_experiments_db.record_experiment(
         pipeline_type="nazo",
         dataset_size=(extraction_stats or {}).get("dataset_size"),
         coreset_ratio=(extraction_stats or {}).get("coreset_ratio"),
         base_model=BASE_MODEL,
-        success_rate=accuracy,
+        success_rate=format_adherence_rate,
         latency=latency,
         regression_rate=None,  # なぞかけ生成モデルの評価にはRegression Rateの概念が無い
     )
@@ -147,10 +109,11 @@ def main() -> int:
     mlops_common.preflight_gpu_cleanup()
 
     lock = mlops_common.acquire_vram_lock_with_backoff()
-    # 【instructions/275】このプロセスは既にVRAMロックを保持している。学習
-    # サブプロセス(tools/train_nazo_model.py)が自身でも取得を試みて自己
-    # デッドロックに陥らないよう、既に保持済みであることを子プロセスへ伝える
-    # (env=Noneのsubprocess.Popenは既定でこの環境変数をそのまま継承する)。
+    # 【instructions/275、instructions/280でSFT/DPO両ステップに適用】このプロセスは
+    # 既にVRAMロックを保持している。学習サブプロセス(tools/train_nazo_sft_model.py・
+    # tools/train_nazo_model.pyの両方)が自身でも取得を試みて自己デッドロックに
+    # 陥らないよう、既に保持済みであることを子プロセスへ伝える(env=Noneの
+    # subprocess.Popenは既定でこの環境変数をそのまま継承する)。
     os.environ[mlops_common.VRAM_LOCK_HELD_BY_PARENT_ENV] = "1"
     try:
         try:
@@ -160,12 +123,17 @@ def main() -> int:
             )
 
             mlops_common.run_step(
-                "学習(なぞかけ生成モデル)",
+                "学習(なぞかけ生成モデル: SFT事前学習)",
+                ["uv", "run", "python", "tools/train_nazo_sft_model.py"],
+            )
+
+            mlops_common.run_step(
+                "学習(なぞかけ生成モデル: DPO選好最適化)",
                 ["uv", "run", "python", "tools/train_nazo_model.py"],
             )
 
             mlops_common.run_step(
-                "自動評価(なぞかけ生成モデルのホールドアウト検証)",
+                "自動評価(なぞかけ生成モデルのFormat Adherence Rateゲート)",
                 ["uv", "run", "python", "tools/evaluate_model.py"],
             )
         finally:
@@ -194,6 +162,11 @@ def main() -> int:
         _record_experiment(None, latency, pipeline_success=False)
         return 1
 
+    # ここに到達するのは、評価ステップ(tools/evaluate_model.py)を含む全ステップが
+    # 例外を送出せず終了した場合のみ = 同スクリプト自身のゲート判定(instructions/280)
+    # で既に合格していることを意味する(不合格ならexit 1 -> run_step()が
+    # PipelineExecutionErrorを送出し、上のexceptブロックで既にpipeline_success=False
+    # として処理・returnされている)。ここでの合否再判定は行わない。
     latency = time.monotonic() - start_time
 
     if not EVALUATION_REPORT_PATH.exists():
@@ -204,17 +177,9 @@ def main() -> int:
         return 1
 
     report = json.loads(EVALUATION_REPORT_PATH.read_text(encoding="utf-8"))
-    gate_passed = evaluate_quality_gate(report)
-    _record_experiment(report, latency, pipeline_success=gate_passed)
-
-    if gate_passed:
-        print("\n🎉 学習成功およびデプロイ承認(なぞかけ生成モデル)")
-        return 0
-
-    message = "🛑 定量評価ゲートを通過しなかったため、デプロイを承認しません。"
-    print(f"\n{message}")
-    mlops_common.send_alert_webhook(f"[MLOps/nazo] {message}")
-    return 1
+    _record_experiment(report, latency, pipeline_success=True)
+    print("\n🎉 学習成功およびデプロイ承認(なぞかけ生成モデル)")
+    return 0
 
 
 if __name__ == "__main__":

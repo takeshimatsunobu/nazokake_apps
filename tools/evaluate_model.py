@@ -1,12 +1,19 @@
 """
 tools/evaluate_model.py
 =========================
-学習済みLoRAアダプタのホールドアウト検証(Epic 3 Phase 3)。
+なぞかけ生成モデル(ベース+DPO学習済みLoRA)の自動評価ゲート(Epic 3 Phase 3、
+実推論への置き換えはinstructions/280)。
 
-将来の拡張を前提とした基礎スケルトン: 最新のLoRAアダプタとテストデータセットを
-ロードして推論を実行し、簡易的な正解率を算出する。より厳密なスコアリング
-(ルーブリック評価等)は将来の拡張で差し替える想定。
-評価結果は run/audit_reports/evaluation_report.json へ記録する。
+ベースモデル(elyza:8b)とDPO学習済みLoRA(models/nazo_lora)をロードし、実データから
+サンプルしたお題に対して実際に推論(generate)を行い、生成結果が「とかけて」
+「ととく」「その心は」等のなぞかけ基本フォーマットを満たしている割合
+(Format Adherence Rate)を測る。既存ベースライン(run/audit_reports/
+baseline_metrics_nazo.json)と比較し、退行していなければ合格(Exit 0)、
+退行していれば不合格(Exit 1)とする(呼び出し元のtools/mlops_common.run_step()が
+非0終了コードを検知し、パイプラインをFail-Fastで停止させる)。
+
+評価結果(生スコアを含む)は run/audit_reports/evaluation_report.json へ、合否に
+関わらず必ず記録する(観測性のため)。
 """
 
 import gc
@@ -14,22 +21,36 @@ import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
+    # typeshedのsys.stdout/stderrはTextIOとして型付けされreconfigure()を
+    # 宣言していないが、実行時は実際にTextIOWrapperであり存在する。
+    sys.stdout.reconfigure(encoding="utf-8")  # pyright: ignore[reportAttributeAccessIssue]
+    sys.stderr.reconfigure(encoding="utf-8")  # pyright: ignore[reportAttributeAccessIssue]
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 REPORT_PATH = BASE_DIR / "run" / "audit_reports" / "evaluation_report.json"
+BASELINE_PATH = BASE_DIR / "run" / "audit_reports" / "baseline_metrics_nazo.json"
 
+BASE_MODEL = "elyza:8b"
 ADAPTER_PATH = BASE_DIR / "models" / "nazo_lora"
 TEST_DATASET_PATH = BASE_DIR / "data" / "sft_dataset.jsonl"
 MAX_SEQ_LENGTH = 1024
-HOLDOUT_RATIO = 0.1  # 末尾側N%をホールドアウト検証用に使う(スケルトン方針)
+SAMPLE_SIZE = 8
+
+# なぞかけの基本フォーマットを構成する必須キーワード。生成結果がこれら全てを
+# 含む場合のみ「フォーマット遵守」とみなす(instructions/280)。
+FORMAT_KEYWORDS = ("とかけて", "ととく", "その心は")
 
 
-def load_holdout_records(path: Path, holdout_ratio: float = HOLDOUT_RATIO) -> list[dict]:
-    """テストデータセットを読み込み、末尾側をホールドアウト分として切り出す。"""
+def load_sample_records(path: Path, sample_size: int = SAMPLE_SIZE) -> list[dict]:
+    """テストデータセットの先頭からsample_size件を決定論的にサンプルする。
+
+    ランダムサンプリングにしないのは、ベースラインとの比較が意味を持つよう、
+    実行のたびに同じお題集合で評価する必要があるため(tools/extract_dataset.pyの
+    seed=固定の学習と同じ再現性の思想)。
+    """
     if not path.exists():
         print(f"[Fatal] Dataset not found at: {path}")
         return []
@@ -45,54 +66,57 @@ def load_holdout_records(path: Path, holdout_ratio: float = HOLDOUT_RATIO) -> li
             except json.JSONDecodeError:
                 continue
 
-    if not records:
-        return []
-    holdout_size = max(1, int(len(records) * holdout_ratio))
-    return records[-holdout_size:]
+    return records[:sample_size]
 
 
-def evaluate(adapter_path: Path, test_records: list[dict]) -> dict:
-    """LoRAアダプタをロードし、ホールドアウトデータで推論・簡易評価を行う。
+def _is_format_adherent(generated_text: str) -> bool:
+    """生成テキストがなぞかけの基本フォーマット(3キーワード全て)を満たすか判定する。"""
+    return all(keyword in generated_text for keyword in FORMAT_KEYWORDS)
 
-    正解率(生成結果に正解のassistant発話が含まれるか)を測る簡易実装。
+
+def evaluate(base_model: str, adapter_path: Path, test_records: list[dict]) -> dict:
+    """ベースモデル+DPO学習済みLoRAで実推論を行い、Format Adherence Rateを測る。
+
+    tools/extract_dataset.pyが出力する"prompt"はodai(お題)そのままの生文字列
+    (指示テンプレートで包んでいない)であるため、学習時と同じ分布に合わせ、
+    評価時もodaiをそのままモデルへ入力する。
     """
-    import torch
-    from unsloth import FastLanguageModel
+    import torch  # pyright: ignore[reportMissingImports]
+    from unsloth import FastLanguageModel  # pyright: ignore[reportMissingImports]
 
     model = None
     tokenizer = None
     try:
-        print(f"[Action] Loading LoRA adapter: {adapter_path}")
+        print(f"[Action] Loading base model: {base_model}")
         model, tokenizer = FastLanguageModel.from_pretrained(
-            model_name=str(adapter_path),
+            model_name=base_model,
             max_seq_length=MAX_SEQ_LENGTH,
             dtype=None,
             load_in_4bit=True,
         )
+        print(f"[Action] Loading DPO-trained LoRA adapter: {adapter_path}")
+        model.load_adapter(str(adapter_path))
         FastLanguageModel.for_inference(model)
 
-        correct = 0
+        adherent = 0
         total = len(test_records)
         for record in test_records:
-            messages = record.get("messages", [])
-            expected = next((m["content"] for m in messages if m.get("role") == "assistant"), "")
-            prompt_messages = [m for m in messages if m.get("role") != "assistant"]
-
-            inputs = tokenizer.apply_chat_template(
-                prompt_messages,
-                tokenize=True,
-                add_generation_prompt=True,
-                return_tensors="pt",
-            ).to("cuda")
+            odai = record.get("prompt", "")
+            inputs = tokenizer(odai, return_tensors="pt").to("cuda")
             with torch.no_grad():
-                output_ids = model.generate(inputs, max_new_tokens=256, do_sample=False)
-            generated = tokenizer.decode(output_ids[0][inputs.shape[1]:], skip_special_tokens=True)
+                output_ids = model.generate(**inputs, max_new_tokens=256, do_sample=False)
+            generated = tokenizer.decode(
+                output_ids[0][inputs["input_ids"].shape[1] :], skip_special_tokens=True
+            )
+            if _is_format_adherent(generated):
+                adherent += 1
 
-            if expected.strip() and expected.strip() in generated:
-                correct += 1
-
-        accuracy = (correct / total) if total else 0.0
-        return {"total_samples": total, "correct": correct, "accuracy": accuracy}
+        format_adherence_rate = (adherent / total) if total else 0.0
+        return {
+            "total_samples": total,
+            "format_adherent_count": adherent,
+            "format_adherence_rate": format_adherence_rate,
+        }
     finally:
         # OOM等の例外発生時でも確実にVRAMを解放するフェイルセーフ。
         if model is not None:
@@ -105,10 +129,57 @@ def evaluate(adapter_path: Path, test_records: list[dict]) -> dict:
         print("[Fact] VRAM cleanup complete.")
 
 
-def main() -> None:
-    test_records = load_holdout_records(TEST_DATASET_PATH)
-    report = {
+def _load_baseline() -> dict | None:
+    if not BASELINE_PATH.exists():
+        return None
+    return json.loads(BASELINE_PATH.read_text(encoding="utf-8"))
+
+
+def _save_baseline(metrics: dict) -> None:
+    BASELINE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    BASELINE_PATH.write_text(
+        json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
+    )
+
+
+def evaluate_quality_gate(report: dict) -> bool:
+    """定量評価ゲート: Format Adherence Rateが既存ベースラインを下回っていないかを判定する。
+
+    report["status"]が"completed"でない場合(アダプタ未検出/テストデータ無し等)は、
+    スコアそのものを計測できていないため、非退行を確認できず安全側に倒して不合格とする。
+    """
+    if report.get("status") != "completed":
+        print(
+            f"🚨 [ゲート判定] 評価が完了しませんでした(status={report.get('status')}, "
+            f"reason={report.get('reason')})。非退行を確認できないため、"
+            "安全側に倒して不合格とします。"
+        )
+        return False
+
+    rate = report.get("metrics", {}).get("format_adherence_rate")
+    baseline = _load_baseline()
+    baseline_rate = baseline.get("format_adherence_rate") if baseline else None
+
+    print(f"📊 Format Adherence Rate: {rate} (ベースライン: {baseline_rate})")
+
+    if baseline_rate is None:
+        print("ℹ️  ベースラインが存在しないため、退行判定はスキップします。")
+    else:
+        delta = rate - baseline_rate
+        print(f"📊 Format Adherence Rate Delta: {delta}")
+        if delta < 0:
+            print("🚨 [ゲート判定] Format Adherence Rateが現行ベースラインを下回りました。")
+            return False
+
+    _save_baseline({"format_adherence_rate": rate})
+    return True
+
+
+def main() -> int:
+    test_records = load_sample_records(TEST_DATASET_PATH)
+    report: dict[str, Any] = {
         "evaluated_at": datetime.now(timezone.utc).isoformat(),
+        "base_model": BASE_MODEL,
         "adapter_path": str(ADAPTER_PATH),
         "test_dataset_path": str(TEST_DATASET_PATH),
     }
@@ -118,11 +189,11 @@ def main() -> None:
         report["status"] = "skipped"
         report["reason"] = "adapter_not_found"
     elif not test_records:
-        print(f"[Fatal] No holdout records available from: {TEST_DATASET_PATH}")
+        print(f"[Fatal] No test records available from: {TEST_DATASET_PATH}")
         report["status"] = "skipped"
         report["reason"] = "no_test_data"
     else:
-        metrics = evaluate(ADAPTER_PATH, test_records)
+        metrics = evaluate(BASE_MODEL, ADAPTER_PATH, test_records)
         report["status"] = "completed"
         report["metrics"] = metrics
 
@@ -131,6 +202,12 @@ def main() -> None:
         json.dump(report, f, ensure_ascii=False, indent=2)
     print(f"[Fact] Evaluation report saved to: {REPORT_PATH}")
 
+    if evaluate_quality_gate(report):
+        print("✅ [ゲート判定] 退行なし。合格。")
+        return 0
+    print("🛑 [ゲート判定] 不合格。")
+    return 1
+
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
