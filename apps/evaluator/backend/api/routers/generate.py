@@ -230,7 +230,11 @@ async def _guarded_progressive(db, doc_id: str, odai: str, pair_id: str):
 # GET /status がマージしてよいフィールドのみを明示的に列挙する(スコープ限定)。
 # status/eval_status/result/scores等のGemini・主系フィールドはここに含めない
 # (SSoT §8.2の一方向同期原則への例外はこの狭いフィールド集合に限定されるため)。
+# 【instructions/286】elyza_job_status自体もここに含める。フロントエンドが
+# ポーリング終了判定に用いるため(以前は完了/失敗を問わずレスポンスに一切
+# 含まれておらず、ローカルSQLiteにも反映されなかった)。
 _ELYZA_JOB_MERGE_FIELDS = (
+    "elyza_job_status",
     "llmjp_status",
     "result_llmjp",
     "nazokake_text_llmjp",
@@ -241,10 +245,16 @@ _ELYZA_JOB_MERGE_FIELDS = (
 )
 
 
-def _fetch_completed_elyza_job_sync(doc_id: str) -> dict | None:
+def _fetch_terminal_elyza_job_sync(doc_id: str) -> dict | None:
     """Firestoreの該当ドキュメントを直接読み取り、オンデマンドELYZAワーカーが
-    elyza_job_status="completed"を書き込み済みであれば、マージ対象フィールドのみを
-    返す(読み取り専用。Cloud Run側からのFirestoreへの書き込みは一切行わない)。
+    elyza_job_statusを終端状態(completed または dead_letter。pending/processing
+    以外)へ更新済みであれば、マージ対象フィールドのみを返す(読み取り専用。
+    Cloud Run側からのFirestoreへの書き込みは一切行わない)。
+
+    【instructions/286】以前は remote.get("elyza_job_status") == "completed" の
+    場合のみ真としていたため、ジョブが dead_letter(恒久失敗)へ落ちた場合に
+    永遠にマージされず、ローカルSQLiteのelyza_job_statusがpendingのまま残り、
+    フロントエンドのポーリングが無限ループする不具合があった。
 
     firebase_adminの同期APIをそのまま使う(呼び出し元でasyncio.to_threadに包む)。
     """
@@ -254,18 +264,18 @@ def _fetch_completed_elyza_job_sync(doc_id: str) -> dict | None:
     if not snapshot.exists:
         return None
     remote = snapshot.to_dict() or {}
-    if remote.get("elyza_job_status") != "completed":
+    if remote.get("elyza_job_status") in ("pending", "processing"):
         return None
     return {field: remote.get(field) for field in _ELYZA_JOB_MERGE_FIELDS}
 
 
-async def _fetch_completed_elyza_job(doc_id: str) -> dict | None:
+async def _fetch_terminal_elyza_job(doc_id: str) -> dict | None:
     """Firestore参照が失敗しても(オフライン・権限エラー等)、ローカルSQLite単独の
     結果へ安全に縮退できるよう、例外はここで吸収してNoneを返す
     (呼び出し元のポーリングエンドポイント自体を落とさない)。
     """
     try:
-        return await asyncio.to_thread(_fetch_completed_elyza_job_sync, doc_id)
+        return await asyncio.to_thread(_fetch_terminal_elyza_job_sync, doc_id)
     except Exception as e:
         logger.warning(f"⚠️ [ELYZA Job] Firestoreからの結果マージに失敗(ローカルのみで続行): {e}")
         return None
@@ -351,7 +361,7 @@ async def get_status(doc_id: str):
         "pending",
         "processing",
     ):
-        elyza_job_result = await _fetch_completed_elyza_job(doc_id)
+        elyza_job_result = await _fetch_terminal_elyza_job(doc_id)
         if elyza_job_result is not None:
             try:
                 await async_upsert_item({"doc_id": doc_id, **elyza_job_result})
@@ -366,6 +376,10 @@ async def get_status(doc_id: str):
         "status": data.get("status") or "unknown",
         "eval_status": data.get("eval_status") or "unknown",
         "llmjp_status": data.get("llmjp_status") or "none",
+        # 【instructions/286】フロントエンドのポーリング終了判定用。オンデマンド
+        # ジョブキュー(instructions/250)を経由しないドキュメント(ローカル直接生成
+        # パスや旧データ)ではキー自体が存在せず None(=JSON null)になり得る。
+        "elyza_job_status": data.get("elyza_job_status"),
         "message": data.get("message") or "",
         "odai": data.get("odai") or "",
         # 主（Gemini）結果＋評価（既存UI互換: result/scores/overall/axis_comments/s_total）
