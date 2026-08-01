@@ -53,6 +53,12 @@ on:
       - "packages/**"
       - "tools/**"
       - ".github/workflows/**"
+      # 【instructions/293】pyrightconfig.json はリポジトリルート直下で上記の
+      # どのglobにも一致しないため、これのみを変更したPRではこのワークフロー自体が
+      # 発火せず、Required Statusチェックが「待機中」のまま解消されずマージが
+      # 永久にブロックされるデッドロックが発生していた(instructions/292で実際に
+      # このファイル単体のみを変更するPRを作った際に発覚)。
+      - "pyrightconfig.json"
 
 permissions:
   contents: read
