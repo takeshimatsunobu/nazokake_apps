@@ -14,7 +14,9 @@ Nazo-Agent(自己修復エンジン)のMLOps完全自動パイプライン(Epic 
      このパイプラインの実行タイミングでは既に消費・消失済みであることが多いため
      (実際の蓄積は成功修復のたびにnazo_agent.py自身が既に行っている、この
      ステップは取りこぼしを拾うベストエフォート)。
-  4. 学習: tools/train_unsloth.py をサブプロセスで実行する。
+  4. 学習: tools/train_agent_model.py(Agent学習専用エントリーポイント。内部で
+     共用コアエンジンtools/train_unsloth_core.pyを呼び出す、instructions/274)を
+     サブプロセスで実行する。
   5. 自動評価(定量ゲート): tools/benchmark/run_benchmark.py を実行してメトリクスJSONを
      取得し、Success Rate Delta>=0 かつ Code Complexity増加率<10% を満たした場合のみ
      「学習成功およびデプロイ承認」として正常終了する。
@@ -211,7 +213,7 @@ def main() -> int:
 
             mlops_common.run_step(
                 "学習(Nazo-Agent)",
-                ["uv", "run", "python", "tools/train_unsloth.py"],
+                ["uv", "run", "python", "tools/train_agent_model.py"],
             )
 
             mlops_common.run_step(

@@ -9,7 +9,9 @@ tools/mlops_pipeline_nazo.py
      tools/mlops_pipeline_agent.py が使用中の場合は、指数的バックオフで
      ポーリング待機してから取得する(限られたVRAM 8GBの排他制御)。
   3. データ抽出: tools/extract_dataset.py(SFT/DPOデータセット)をサブプロセスで実行する。
-  4. 学習: tools/train_unsloth.py をサブプロセスで実行する。
+  4. 学習: tools/train_nazo_model.py(なぞかけ学習専用エントリーポイント。内部で
+     共用コアエンジンtools/train_unsloth_core.pyを呼び出す、instructions/274)を
+     サブプロセスで実行する。
   5. 自動評価(定量ゲート): tools/evaluate_model.py でホールドアウト正解率を計測し、
      ベースラインを下回っていない場合のみ「学習成功およびデプロイ承認」とする。
 
@@ -153,7 +155,7 @@ def main() -> int:
 
             mlops_common.run_step(
                 "学習(なぞかけ生成モデル)",
-                ["uv", "run", "python", "tools/train_unsloth.py"],
+                ["uv", "run", "python", "tools/train_nazo_model.py"],
             )
 
             mlops_common.run_step(
