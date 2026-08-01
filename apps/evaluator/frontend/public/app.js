@@ -58,6 +58,21 @@ export async function startGeneration() {
 //  - gemini_generated : Gemini 本文のみ表示・評価欄は「🔍 分析官が採点中...」
 //  - gemini_completed : Gemini にスコア付与（ELYZA は生成/採点中）
 //  - all_completed    : ELYZA も出揃い完了（'completed' は旧データ互換）
+//
+// 【instructions/286】バックエンドのアーキテクチャ変更により、Gemini側の全体
+// status が先に 'all_completed' へ到達し、ELYZAの推論(オンデマンドジョブキュー
+// 経由の elyza_job_status、またはローカル直接生成パスの llmjp_status)が後から
+// 非同期に完了するようになった。overall status のみでポーリングを止めると、
+// 後から届くELYZA結果を永遠に受け取れなくなる(画面が採点中表示のまま固まる)。
+// ELYZA側は経路によって完了シグナルが異なる(オンデマンドキュー経由なら
+// elyza_job_status、ローカル直接生成パスなら llmjp_status)ため、どちらか一方が
+// 終端状態に達していれば良いとする(片方しか更新されない経路が存在するため)。
+const ELYZA_JOB_TERMINAL_STATUSES = ['completed', 'failed', 'dead_letter'];
+const LLMJP_TERMINAL_STATUSES = ['completed', 'failed', 'none'];
+function isElyzaSideDone(data) {
+    if (data.elyza_job_status == null || ELYZA_JOB_TERMINAL_STATUSES.includes(data.elyza_job_status)) return true;
+    return LLMJP_TERMINAL_STATUSES.includes(data.llmjp_status);
+}
 async function pollStatus(taskId) {
     try {
         const data = await apiGetStatus(taskId);
@@ -67,7 +82,8 @@ async function pollStatus(taskId) {
             uiGenLoadingStop();
             uiRenderGenResult(data, taskId);
         }
-        if (data.status === 'all_completed' || data.status === 'completed') { return; } // 全完了。ポーリング終了
+        const overallDone = data.status === 'all_completed' || data.status === 'completed';
+        if (overallDone && isElyzaSideDone(data)) { return; } // 全完了（Gemini・ELYZA双方）。ポーリング終了
         setTimeout(() => pollStatus(taskId), 2000);
     } catch (e) { showError(e.message); }
 }
