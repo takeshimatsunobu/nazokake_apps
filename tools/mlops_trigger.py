@@ -124,9 +124,12 @@ import argparse
 import asyncio
 import json
 import os
+import shutil
+import signal
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from types import FrameType
 
 import filelock
 
@@ -162,6 +165,38 @@ AGENT_SFT_PATH = BASE_DIR / "tools" / "dataset" / "agent_sft.jsonl"
 # へ反映する。dry-run実行時は更新しない(診断目的の手動実行がデーモンの実際の稼働状態を
 # 上書きしないようにするため)。
 LAST_RUN_STATUS_PATH = BASE_DIR / "run" / "mlops_trigger_last_run.json"
+
+# 【instructions/298: Graceful Shutdown】このトリガーはscheduler_daemon.py(またはOS/
+# Dockerデーモン)からSIGTERM/SIGINTを受けうる。単発CLIのためscheduler_daemon.pyのような
+# ポーリングループは持たないが、パイプラインキック中の子プロセス(_active_process、
+# PowerShell経由のエフェメラルVM実行、またはLinux直接実行のuv run python)は数十分〜
+# 数時間に及びうるため、シグナル受信時に子プロセスを直ちに終了させ、claimしたtrigger_state
+# を"running"のまま放置しない(stale_after_hoursのタイムアウト頼みにしない)。
+_shutdown_requested = False
+_active_process: "asyncio.subprocess.Process | None" = None
+
+
+def _handle_shutdown_signal(signum: int, frame: FrameType | None) -> None:
+    """SIGTERM/SIGINT受信時、直ちに終了せずフラグを立てた上で、実行中の子プロセスが
+    あれば直ちにterminateする(Graceful Shutdown)。
+
+    子プロセスの終了自体はここでは待たない(このハンドラは同期コンテキストで動作する
+    ため await できない)。呼び出し元の `await process.wait()` が子プロセスの終了を
+    検知した時点で、_try_claim_and_kick の既存ロジック(success=Falseでのrelease)が
+    そのままclaimの解放を担う(冪等性を損なわない)。
+    """
+    global _shutdown_requested
+    _shutdown_requested = True
+    print(
+        f"🛑 [Trigger] シグナル{signum}を受信しました。Graceful Shutdownします"
+        "(実行中のパイプラインがあれば終了させます)...",
+        file=sys.stderr,
+    )
+    if _active_process is not None and _active_process.returncode is None:
+        try:
+            _active_process.terminate()
+        except ProcessLookupError:
+            pass
 
 
 def _save_last_run_status(status: str, message: str, **details) -> None:
@@ -200,17 +235,36 @@ def count_agent_success_logs() -> int:
 EPHEMERAL_DEPLOY_SCRIPT_PATH = BASE_DIR / "tools" / "deploy" / "run_ephemeral_pipeline.ps1"
 
 
-async def _run_ephemeral_pipeline_async(script_name: str) -> int:
+def _resolve_uv_executable() -> str:
+    """uvコマンドの絶対パスをshutil.whichで決定論的に解決する(instructions/298)。
+
+    サブプロセス生成時のコマンド名解決をシェル/OSのPATH探索に暗黙に委ねると、
+    イメージのビルド時と実行時でPATHの構成がズレた場合に原因特定が難しい失敗を
+    招くため、起動前に明示的な絶対パスへ解決し、見つからない場合は
+    FileNotFoundErrorとして早期に(実際にサブプロセスを起動する前に)失敗させる。
+    """
+    uv_path = shutil.which("uv")
+    if uv_path is None:
+        raise FileNotFoundError(
+            "uvコマンドが見つかりません(PATHにuvが存在しません)。"
+            "infra/verification_env/mlops_scheduler.Dockerfileのuv導入手順を確認してください。"
+        )
+    return uv_path
+
+
+async def _run_ephemeral_pipeline_windows_async(script_name: str) -> int:
     """指定のMLOpsパイプラインを、tools/deploy/run_ephemeral_pipeline.ps1経由で
     エフェメラルGCP VM上でフォアグラウンド同期実行し、その完了(VM起動→SSH開通待ち→
     コード転送→パイプライン実行→VM自律停止の全ライフサイクル)を待機してから
-    パイプライン自身の終了コードを返す(instructions/177)。
+    パイプライン自身の終了コードを返す(instructions/177)。Windows(ローカルPC)専用の
+    経路であり、_run_pipeline_asyncからのみ呼ばれる(instructions/298でOS分岐)。
 
     VM起動・SSH開通・転送のいずれかで失敗した場合(Step 5に到達できなかった場合)は
     run_ephemeral_pipeline.ps1の仕様により終了コード1が返る。この関数自体は
     powershell.exeの起動(プロセス生成)にOSError相当の失敗が無い限り例外を送出しない
     (プロセス生成自体の失敗は呼び出し元の_try_claim_and_kickがOSErrorとして捕捉する)。
     """
+    global _active_process
     print(
         f"🚀 [Trigger] {script_name} をエフェメラルVM上で起動します"
         "(VM起動→同期実行→自律停止、完了まで待機します)..."
@@ -223,7 +277,11 @@ async def _run_ephemeral_pipeline_async(script_name: str) -> int:
         "-PipelineScript", script_name,
         cwd=str(BASE_DIR),
     )
-    returncode = await process.wait()
+    _active_process = process
+    try:
+        returncode = await process.wait()
+    finally:
+        _active_process = None
     if returncode == 0:
         print(f"✅ [Trigger] {script_name} がエフェメラルVM上で正常終了しました。")
     else:
@@ -232,6 +290,52 @@ async def _run_ephemeral_pipeline_async(script_name: str) -> int:
             f"(exit={returncode})。"
         )
     return returncode
+
+
+async def _run_pipeline_linux_direct_async(script_name: str) -> int:
+    """Linux(sys.platform == "linux")では、Windows専用のPowerShell経由エフェメラルVM
+    キック(instructions/177、tools/deploy/run_ephemeral_pipeline.ps1)を行わない
+    (instructions/298: OS境界修復)。
+
+    このコードパスは、infra/verification_env/mlops_scheduler.Dockerfileがビルドする
+    mlops-schedulerサイドカー(Linuxコンテナ)自身の中でtools/scheduler_daemon.py経由
+    このスクリプトが実行された場合に通る。当該コンテナにpowershell.exeは存在せず、
+    さらに別のVMを起動する設計上の意味も無いため、shutil.whichで決定論的に解決した
+    uvの絶対パスでパイプラインスクリプトを直接サブプロセス実行する。
+    """
+    global _active_process
+    uv_executable = _resolve_uv_executable()
+    print(
+        f"🚀 [Trigger] {script_name} をLinux環境で直接起動します"
+        f"(uv={uv_executable}、PowerShellを介さない、instructions/298)..."
+    )
+    process = await asyncio.create_subprocess_exec(
+        uv_executable, "run", "python", f"tools/{script_name}",
+        cwd=str(BASE_DIR),
+    )
+    _active_process = process
+    try:
+        returncode = await process.wait()
+    finally:
+        _active_process = None
+    if returncode == 0:
+        print(f"✅ [Trigger] {script_name} が正常終了しました。")
+    else:
+        print(f"🚨 [Trigger] {script_name} が異常終了しました(exit={returncode})。")
+    return returncode
+
+
+async def _run_pipeline_async(script_name: str) -> int:
+    """OSに応じてパイプライン起動方式を切り替えるディスパッチャ(instructions/298)。
+
+    Windows(instructions/177が前提とするローカルPC): 従来通りPowerShell経由で
+    エフェメラルGCP VMをフルライフサイクルでキックする。
+    Linux(mlops-schedulerサイドカーコンテナ自身): PowerShellが存在しないため、
+    uvの絶対パスを解決した直接サブプロセス実行へ分岐する。
+    """
+    if sys.platform == "win32":
+        return await _run_ephemeral_pipeline_windows_async(script_name)
+    return await _run_pipeline_linux_direct_async(script_name)
 
 
 # 【instructions/183: 事前遮断ゲート(Pre-flight Gate)】各トリガーpipeline_id("nazo"/
@@ -311,7 +415,7 @@ async def _try_claim_and_kick(
         return {"kicked": False, "claimed": False, "launch_failed": False}
 
     try:
-        returncode = await _run_ephemeral_pipeline_async(script_name)
+        returncode = await _run_pipeline_async(script_name)
     except OSError as e:
         print(f"🚨 [Trigger] {script_name} の起動(プロセス生成)に失敗しました: {e}")
         await async_release_trigger_slot(pipeline_id, success=False)
@@ -342,12 +446,14 @@ async def _evaluate_and_kick(
         "agent": {"kicked": False, "claimed": False, "launch_failed": False},
     }
 
-    if nazo_should_trigger:
+    # 【instructions/298: Graceful Shutdown】シグナル受信後は、既にclaimして実行中の
+    # パイプライン(あれば)の終了を待つのみとし、新規のclaim・キックは開始しない。
+    if nazo_should_trigger and not _shutdown_requested:
         result["nazo"] = await _try_claim_and_kick(
             "nazo", "mlops_pipeline_nazo.py", cooldown_hours, stale_after_hours
         )
 
-    if agent_should_trigger:
+    if agent_should_trigger and not _shutdown_requested:
         result["agent"] = await _try_claim_and_kick(
             "agent", "mlops_pipeline_agent.py", cooldown_hours, stale_after_hours
         )
@@ -455,6 +561,17 @@ def _run_trigger_cycle(args: argparse.Namespace) -> int:
         )
     )
 
+    # 【instructions/298: Graceful Shutdown】シグナル受信によりこのサイクルが中断
+    # された場合、通常の"error"/"triggered"分類とは区別して報告する(claimは
+    # _try_claim_and_kickの既存ロジックにより既に解放済みのため、冪等性は保たれている)。
+    if _shutdown_requested:
+        message = (
+            "Graceful Shutdown要求(SIGTERM/SIGINT)を受信したため、このサイクルを"
+            "中断しました。claim済みだった対象は解放済みです(instructions/298)。"
+        )
+        _save_last_run_status("interrupted", message)
+        return 130
+
     if nazo_should_trigger and not result["nazo"]["claimed"]:
         print(
             "\nℹ️  [条件A] 既に実行中、またはクールダウン期間中のため今回はスキップしました。"
@@ -516,6 +633,11 @@ def main() -> int:
         help="シャドウモードを無効化し、実際にDB claim・エフェメラルVMキックを行う",
     )
     args = parser.parse_args()
+
+    # 【instructions/298: Graceful Shutdown】OS/Dockerデーモンからの停止シグナルを
+    # 直接トラップする(tools/scheduler_daemon.pyと同じ規約)。
+    signal.signal(signal.SIGTERM, _handle_shutdown_signal)
+    signal.signal(signal.SIGINT, _handle_shutdown_signal)
 
     # 【instructions/178】run/.vm_provision.lock(timeout=0)で、このトリガー自身の
     # 多重実行を排除する。他プロセスが既にロックを保持している場合は競合とみなし、
