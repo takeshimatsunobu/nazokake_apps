@@ -124,3 +124,37 @@ services:
     # gen-engineへの到達は不要なため、外部API(Firestore)向けのegress網のみ接続する。
     networks:
       - cleanroom-egress
+    # 【instructions/298: コンテナの防弾化】クラッシュ(未捕捉例外によるプロセス終了・
+    # OOM Killer等)からの自律復旧をComposeレベルで保証する。アプリ層の指数バックオフ
+    # (sync_daemon_entrypoint.py: INITIAL_BACKOFF_SECONDS〜MAX_BACKOFF_SECONDS)は
+    # 「一時的なAPI障害からの復旧」を担うのに対し、これは「プロセス自体が死んだ場合の
+    # 復旧」を担う、階層の異なる別のフェイルセーフ。
+    restart: unless-stopped
+    healthcheck:
+      # python:3.11-slimベースイメージにはprocps(pgrep/ps)が含まれないため、追加
+      # パッケージを導入せず/procを直接スキャンして対象プロセスのcmdlineを確認する
+      # (プロセスのハングアップ検知、instructions/298)。このデーモンはPOLL_INTERVAL_
+      # SECONDS=300(5分)ごとに1周期を終えるだけで長時間ブロックする処理を持たないため、
+      # 短いintervalでの生存確認で誤検知(false unhealthy)を招くリスクは無い。
+      test:
+        - CMD-SHELL
+        - |
+          python3 -c '
+          import os, sys
+          found = False
+          for pid in os.listdir("/proc"):
+              if not pid.isdigit():
+                  continue
+              try:
+                  with open("/proc/" + pid + "/cmdline", "rb") as f:
+                      if b"sync_daemon_entrypoint.py" in f.read():
+                          found = True
+                          break
+              except OSError:
+                  continue
+          sys.exit(0 if found else 1)
+          '
+      interval: 60s
+      timeout: 10s
+      start_period: 20s
+      retries: 3
