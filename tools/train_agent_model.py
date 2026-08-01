@@ -43,7 +43,9 @@ OUTPUT_LORA_PATH = BASE_DIR / "models" / "agent_lora"
 
 
 def _run_training() -> None:
-    train_unsloth_core.run_training(
+    # instructions/277: Agent学習データはChatML("messages")形式のためSFTTrainerを使う
+    # run_sft_training()を呼ぶ(なぞかけ学習のprompt/chosen/rejected形式=DPOとは分岐)。
+    train_unsloth_core.run_sft_training(
         base_model=BASE_MODEL,
         dataset_path=DATASET_PATH,
         output_lora_path=OUTPUT_LORA_PATH,

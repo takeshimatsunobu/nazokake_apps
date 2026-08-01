@@ -41,7 +41,9 @@ OUTPUT_LORA_PATH = BASE_DIR / "models" / "nazo_lora"
 
 
 def _run_training() -> None:
-    train_unsloth_core.run_training(
+    # instructions/277: なぞかけ学習データはprompt/chosen/rejected形式(DPO)のため
+    # run_dpo_training()を呼ぶ(Agent学習のChatML"messages"形式=SFTとは分岐)。
+    train_unsloth_core.run_dpo_training(
         base_model=BASE_MODEL,
         dataset_path=DATASET_PATH,
         output_lora_path=OUTPUT_LORA_PATH,
