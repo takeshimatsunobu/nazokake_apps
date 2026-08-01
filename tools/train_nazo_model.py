@@ -10,6 +10,13 @@ tools/train_unsloth_core.py(なぞかけ学習・Agent学習で共用される�
 呼び出し元: tools/mlops_pipeline_nazo.py
 入力データ: tools/extract_dataset.py が出力するDPOデータセット(data/dpo_dataset.jsonl)。
 
+【instructions/281: SFT->DPOの学習連鎖】BASE_MODELは生のベースモデル名ではなく、
+直前のSFTステップ(tools/train_nazo_sft_model.py)の出力先models/nazo_sft_loraを
+指す。DPOはSFTで既に指示追従・基本フォーマットを学習済みのアダプタから選好最適化を
+開始することで、なぞかけ生成モデルの学習連鎖(データフライホイールの連続性)を
+接合する(instructions/280で判明した、SFT/DPOが互いに無関係な独立学習になっていた
+欠落を解消)。
+
 【instructions/275: VRAM排他制御の防弾化】単独実行時(オーケストレータ経由でない
 手動実行)でも、推論APIや他パイプラインとのVRAM競合を防ぐため、学習コアエンジンの
 呼び出しをVRAMロックで保護する。ただしtools/mlops_pipeline_nazo.py経由で起動された
@@ -34,8 +41,11 @@ if str(BASE_DIR) not in sys.path:
 
 from tools import mlops_common, train_unsloth_core  # noqa: E402
 
-# なぞかけ学習ドメイン固有の定数(tools/mlops_pipeline_nazo.pyのBASE_MODELと一致させる)。
-BASE_MODEL = "elyza:8b"
+# なぞかけ学習ドメイン固有の定数。
+# 【instructions/281】BASE_MODELは生のベースモデル名("elyza:8b")ではなく、SFTステップ
+# (tools/train_nazo_sft_model.py)の出力先(models/nazo_sft_lora)を指す。DPOはこの
+# SFT済みアダプタを起点に選好最適化を行う(SFT->DPOの学習連鎖)。
+BASE_MODEL = str(BASE_DIR / "models" / "nazo_sft_lora")
 DATASET_PATH = BASE_DIR / "data" / "dpo_dataset.jsonl"
 OUTPUT_LORA_PATH = BASE_DIR / "models" / "nazo_lora"
 
