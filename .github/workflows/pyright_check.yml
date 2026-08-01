@@ -29,6 +29,19 @@
 # 依存のテストは各テスト自身がpytest.skipで安全側にスキップする設計
 # (tests/verification_env/test_infra_behavior.py参照)のため、ubuntu-latest上でも
 # 正しくskip/passに分岐する。
+#
+# 【instructions/284: apps/evaluator/backend依存関係の欠落を修復】本ワークフローの
+# trigger pathsにはapps/**が含まれ、apps/evaluator/backend/api/routers/*.py等も
+# 対象範囲に入るが、requirements_orchestrator.txt/packages/shared_coreには
+# fastapi・uvicorn・loguru・mcp等バックエンド固有の依存が含まれておらず、Pyrightが
+# これらのimportをFalse Positiveでreportmissing判定していた。
+# apps/evaluator/backend/requirements.txtというファイルは存在しない
+# (このプロジェクトはpyproject.toml + uv.lockで依存管理しており、instructions/218
+# 参照)ため、実際の依存マニフェストであるapps/evaluator/backend/pyproject.tomlを
+# `uv pip install -r`で明示的にインストールする(uvは-rにpyproject.tomlパスを
+# 直接渡せる)。[tool.uv.sources]でnazokake-coreをpackages/shared_coreへのローカル
+# パス参照として解決するため、既存のpackages/shared_coreインストールと重複しても
+# 問題ない。
 
 name: CI - Pyright Type Check Gate
 
@@ -66,6 +79,7 @@ jobs:
           uv venv
           uv pip install -r requirements_orchestrator.txt
           uv pip install ./packages/shared_core
+          uv pip install -r apps/evaluator/backend/pyproject.toml
 
       # 既存テストスイート(tests/verification_env, tests/e2e)の実行。実際のGCP/
       # Firestore/GPU等の外部依存はテスト自身がモック化・pytest.skipで吸収する。
