@@ -102,9 +102,14 @@ function _genModelCard(opts) {
     const hasBody = !!(r.toku || r.kokoro);
     const score = (opts.scoreData && typeof opts.scoreData.s_total === 'number' && opts.scoreData.s_total > 0)
         ? opts.scoreData.s_total.toFixed(2) : null;
+    // 【instructions/289】ポーリングが通信エラーで中断(pollFailed)し、かつこのカードが
+    // まだ本文すら受け取っていない場合は、生成自体が失敗したものとして扱いスピナーを
+    // 止める(本文が既に届いている側は、後続のスコア欠落だけを別途フォールバック表示する)。
+    const stalledNoBody = !!opts.pollFailed && !hasBody;
+    const isFailed = !!opts.failed || stalledNoBody;
 
     let body;
-    if (opts.failed) {
+    if (isFailed) {
         body = `<div class="py-6 text-center text-gray-400 text-sm">今回は生成をお休みしました</div>`;
     } else if (hasBody) {
         body = `<p class="font-bold text-lg leading-relaxed">
@@ -118,7 +123,7 @@ function _genModelCard(opts) {
     }
 
     let evalBlock = '';
-    if (!opts.failed && score) {
+    if (!isFailed && score) {
           const chartId = `chart-${opts.key}-${Date.now()}`;
           evalBlock = `<div class="text-center mt-3 pt-3 border-t border-[#C5B358]/30"><span class="text-xs text-gray-500">総合評価: </span><span class="text-2xl font-bold text-[#902A19]">${score}</span><span class="text-xs text-gray-500">/5.0</span></div>
               <div class="relative w-full max-w-[300px] mx-auto my-4"><canvas id="${chartId}"></canvas></div>
@@ -139,14 +144,18 @@ function _genModelCard(opts) {
                   });
               }
           }, 100);
-    } else if (!opts.failed && hasBody) {
+    } else if (!isFailed && hasBody && opts.pollFailed) {
+        // 【instructions/289】本文は先行表示済みだが、採点結果を待っている間に
+        // ポーリングが通信エラーで中断した。スピナーを回し続けず、フォールバック表示に倒す。
+        evalBlock = `<div class="mt-3 pt-3 border-t border-[#C5B358]/30 text-center text-gray-400 text-xs">⚠️ 通信エラーのため採点結果を取得できませんでした</div>`;
+    } else if (!isFailed && hasBody) {
         // 本文は先行表示済み。スコア未到着（採点中）はローディングのみ出し、講評・チャート・星評価は出さない。
         evalBlock = `<div class="mt-3 pt-3 border-t border-[#C5B358]/30 text-center text-[#5B8124] text-xs font-bold flex items-center justify-center gap-2"><span class="animate-spin inline-block rounded-full h-4 w-4 border-b-2 border-[#5B8124]"></span><span class="animate-pulse">🔍 分析官が採点中...</span></div>`;
     }
 
     // モデル別の人間評価フォームは「採点完了後（score 確定後）」にのみ表示する。
     // 本文だけ先行表示中（採点中）は星評価を出さない。
-    const ratingBlock = (hasBody && !opts.failed && score) ? _genRatingHtml(opts.key, opts.label) : '';
+    const ratingBlock = (hasBody && !isFailed && score) ? _genRatingHtml(opts.key, opts.label) : '';
 
     return `<div id="gen-card-${opts.key}" class="bg-white/95 rounded-xl shadow p-4 border-t-4 ${opts.accent} flex flex-col">
         <div class="text-center mb-2"><span class="inline-block px-3 py-1 rounded-full text-[11px] font-bold ${opts.badge}">${opts.title}</span></div>
@@ -156,8 +165,15 @@ function _genModelCard(opts) {
     </div>`;
 }
 
+// 【instructions/289】ポーリングが通信エラーで中断した際に、最後に受け取っていた
+// dataを使って再描画するためのキャッシュ(uiMarkGenPollFailed専用。app.js側は
+// ポーリングループの外からこの状態を持たないため、View層であるここに保持する)。
+let _lastGenData = null;
+
 // 生成結果（Gemini・ELYZA）を同格カードで描画する。ポーリングのたびに呼ばれ、冪等に更新する。
-export function uiRenderGenResult(data, taskId) {
+// pollFailed: true の場合、まだ本文/採点が届いていないカードをフォールバック表示へ倒す
+// (instructions/289: ポーリングが通信エラーで中断した際のFail-Closed用)。
+export function uiRenderGenResult(data, taskId, pollFailed = false) {
     const card = document.getElementById('result-card');
     if (!card) return;
     card.classList.remove('hidden');
@@ -170,6 +186,7 @@ export function uiRenderGenResult(data, taskId) {
         _genComments = { gemini: '', elyza: '' };
         _genTaskId = taskId;
     }
+    _lastGenData = data;
 
     // 既存の静的な単一結果マークアップ（最初の子div）は隠し、動的デュアルUIを使う
     const staticInner = card.querySelector(':scope > div');
@@ -202,14 +219,25 @@ export function uiRenderGenResult(data, taskId) {
         key: 'gemini', label: 'Gemini', title: '☁️ クラウドAI Gemini', accent: 'border-[#C5B358]', badge: 'bg-[#C5B358]/20 text-[#902A19]', odai: odai,
         result: (data.result_gemini && (data.result_gemini.toku || data.result_gemini.kokoro)) ? data.result_gemini : data.result,
         scoreData: { scores: data.scores, overall: data.overall, axis_comments: data.axis_comments, s_total: data.s_total },
+        pollFailed,
     });
     const elyzaCard = _genModelCard({
         key: 'elyza', label: 'ELYZA', title: '🏠 純国産AI ELYZA', accent: 'border-[#5B8124]', badge: 'bg-[#5B8124]/20 text-[#5B8124]', odai: odai,
         result: data.result_llmjp,
         scoreData: { scores: data.scores_llmjp, overall: data.overall_llmjp, axis_comments: data.axis_comments_llmjp, s_total: data.s_total_llmjp },
         failed: data.llmjp_status === 'failed',
+        pollFailed,
     });
     document.getElementById('gen-cards-grid').innerHTML = geminiCard + elyzaCard;
+}
+
+// 【instructions/289】ポーリングが通信エラー(Fetch例外)で中断した際に app.js から呼ばれる。
+// 直近に描画済みのdataで再描画し、まだ本文/採点が届いていない側のカードのスピナーを
+// フォールバック表示へ倒す。taskIdが現在描画中のものと一致しない場合(既に「別のお題で
+// 作る」等で切り替わった後に遅延着信した古いポーリングの失敗等)は何もしない。
+export function uiMarkGenPollFailed(taskId) {
+    if (!taskId || taskId !== _genTaskId || !_lastGenData) return;
+    uiRenderGenResult(_lastGenData, taskId, true);
 }
 
 // 「別のお題で作る」: 結果UIをリセットし、入力フォームへフォーカスを戻す（スクロール不要）。
