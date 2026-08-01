@@ -1,7 +1,7 @@
 """
 tools/knowledge_retriever.py
 ===============================
-tools/compile_knowledge.py が事前生成した tools/ai_knowledge_base.json に対する、
+tools/compile_knowledge.py が事前生成した run/ai_knowledge_base.json に対する、
 軽量なローカル検索器(Dynamic Experience Replay)。
 
 tools/agent_graph.py の cto_node がClaudeへエスカレーションする際、過去の指示書
@@ -28,7 +28,7 @@ from tools.compile_knowledge import KNOWLEDGE_BASE_PATH, extract_keywords  # noq
 
 
 def _load_knowledge_base() -> list[dict]:
-    """tools/ai_knowledge_base.jsonを読み込む。存在しない場合は空リストを返す
+    """run/ai_knowledge_base.jsonを読み込む。存在しない場合は空リストを返す
     (tools/compile_knowledge.pyを未実行の環境でもcto_nodeをクラッシュさせない)。
     """
     if not KNOWLEDGE_BASE_PATH.exists():
@@ -101,7 +101,7 @@ def _cosine_similarity(
 def retrieve_experiences(query: str, top_k: int = 3) -> list[dict]:
     """queryと関連性の高い上位top_k件の過去の指示書エントリを、スコア降順で返す。
 
-    知識ベース(tools/ai_knowledge_base.json)が存在しない、または空/該当なしの
+    知識ベース(run/ai_knowledge_base.json)が存在しない、または空/該当なしの
     場合は空リストを返す(呼び出し元はRAG無しでの動作にフォールバックできる)。
     """
     entries = _load_knowledge_base()

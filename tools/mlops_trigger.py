@@ -11,7 +11,7 @@ instructions/174でクールダウン状態をDBへ完全移行)。
        human_evaluations が1件以上 または is_golden_data=True)の総件数が
        閾値(settings.mlops_trigger_nazo_threshold、既定500件)以上
        -> tools/mlops_pipeline_nazo.py をキック
-条件B: Nazo-Agent成功修復ログ(tools/dataset/agent_sft.jsonlの行数。
+条件B: Nazo-Agent成功修復ログ(run/dataset/agent_sft.jsonlの行数。
        tools/nazo_agent.pyが自己修復に成功するたびに1行追記される)の総件数が
        閾値(settings.mlops_trigger_agent_threshold、既定50件)以上
        -> tools/mlops_pipeline_agent.py をキック
@@ -108,7 +108,7 @@ cleanup_merged_git_resources()を毎回呼び出す。削除基準は経過時�
 
 【instructions/182: シャドウモード】settings.shadow_mode(既定True)が有効な間は、
 条件が成立してもDBのトリガー状態claim・エフェメラルVMキックを一切行わず、判定結果を
-tools/shadow_mode_log.jsonlへ記録するのみに留める(--dry-runとは独立した、既定で
+run/shadow_mode_log.jsonlへ記録するのみに留める(--dry-runとは独立した、既定で
 有効な安全弁)。--shadow-mode/--no-shadow-modeでこのプロセス単体の実行時に上書きできる。
 
 使い方:
@@ -161,7 +161,7 @@ AGENT_SFT_PATH = BASE_DIR / "tools" / "dataset" / "agent_sft.jsonl"
 # apps/evaluator/frontend/public/data/daemon_heartbeat.json(admin.htmlの生存監視タイル)
 # へ反映する。dry-run実行時は更新しない(診断目的の手動実行がデーモンの実際の稼働状態を
 # 上書きしないようにするため)。
-LAST_RUN_STATUS_PATH = Path(__file__).resolve().parent / "mlops_trigger_last_run.json"
+LAST_RUN_STATUS_PATH = BASE_DIR / "run" / "mlops_trigger_last_run.json"
 
 
 def _save_last_run_status(status: str, message: str, **details) -> None:
@@ -420,7 +420,7 @@ def _run_trigger_cycle(args: argparse.Namespace) -> int:
     # (既定オフ)だが、シャドウモードは自律スケジューラー(tools/scheduler_daemon.py)
     # 経由の定期実行でも既定で効く安全側のデフォルトであり、意味が異なるため統合しない。
     # DBのトリガー状態claimもエフェメラルVMキックも一切行わず、判定結果のみを
-    # 検証用ログ(tools/shadow_mode_log.jsonl)へ記録する。
+    # 検証用ログ(run/shadow_mode_log.jsonl)へ記録する。
     effective_shadow_mode = (
         settings.shadow_mode if args.shadow_mode is None else args.shadow_mode
     )
@@ -440,7 +440,7 @@ def _run_trigger_cycle(args: argparse.Namespace) -> int:
         _save_last_run_status(
             "shadow_skipped",
             "シャドウモードが有効なため、DBのトリガー状態claim・エフェメラルVMキックを"
-            "抑止しました(判定結果はtools/shadow_mode_log.jsonlへ記録済み)。",
+            "抑止しました(判定結果はrun/shadow_mode_log.jsonlへ記録済み)。",
             nazo_should_trigger=nazo_should_trigger,
             agent_should_trigger=agent_should_trigger,
         )

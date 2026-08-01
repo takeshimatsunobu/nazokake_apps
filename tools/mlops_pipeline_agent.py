@@ -14,7 +14,9 @@ Nazo-Agent(自己修復エンジン)のMLOps完全自動パイプライン(Epic 
      このパイプラインの実行タイミングでは既に消費・消失済みであることが多いため
      (実際の蓄積は成功修復のたびにnazo_agent.py自身が既に行っている、この
      ステップは取りこぼしを拾うベストエフォート)。
-  4. 学習: tools/train_unsloth.py をサブプロセスで実行する。
+  4. 学習: tools/train_agent_model.py(Agent学習専用エントリーポイント。内部で
+     共用コアエンジンtools/train_unsloth_core.pyを呼び出す、instructions/274)を
+     サブプロセスで実行する。
   5. 自動評価(定量ゲート): tools/benchmark/run_benchmark.py を実行してメトリクスJSONを
      取得し、Success Rate Delta>=0 かつ Code Complexity増加率<10% を満たした場合のみ
      「学習成功およびデプロイ承認」として正常終了する。
@@ -30,6 +32,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 import sys
 import time
 from pathlib import Path
@@ -54,7 +57,7 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
-BENCHMARK_REPORTS_DIR = BASE_DIR / "tools" / "benchmark" / "reports"
+BENCHMARK_REPORTS_DIR = BASE_DIR / "run" / "benchmark" / "reports"
 BASELINE_PATH = BENCHMARK_REPORTS_DIR / "baseline_metrics_agent.json"
 AGENT_SFT_PATH = BASE_DIR / "tools" / "dataset" / "agent_sft.jsonl"
 BASE_MODEL = "qwen2.5-coder:7b"
@@ -154,7 +157,7 @@ def _record_experiment(report: dict | None, latency: float, *, pipeline_success:
     記録する。評価が完了しなかった場合(report=None)もsuccess_rate=Noneとして
     記録し、「実行したが評価不能だった」という事実自体を欠落させない。
 
-    dataset_sizeはtools/dataset/agent_sft.jsonlの累積行数(このパイプラインでは
+    dataset_sizeはrun/dataset/agent_sft.jsonlの累積行数(このパイプラインでは
     tools/extract_dataset.pyのようなコアーセット・リプレイの層化抽出を行わないため、
     coreset_ratioは常にNone)。
 
@@ -201,6 +204,11 @@ def main() -> int:
     mlops_common.preflight_gpu_cleanup()
 
     lock = mlops_common.acquire_vram_lock_with_backoff()
+    # 【instructions/275】このプロセスは既にVRAMロックを保持している。学習
+    # サブプロセス(tools/train_agent_model.py)が自身でも取得を試みて自己
+    # デッドロックに陥らないよう、既に保持済みであることを子プロセスへ伝える
+    # (env=Noneのsubprocess.Popenは既定でこの環境変数をそのまま継承する)。
+    os.environ[mlops_common.VRAM_LOCK_HELD_BY_PARENT_ENV] = "1"
     try:
         try:
             mlops_common.run_step(
@@ -211,7 +219,7 @@ def main() -> int:
 
             mlops_common.run_step(
                 "学習(Nazo-Agent)",
-                ["uv", "run", "python", "tools/train_unsloth.py"],
+                ["uv", "run", "python", "tools/train_agent_model.py"],
             )
 
             mlops_common.run_step(

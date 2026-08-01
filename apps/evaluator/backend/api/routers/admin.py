@@ -3,7 +3,7 @@
 import asyncio
 from datetime import datetime, timezone
 from typing import Union
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from firebase_admin import firestore
 from api.deps import verify_admin_token, handle_exceptions
 from models.schemas import (
@@ -84,7 +84,6 @@ def _resolve_statuses(data: dict) -> tuple:
 @handle_exceptions
 async def apply_human_action(
     req: HumanActionRequest,
-    background_tasks: BackgroundTasks,
     admin_token: dict = Depends(verify_admin_token),
 ):
     """管理者キュレーション: 対象なぞかけの gemini_status / elyza_status を更新する。
@@ -101,9 +100,13 @@ async def apply_human_action(
         raise HTTPException(status_code=404, detail="対象のなぞかけが見つかりません")
 
     await async_upsert_item({"doc_id": req.target_slug, status_field: new_status})
-    # instructions/239: Cloud Run上のSQLiteはエフェメラルなため、キュレーター操作の
-    # 書き込み直後にFirestoreへのバックアップ同期をBackgroundTasksで試みる。
-    background_tasks.add_task(sync_once_safe)
+    # 【instructions/283】Cloud RunはCPUをリクエスト処理中のみ割り当てる仕様のため、
+    # レスポンス送出後に実行されるBackgroundTasksはスケジュールされる保証が無く、
+    # 同期が発火しないまま次のリクエストまでインスタンスがサスペンドされ得た
+    # (instructions/282のFirestore同期欠落調査で判明)。キュレーター操作の
+    # 書き込み直後、レスポンスを返す前に同期的に完了させることで、CPUが
+    # 確実に割り当てられているリクエスト処理中に同期を完結させる。
+    await sync_once_safe()
     updated = await async_get_item(req.target_slug)
     # 【絶対制約】sync_status(クラウド同期状態)はUI向けレスポンスに含めない。
     ui_updated = {k: v for k, v in updated.items() if k not in ("sync_status", "last_sync_error")}

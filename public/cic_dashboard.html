@@ -8,6 +8,13 @@
     <meta http-equiv="Expires" content="0">
     <title>Tactical CIC // 司令部ダッシュボード</title>
     <link rel="stylesheet" href="css/cic_style.css">
+    <!-- instructions/236: apps/evaluator/frontend/public/admin.html と同じFirebase Auth
+         (compat SDK + FirebaseUI)。/cicは外部Webhookではなく人間の操作者向けの内部
+         ツールのため、admin系エンドポイントと同じverify_admin_tokenで保護する。 -->
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/ui/6.1.0/firebase-ui-auth.js"></script>
+    <link type="text/css" rel="stylesheet" href="https://www.gstatic.com/firebasejs/ui/6.1.0/firebase-ui-auth.css" />
 </head>
 <body>
     <div class="cic-container">
@@ -16,7 +23,12 @@
             <div class="status-indicator">STATUS: SECURE</div>
         </header>
 
-        <main class="cic-grid">
+        <div id="cic-login-screen" style="display:none; flex-direction:column; align-items:center; padding:2rem;">
+            <p class="sys-msg">[ RESTRICTED ] 認証が必要です。管理者アカウントでログインしてください。</p>
+            <div id="cic-firebaseui-auth-container"></div>
+        </div>
+
+        <main class="cic-grid" id="cic-main-screen" style="display:none;">
             <!-- Phase 1: Target Acquisition -->
             <section class="panel">
                 <h2>PHASE 1: TARGET ACQUISITION</h2>
@@ -52,10 +64,17 @@
     <script>
         // 実行時のDate.now()でクエリ文字列を生成するため、HTML自体がキャッシュされて
         // いても毎回ロード時に評価され、古いJSがブラウザキャッシュから再利用されない。
+        // cic_auth.js(認証ゲート・window.cicAuthFetch定義)を先に読み込み、
+        // 完了後にcic_app.js(cicAuthFetchを使う本体ロジック)を読み込む。
         (function () {
-            var s = document.createElement('script');
-            s.src = 'js/cic_app.js?v=' + Date.now();
-            document.body.appendChild(s);
+            var authScript = document.createElement('script');
+            authScript.src = 'js/cic_auth.js?v=' + Date.now();
+            authScript.onload = function () {
+                var appScript = document.createElement('script');
+                appScript.src = 'js/cic_app.js?v=' + Date.now();
+                document.body.appendChild(appScript);
+            };
+            document.body.appendChild(authScript);
         })();
     </script>
 </body>

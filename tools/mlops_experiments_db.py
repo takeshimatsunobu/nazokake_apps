@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-EXPERIMENTS_DB_PATH = Path(__file__).resolve().parent / "mlops_experiments.db"
+EXPERIMENTS_DB_PATH = BASE_DIR / "run" / "mlops_experiments.db"
 
 _CREATE_TABLE_SQL = """
 CREATE TABLE IF NOT EXISTS mlops_experiments (
@@ -39,6 +39,7 @@ CREATE TABLE IF NOT EXISTS mlops_experiments (
 
 def init_experiments_db() -> None:
     """mlops_experiments.dbとmlops_experimentsテーブルを用意する(既存データは保持)。"""
+    EXPERIMENTS_DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     con = sqlite3.connect(EXPERIMENTS_DB_PATH)
     try:
         con.execute(_CREATE_TABLE_SQL)

@@ -21,7 +21,6 @@ libcstはコメント・空白・インデント等の具象構文情報を保�
 import ast
 import json
 import os
-import re
 import shutil
 import sys
 import tempfile
@@ -38,6 +37,14 @@ from pydantic import BaseModel, Field, ValidationError
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 FILE_LOCK_TIMEOUT_SEC = 10
+
+# 【instructions/264→265: ツール保護境界】自分自身(ast_modifier.py)を含む tools/
+# ディレクトリ配下のセキュリティロジックを、エージェントが本ツール経由で書き換えて
+# しまうことを防ぐコードレベルの防御。以前はこの制約がプロンプト規約のみに依存し、
+# 実効的な担保が存在しなかった(instructions/262の監査で判明)。インフラ層でも
+# tools/ をRead-Only(:ro)マウントするが、こちらはコンテナ外でこのモジュールが直接
+# 呼び出されるケース(ローカル実行等)もFail-Fastで守るための二重の防御線。
+PROTECTED_TOOLS_DIR = Path(__file__).resolve().parent
 
 
 class AstModificationInstruction(BaseModel):
@@ -67,6 +74,34 @@ class AstModificationInstruction(BaseModel):
     )
 
 
+class AstModificationDesign(BaseModel):
+    """Claudeが出力する「設計(修正方針)」のみのスキーマ。instructions/244(FinOps):
+    Claude APIの出力トークンコストを削減するため、Claudeには実際のコード全文(new_code)を
+    生成させず、修正方針を示す短い自然言語テキスト(modification_instruction)のみを
+    出力させる。実際のコード生成(実装)はローカルのOllama(qwen2.5-coder)へ委譲し
+    (tools/nazo_agent.py: generate_code_with_local_coder)、生成結果をnew_codeとして
+    埋めた上でAstModificationInstructionへ変換してからapply_modification()へ渡す。"""
+
+    file_path: str = Field(..., description="修正対象ファイルのパス")
+    target_name: str = Field(..., description="置換対象の関数名またはクラス名(完全一致)")
+    modification_instruction: str = Field(
+        ..., description="修正方針を指示する短い自然言語テキスト(実装コードそのものは含まない)"
+    )
+    triage_type: Literal["bug_fix", "test_update"] = Field(
+        default="bug_fix", description="バグ修正か、陳腐化したテストの更新か"
+    )
+    confidence_score: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="この修正方針に対するモデル自身の確信度(0.0=全く自信がない〜1.0=完全に確信)",
+    )
+    requires_escalation: bool = Field(
+        default=False,
+        description="Trueの場合、この修正方針は上位モデル(CTOノード)によるレビューが必要",
+    )
+
+
 class TargetNodeReplacer(cst.CSTTransformer):
     """target_nameに完全一致する関数/クラス定義ノードのみを、new_nodeに
     差し替えるTransformer。
@@ -80,6 +115,9 @@ class TargetNodeReplacer(cst.CSTTransformer):
         self.target_name = target_name
         self.new_node = new_node
         self.replaced = False
+        # instructions/246: 置換対象ノードそのものの置換前ソースを保持しておき、
+        # 呼び出し元(apply_modification)がブロック単位の圧縮検知(行数比較)に使う。
+        self.original_node_code: str | None = None
 
     def leave_FunctionDef(
         self, original_node: cst.FunctionDef, updated_node: cst.FunctionDef
@@ -89,6 +127,7 @@ class TargetNodeReplacer(cst.CSTTransformer):
         if not isinstance(self.new_node, cst.FunctionDef):
             return updated_node
         self.replaced = True
+        self.original_node_code = cst.Module(body=[]).code_for_node(original_node)
         # 直前の空行数・アタッチされたコメント行(leading_lines)は元ノードのものを
         # 引き継ぎ、置換によって前後の余白構造が変化しないようにする。
         return self.new_node.with_changes(leading_lines=original_node.leading_lines)
@@ -101,6 +140,7 @@ class TargetNodeReplacer(cst.CSTTransformer):
         if not isinstance(self.new_node, cst.ClassDef):
             return updated_node
         self.replaced = True
+        self.original_node_code = cst.Module(body=[]).code_for_node(original_node)
         return self.new_node.with_changes(leading_lines=original_node.leading_lines)
 
 
@@ -197,78 +237,6 @@ def _parse_new_node(new_code: str) -> cst.CSTNode:
     raise ValueError("new_code内に関数またはクラス定義が見つかりません。")
 
 
-_TOP_LEVEL_DEF_RE_TEMPLATE = r"^(?:async\s+def|def|class)\s+{name}\b"
-
-
-def _string_based_fallback_replace(source: str, target_name: str, new_code: str) -> str | None:
-    """対象ファイル自体が構文エラーを含みlibcstでパースできない場合の最終手段。
-
-    ASTノード単位の置換は「元のファイル全体がまず構文的に妥当である」ことを前提と
-    するため、対象ファイル自身の構文エラーそのものが修正対象であるケース(既存の
-    syntax_error Fixture等)を原理的に扱えない。この関数は`target_name`で始まる
-    定義行を先頭が非空白文字の次の行(=次のトップレベル定義、またはEOF)まで
-    「その関数/クラスのおおよその範囲」とみなし、行単位の文字列置換で丸ごと
-    差し替える。target_nameの定義行が見つからない場合はNoneを返す(呼び出し元は
-    フォールバックそのものの失敗として安全側に倒す)。
-    """
-    lines = source.splitlines(keepends=True)
-    def_pattern = re.compile(_TOP_LEVEL_DEF_RE_TEMPLATE.format(name=re.escape(target_name)))
-
-    start_idx = None
-    for i, line in enumerate(lines):
-        if def_pattern.match(line):
-            start_idx = i
-            break
-    if start_idx is None:
-        return None
-
-    end_idx = len(lines)
-    for j in range(start_idx + 1, len(lines)):
-        stripped = lines[j].rstrip("\n")
-        if stripped and not stripped[0].isspace():
-            end_idx = j
-            break
-
-    new_code_text = new_code if new_code.endswith("\n") else new_code + "\n"
-    return "".join(lines[:start_idx]) + new_code_text + "".join(lines[end_idx:])
-
-
-def _apply_string_fallback(
-    path: Path, source: str, target_name: str, new_code: str, parse_error: Exception
-) -> str:
-    """libcstによる対象ファイルのパースが失敗した場合のString-basedフォールバック
-    (instructions/164)。
-
-    この経路は、通常経路が持つ安全網(セマンティック差分検証・大量削除/挿入
-    ヒューリスティック)のいずれも適用できない(それらは元ファイルをASTとして
-    解釈できることが前提のため)。唯一の安全網として、置換後の全文をPython標準の
-    ast.parseで検証し、それでも構文エラーが残る場合は書き込みを行わずエラーを返す
-    (フォールバック自体が失敗した場合の安全側フェイル)。
-    """
-    replaced = _string_based_fallback_replace(source, target_name, new_code)
-    if replaced is None:
-        return (
-            f"Error: 対象ファイルのパースに失敗し({parse_error})、"
-            f"String-basedフォールバックでも '{target_name}' の定義位置を"
-            "特定できませんでした。"
-        )
-
-    try:
-        ast.parse(replaced)
-    except SyntaxError as e:
-        return (
-            f"Error: 対象ファイルのパースに失敗し({parse_error})、"
-            f"String-basedフォールバック適用後も構文エラーが解消しませんでした: {e}"
-        )
-
-    _atomic_write_text(path, replaced)
-    return (
-        f"⚠️ [Fallback] '{target_name}' を '{path}' 内でString-based置換により"
-        f"強制適用しました(対象ファイル自体の構文エラーによりlibcstのASTパースが"
-        f"失敗したため: {parse_error})。"
-    )
-
-
 def apply_modification(instruction: dict) -> str:
     """1件の修正指示を適用し、結果メッセージを返す(ファイルは成功時のみ上書き)。"""
     try:
@@ -289,6 +257,13 @@ def apply_modification(instruction: dict) -> str:
     if not path.exists():
         return f"Error: ファイル '{file_path}' が見つかりません。"
 
+    resolved_path = path.resolve()
+    if resolved_path == PROTECTED_TOOLS_DIR or PROTECTED_TOOLS_DIR in resolved_path.parents:
+        return (
+            f"Error: '{file_path}' は tools/ ディレクトリ配下(自己保護対象)のため、"
+            "本ツールによる自律的な書き換えは禁止されています。"
+        )
+
     try:
         new_node = _parse_new_node(new_code)
     except Exception as e:
@@ -298,11 +273,15 @@ def apply_modification(instruction: dict) -> str:
     try:
         module = cst.parse_module(source)
     except Exception as e:
-        # 【instructions/164】対象ファイル自体に構文エラーが存在する場合、libcstは
-        # ここで例外を送出する(このケースは通常経路のASTノード置換が原理的に
-        # 適用不可能な唯一のケースであり、"クラッシュ"扱いで修正を諦めるのではなく、
-        # String-basedフォールバックで修正の適用自体を試行する)。
-        return _apply_string_fallback(path, source, target_name, new_code, e)
+        # 【instructions/229: Fail-Closed化】対象ファイル自体に構文エラーが存在し
+        # libcstがパースできない場合、以前はString-basedフォールバック
+        # (instructions/164)で行単位の置換を強制適用していたが、この経路は通常経路の
+        # 安全網(セマンティック差分検証・大量削除/挿入ヒューリスティック)がいずれも
+        # 適用できない(元ファイルをASTとして解釈できることが前提のため)。
+        # ASTノード単位の安全な置換が保証できない状況で書き込みを強行するのは
+        # 防弾ツールの設計思想に反するため、フォールバックは行わず即座にエラーとして
+        # 処理を中断する(Fail-Closed)。
+        return f"Error: 対象ファイル '{file_path}' のパースに失敗しました({e})。構文エラーを含むファイルへのAST置換はサポートされません。"
 
     transformer = TargetNodeReplacer(target_name, new_node)
     modified_module = module.visit(transformer)
@@ -351,6 +330,22 @@ def apply_modification(instruction: dict) -> str:
             "安全のため置換をブロックします"
         )
         sys.exit(1)
+
+    # instructions/246: ブロック単位の圧縮検知。上記のファイル全体の行数比較は、
+    # 大きなファイル内の1関数だけがこっそり要約・圧縮されるケース(ファイル全体で
+    # 見ると比率的に埋もれてしまう)を検知できない。置換対象ノードそのものの
+    # 置換前後の行数を直接比較し、無関係コードの消失検知(セマンティック差分)とは
+    # 独立に、対象ブロック自体の不当な圧縮を捕捉する。
+    if transformer.original_node_code is not None:
+        original_block_lines = len(transformer.original_node_code.splitlines())
+        new_block_lines = len(new_code.splitlines())
+        if original_block_lines > 15 and new_block_lines < original_block_lines * 0.6:
+            print(
+                f"[Fatal] 置換対象ブロック '{target_name}' が不当に圧縮されている"
+                f"疑いがあります(元: {original_block_lines}行 -> 新: {new_block_lines}行)。"
+                "書き込みを中止します。"
+            )
+            sys.exit(1)
 
     _atomic_write_text(path, modified_module.code)
     return f"✅ '{target_name}' を '{file_path}' 内で安全に置換しました。"

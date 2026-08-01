@@ -1,0 +1,12 @@
+{
+  "file": "infra/docker-compose.yml",
+  "services": [
+    "agent-workspace",
+    "data-sync-daemon",
+    "gen-engine"
+  ],
+  "networks": [
+    "cleanroom-egress",
+    "cleanroom-internal"
+  ]
+}

@@ -8,6 +8,10 @@ from models.schemas import BoardPostRequest
 
 router = APIRouter()
 
+# SSoT §8.2: ハイブリッド境界の例外として直接書き込みが許可された周辺機能ドメイン。
+_BOARD_POSTS_COLLECTION = "board_posts"
+_BOARD_QUOTAS_COLLECTION = "board_quotas"
+
 
 @router.get("/items")
 async def get_board_items(
@@ -17,7 +21,7 @@ async def get_board_items(
     親スレッドは複合インデックスを活用してDB側でlimitをかけ、
     返信は絞り込まれた親IDを元に取得しPython側で結合・ソートする。"""
     try:
-        col = db.collection("board_posts")
+        col = db.collection(_BOARD_POSTS_COLLECTION)
 
         # 1) 親スレッドの取得（複合インデックスを活用し、データベース側で limit をかける）
         query = (
@@ -80,8 +84,8 @@ async def create_board_post(
         raise HTTPException(status_code=401, detail="UIDが見つかりません。")
 
     today_str = datetime.now(timezone.utc).strftime("%Y%m%d")
-    quota_ref = db.collection("board_quotas").document(uid)
-    post_ref = db.collection("board_posts").document()
+    quota_ref = db.collection(_BOARD_QUOTAS_COLLECTION).document(uid)
+    post_ref = db.collection(_BOARD_POSTS_COLLECTION).document()
 
     @firestore.transactional
     def enforce_quota_and_write(transaction):
@@ -115,7 +119,7 @@ async def create_board_post(
         transaction.set(post_ref, post_data)
 
         if req.parent_id:
-            parent_ref = db.collection("board_posts").document(req.parent_id)
+            parent_ref = db.collection(_BOARD_POSTS_COLLECTION).document(req.parent_id)
             transaction.update(
                 parent_ref,
                 {

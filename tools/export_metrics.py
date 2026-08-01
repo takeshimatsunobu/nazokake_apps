@@ -4,7 +4,7 @@ tools/export_metrics.py
 MLOps推移ダッシュボード用の静的JSONダンプジェネレーター(CQRS)。
 
 本番APIサーバー(FastAPI, apps/evaluator/backend)とMLOps分析環境の依存を完全に
-断ち切るため、tools/mlops_experiments.db(実験履歴)から直近EXPORT_LIMIT件をクエリし、
+断ち切るため、run/mlops_experiments.db(実験履歴)から直近EXPORT_LIMIT件をクエリし、
 apps/evaluator/frontend/public/data/metrics.json へアトミックに書き出す。管理画面
 (admin.html/admin.js)はこの静的JSONを直接fetchするのみで、FastAPI側に専用の
 /api/admin/metricsエンドポイントは一切不要(依存を持たない)。

@@ -1,0 +1,92 @@
+# .github/workflows/pyright_check.yml
+# ============================================
+# instructions/266: 型保証境界(CI/CDゲートキーパー)。
+# SSoT_architecture.md 8.4節「型保証境界」の一部。エージェントの自己修復ループ
+# (tools/agent_graph.py)に内蔵したPyrightチェックとは独立した、最終防衛ラインと
+# してのCI/CDゲート。既存のci_pr_check.yml(Dockerビルド+脆弱性スキャン)とは
+# 目的が異なり、GCP/Docker依存が一切ないため別ワークフローとして分離する
+# (apps/**以外[tools/**、packages/**]の変更でも起動させたいが、それらの変更で
+# 無関係なDockerビルド・脆弱性スキャンまで毎回走らせたくないため)。
+#
+# ラチェット方式(行単位): このPRで実際に追加・変更された行にかかる型エラーのみを
+# 対象に型検査する(tools/pyright_tool.py.check_types_for_gate_ratchet)。
+# 本ワークフロー導入時点で、tools/配下だけで338件の既存型エラー(主にanthropic
+# SDKのバージョン差異由来、38ファイルに分散)が確認されており、ファイル単位で
+# ブロックすると「既存debtを抱えたファイルに触れただけで無関係な既存エラーごと
+# ブロックされる」実用性のないゲートになってしまうため、行単位まで絞り込む
+# (既存debt自体の是正は別タスク)。
+#
+# 【instructions/271: pytest実行の追加】このワークフローは元々Pyrightのみを
+# 実行していたが、既存のtests/(verification_env/e2e)を実行するpytestゲートが
+# GitHub Actionsのどこにも存在しなかった(ci_pr_check.ymlはDockerビルド+脆弱性
+# スキャン専用で、テスト実行という別関心事を持ち込むべきではない)。GCP/Docker
+# 依存が無い「軽量な非Dockerコード正当性ゲート」という本ワークフローの既存の
+# 立ち位置がpytestとも合致するため、Pyrightゲートの前段にpytestを追加した
+# (workflow名・job idは既存のブランチ保護ルールが参照している可能性があるため
+# 変更していない)。tests/配下はnazokake_core(packages/shared_core、firebase-admin/
+# sqlalchemy/aiosqlite等を含む)にも依存するため、requirements_orchestrator.txtに
+# 加えてpackages/shared_coreも明示的にインストールする。Docker/systemd/GPU
+# 依存のテストは各テスト自身がpytest.skipで安全側にスキップする設計
+# (tests/verification_env/test_infra_behavior.py参照)のため、ubuntu-latest上でも
+# 正しくskip/passに分岐する。
+#
+# 【instructions/284: apps/evaluator/backend依存関係の欠落を修復】本ワークフローの
+# trigger pathsにはapps/**が含まれ、apps/evaluator/backend/api/routers/*.py等も
+# 対象範囲に入るが、requirements_orchestrator.txt/packages/shared_coreには
+# fastapi・uvicorn・loguru・mcp等バックエンド固有の依存が含まれておらず、Pyrightが
+# これらのimportをFalse Positiveでreportmissing判定していた。
+# apps/evaluator/backend/requirements.txtというファイルは存在しない
+# (このプロジェクトはpyproject.toml + uv.lockで依存管理しており、instructions/218
+# 参照)ため、実際の依存マニフェストであるapps/evaluator/backend/pyproject.tomlを
+# `uv pip install -r`で明示的にインストールする(uvは-rにpyproject.tomlパスを
+# 直接渡せる)。[tool.uv.sources]でnazokake-coreをpackages/shared_coreへのローカル
+# パス参照として解決するため、既存のpackages/shared_coreインストールと重複しても
+# 問題ない。
+
+name: CI - Pyright Type Check Gate
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "apps/**"
+      - "packages/**"
+      - "tools/**"
+      - ".github/workflows/**"
+
+permissions:
+  contents: read
+
+jobs:
+  pyright-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # diffベースのラチェット判定(git diff origin/<base>...HEAD)のため、
+          # base側のコミット履歴も必要(既定のfetch-depth: 1では不足する)。
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install uv and test/Pyright gate dependencies
+        run: |
+          pip install uv
+          uv venv
+          uv pip install -r requirements_orchestrator.txt
+          uv pip install ./packages/shared_core
+          uv pip install -r apps/evaluator/backend/pyproject.toml
+
+      # 既存テストスイート(tests/verification_env, tests/e2e)の実行。実際のGCP/
+      # Firestore/GPU等の外部依存はテスト自身がモック化・pytest.skipで吸収する。
+      - name: "Run pytest (existing test suite)"
+        run: uv run pytest tests/ -v
+
+      # 変更ファイルの自動検出・行単位ラチェット判定は全てtools/pyright_tool.py
+      # --gate 内で完結する(CI側とHot Loop側で判定ロジックを二重実装しないため)。
+      - name: "Pyright type-check gate (ratchet: new/changed lines only)"
+        run: uv run python tools/pyright_tool.py --gate "origin/${{ github.base_ref }}"

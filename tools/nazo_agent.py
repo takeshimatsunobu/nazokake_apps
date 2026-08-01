@@ -43,9 +43,28 @@ class TokenCircuitBreaker:
             sys.exit(1)  # ここはデーモンごと安全に殺すための意図的な exit
 
 
+def _log_cache_usage(usage) -> None:
+    """instructions/242(FinOps): system_prompt/エラーログに設定済みのcache_control
+    (ephemeral)が実際にヒットしているかを可視化する。cache_read_input_tokensが
+    毎回0のままなら、システムプロンプトやエラーログにタイムスタンプ等の非決定的な
+    値が紛れ込みキャッシュが無効化されている("silent invalidator")兆候であり、
+    ここでの可視化なしには気づけない。TokenCircuitBreakerの集計ロジック自体は
+    変更しない(観測用のログ出力のみを追加する)。
+    """
+    if usage is None:
+        return
+    cache_read = getattr(usage, "cache_read_input_tokens", 0) or 0
+    cache_creation = getattr(usage, "cache_creation_input_tokens", 0) or 0
+    input_tokens = getattr(usage, "input_tokens", 0) or 0
+    if cache_read or cache_creation:
+        print(
+            f"   💰 [Prompt Cache] read={cache_read} (約0.1倍コスト) "
+            f"creation={cache_creation} (約1.25倍コスト) uncached={input_tokens}"
+        )
+
+
 # --- ターゲット環境の設定 ---
 BASE_DIR = Path(__file__).resolve().parent.parent
-TOOLS_DIR = Path(__file__).resolve().parent
 
 # モジュールレベルの定数(MAX_ERROR_LOG_LINES等)がos.getenvで.envの値を読み取れるよう、
 # インポート時点で早期に読み込む(main_flow内のload_dotenv呼び出しより前に必要)。
@@ -55,7 +74,7 @@ load_dotenv(BASE_DIR / ".env")
 # バックグラウンドタスク(フロントエンド起動等)の監視状態を、コンソールへの
 # print()ではなくファイルへ確実に記録する。コンソール用のStreamHandlerは
 # 意図的に設定しない(標準出力とのインターリーブ防止)。
-log_file = TOOLS_DIR / "audit_reports" / "nazo_agent_daemon.log"
+log_file = BASE_DIR / "run" / "audit_reports" / "nazo_agent_daemon.log"
 log_file.parent.mkdir(parents=True, exist_ok=True)
 
 logger = logging.getLogger("nazo_agent")
@@ -314,7 +333,7 @@ def build_static_context() -> Path:
         symbols = acd_extract_symbols(py_file)
         if symbols:
             lines.append(f"- {py_file.relative_to(target_dir)}: {', '.join(symbols)}")
-    audit_dir = TOOLS_DIR / "audit_reports"
+    audit_dir = BASE_DIR / "run" / "audit_reports"
     audit_dir.mkdir(exist_ok=True)
     out_file = audit_dir / "static_context.md"
     with open(out_file, "w", encoding="utf-8") as f:
@@ -509,7 +528,7 @@ async def startup_local_services():
     # Windows上の子プロセスはcp932コンソールにデフォルトなるため、rich等の絵文字出力で
     # UnicodeEncodeErrorを起こす。nazo_agent.py自身のUTF-8設定は子プロセスに伝播しないため明示する。
     utf8_env = {"PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"}
-    log_dir = TOOLS_DIR / "audit_reports"
+    log_dir = BASE_DIR / "run" / "audit_reports"
 
     await _ensure_service_alive(
         name="Ollama",
@@ -714,13 +733,13 @@ def _write_dead_letter(
 ) -> Path:
     """自己修正ループが最大リトライ回数に達し縮退運転へ移行する際、失敗時点の
     全文脈(システムプロンプト・会話履歴・最終エラー・Claudeの生の応答)を
-    tools/audit_reports/dead_letters/ 配下へ構造化JSONとして保存する。
+    run/audit_reports/dead_letters/ 配下へ構造化JSONとして保存する。
     なぜ自己修正しきれなかったかを事後分析できるようにする可観測性強化。
 
     書き込み前に sanitize_pii で全文字列値をマスキングし、メールアドレスや
     APIキー等の機密情報がDLQへ平文で漏洩することを防ぐ(Epic 4 - 追加課題K)。
     """
-    dead_letter_dir = TOOLS_DIR / "audit_reports" / "dead_letters"
+    dead_letter_dir = BASE_DIR / "run" / "audit_reports" / "dead_letters"
     dead_letter_dir.mkdir(parents=True, exist_ok=True)
 
     now = datetime.datetime.now()
@@ -825,7 +844,7 @@ async def phase1_audit(is_final=False) -> Path:
     for tool, result in zip(tools, results):
         print(f"✅ {tool.upper()} の解析が完了しました。")
         report_lines.append(result)
-    audit_dir = TOOLS_DIR / "audit_reports"
+    audit_dir = BASE_DIR / "run" / "audit_reports"
     audit_dir.mkdir(exist_ok=True)
     out_file = audit_dir / ("final_error_log.txt" if is_final else "error_log.txt")
     with open(out_file, "w", encoding="utf-8") as f:
@@ -834,17 +853,75 @@ async def phase1_audit(is_final=False) -> Path:
     return out_file
 
 
+# --- Phase 1.5 (instructions/246): Gemmaによる中間評価のグラウンディング強化 ---
+# Claude(高コスト・最終承認者)にエラーログを渡す前に、ローカルのGemmaへ「中間評価
+# (トリアージ)」を委譲する。生の会話文ではなく、acd_ast_compressが既に実コードの
+# 関数/クラスブロックへ機械的に紐付け済みの compact_context(AST事実)のみを見せる
+# ことで、Gemmaの判断そのものを客観的事実にグラウンディングさせ、根拠のない
+# 憶測混じりの低品質な所見が最終段のClaudeへそのまま渡ることを防ぐ。
+GEMMA_TRIAGE_MODEL = "gemma4:12b"  # tools/agent_graph.py の GEMMA_MODEL と同一タグ
+GEMMA_TRIAGE_URL = "http://127.0.0.1:11434/api/generate"
+
+
+async def ground_triage_with_gemma(compact_context: str) -> str:
+    """AST圧縮済みのエラーログ(compact_context)をGemmaに中間評価(トリアージ)させる。
+
+    compact_contextの各セクションは既にacd_ast_compressによって実際の関数/クラス
+    ソースへ機械的にグラウンディング済み(=客観的事実)であり、Gemmaの役割はその
+    事実だけを根拠に「引用されたコードは本当に指摘内容を裏付けているか」を判定する
+    ことに限定する。「その他(関数特定不可)」に分類された、実コードへ紐付けられ
+    なかった項目は、実在するASTブロックとの照合ができていない=グラウンディング
+    不能であるとして、低信頼度として扱うよう明示的に指示する。
+
+    このステップはClaude本編に対する追加の質向上策であり、必須の依存関係では
+    ない(Ollama未起動・タイムアウト等で失敗しても、呼び出し元がcompact_context
+    単独へフォールバックできるようベストエフォートとする)。
+    """
+    prompt = (
+        "あなたは客観性を重視するトリアージ担当のシニアエンジニアです。以下の"
+        "「AST圧縮済みエラーログ」は、各エラーが実際にどの関数/クラスのソース"
+        "コードで発生したかを機械的に突き合わせ済みの、客観的な事実の集合です。\n\n"
+        "以下の観点で、セクションごとに簡潔な中間評価(トリアージ)を行ってください:\n"
+        "1. 引用されているソースコードは、記載されたエラー内容を実際に裏付けて"
+        "いるか(裏付けている=グラウンディング済みの本物の問題、裏付けが弱い/"
+        "無関係に見える=ノイズの疑い)。\n"
+        "2. 「### その他(関数特定不可)」セクションに列挙された項目は、実在する"
+        "関数/クラスへ紐付けられなかった(=グラウンディングできていない)ため、"
+        "常に低信頼度として扱ってください。\n"
+        "3. 判断はここに引用された客観的なコード・エラー文のみを根拠にし、"
+        "記載のない外部知識や憶測で補完しないでください。\n\n"
+        "【絶対厳守】引用するコードやエラー文は要約・言い換え・省略をせず、"
+        "ファイルパス・シンボル名・行番号を含め原文のまま正確に引用してください"
+        "(この中間評価は後続の意思決定者[Claude]がそのまま参照するため、"
+        "情報の欠落・圧縮は許されません)。\n\n"
+        f"【AST圧縮済みエラーログ】\n{compact_context}\n\n"
+        "各セクションについて「グラウンディング済み(本物)」「ノイズの疑い」"
+        "「低信頼度(関数特定不可)」のいずれかの判定と、一言の根拠を簡潔に"
+        "列挙してください。解説文の前置きは不要です。"
+    )
+    async with httpx.AsyncClient(timeout=httpx.Timeout(180.0, connect=10.0)) as client:
+        response = await client.post(
+            GEMMA_TRIAGE_URL,
+            json={"model": GEMMA_TRIAGE_MODEL, "prompt": prompt, "stream": False},
+        )
+        response.raise_for_status()
+        return response.json().get("response", "").strip()
+
+
 # --- Phase 2 ---
 async def phase2_claude_translation(
     user_instruction: str, error_log_path: Path
 ) -> dict:
-    """Claude API による「AST置換指示」への翻訳・分割。
+    """Claude API による「AST置換設計」への翻訳・分割。
 
     従来は自然言語でJSON出力を要求し、応答テキストからMarkdownフェンスを
     手動で除去してjson.loadsする防御的パースに依存していた。tools パラメータに
-    tools.ast_modifier.AstModificationInstruction と同一のスキーマ(model_json_schema())
+    tools.ast_modifier.AstModificationDesign と同一のスキーマ(model_json_schema())
     を関数(Tool)として定義し、tool_choiceでその呼び出しを強制することで、
     解説文やMarkdown装飾が混入する余地をAPIレベルで排除する。
+    instructions/244(FinOps)により、Claudeが出力するのは実装コード(new_code)では
+    なく修正方針(modification_instruction)のみであり、実際のコード生成は
+    後続の _delegate_code_generation_to_local_coder がローカルCoderへ委譲する。
     """
     print(
         "\n🔍 [Phase 2] Claude API による「AST置換指示」への翻訳・分割を開始します..."
@@ -880,7 +957,17 @@ async def phase2_claude_translation(
         f"   [ACD Engine] AST圧縮完了: {len(raw_error_log)}文字 -> {len(compact_context)}文字"
     )
 
-    from tools.ast_modifier import AstModificationInstruction
+    print("\n🔍 [Phase 1.5] Gemma による中間評価(グラウンディング)を開始します...")
+    try:
+        gemma_triage_report = await ground_triage_with_gemma(compact_context)
+        print("✅ Gemma 中間評価完了。")
+    except Exception as e:
+        print(
+            f"   ⚠️ [Gemma中間評価] 呼び出しに失敗、この評価をスキップして続行します: {e}"
+        )
+        gemma_triage_report = "(Gemmaによる中間評価は実行できませんでした。以下のグラウンディング済みエラーログのみを根拠に判断してください。)"
+
+    from tools.ast_modifier import AstModificationDesign
 
     # TLS問題を防ぐ防弾設定
     http_client = httpx.AsyncClient(
@@ -902,7 +989,11 @@ async def phase2_claude_translation(
         "【Criticとしてのトリアージ】まず、【絶対的仕様書(SSoT)】と、後ほど提示する「エラーログ」"
         "(Pytestの失敗結果を含む場合がある)を照合し、次のどちらに該当するかを判定せよ。"
         "憶測や一般的なベストプラクティスではなく、SSoTに明記された最新仕様との整合性のみを"
-        "判断根拠とし、ハルシネーションによる誤トリアージを避けること:\n"
+        "判断根拠とし、ハルシネーションによる誤トリアージを避けること。なお、後ほど提示する"
+        "「エラーログ」にはGemma(ローカルモデル)による中間評価(トリアージ)が併記されている"
+        "場合がある。これは一次スクリーニングとしての参考情報にすぎず、それ自体を根拠として"
+        "鵜呑みにしてはならない。最終判断は必ず上記のSSoTと、エラーログ内に実際に引用された"
+        "客観的なコード・Pytest失敗事実のみに基づいて行うこと:\n"
         "  パターンA: コード側のロジックバグ(実装がSSoT/要件定義書の仕様を満たしていない)。\n"
         "  パターンB: テストコード自体の陳腐化(SSoTの仕様変更により、テストが古い仕様を"
         "前提にしている)。\n\n"
@@ -910,12 +1001,13 @@ async def phase2_claude_translation(
         "適用する修正指示を生成せよ。\n"
         f"【要件定義書】\n{user_instruction}\n\n"
         "各修正は、対象ファイル(file_path)・置換対象の関数/クラス名(target_name)・"
-        "置換後の関数/クラス定義の完全なソースコード(new_code)の3点で構成すること。"
-        'triage_type は "bug_fix" とすること。解説文やMarkdownのコードブロック装飾は'
-        "一切付けず、必ず submit_ast_modifications ツールの呼び出しのみで結果を提出すること。\n\n"
+        "修正方針を指示する短い自然言語テキスト(modification_instruction)の3点で構成すること。"
+        "実際のコード(実装)は一切書かず、方針の指示のみに徹すること(実装はローカルモデルに"
+        '委譲される)。triage_type は "bug_fix" とすること。解説文やMarkdownのコードブロック'
+        "装飾は一切付けず、必ず submit_ast_modifications ツールの呼び出しのみで結果を提出すること。\n\n"
         "【パターンBの場合】SSoTに明記された最新仕様に合わせて、陳腐化したテストコードを"
         "修正するタスクを生成せよ。修正対象・方法はパターンAと同じ3点"
-        "(file_path・target_name・new_code)で構成し、生成する各タスクの triage_type を"
+        "(file_path・target_name・modification_instruction)で構成し、生成する各タスクの triage_type を"
         '必ず "test_update" にして submit_ast_modifications ツールで提出すること。'
         "summary フィールドには「⚠️ テストの陳腐化を検知し、修正ドラフトを生成しました。"
         "レビュー・マージは人間が行ってください」という旨を明記せよ"
@@ -926,7 +1018,7 @@ async def phase2_claude_translation(
         {"type": "text", "text": system_prompt, "cache_control": {"type": "ephemeral"}}
     ]
 
-    # Claude API に渡すツール定義。Pydanticモデル(tools.ast_modifier.AstModificationInstruction)の
+    # Claude API に渡すツール定義。Pydanticモデル(tools.ast_modifier.AstModificationDesign)の
     # JSON Schemaをそのまま input_schema へ流用し、Tool Calling強制の出力形式と
     # サーバー側バリデーションの型定義を単一のスキーマ源(Single Source of Truth)に保つ。
     submit_tool = {
@@ -937,7 +1029,7 @@ async def phase2_claude_translation(
             "properties": {
                 "tasks": {
                     "type": "array",
-                    "items": AstModificationInstruction.model_json_schema(),
+                    "items": AstModificationDesign.model_json_schema(),
                 },
                 "summary": {"type": "string"},
             },
@@ -950,10 +1042,16 @@ async def phase2_claude_translation(
     # 正しい型で再出力させる。最大3回試行し、3回連続で失敗した場合のみ、パイプライン
     # 全体を落とさず縮退運転(タスク0件として継続)する。
     MAX_SELF_CORRECTION_RETRIES = 3
-    # エラーログ(compact_context)は自己修正リトライの全attemptで不変のまま
-    # messages[0]に居座り続けるため、Prompt Cachingの対象として最も効果が高い。
+    # エラーログ(compact_context)・Gemma中間評価はいずれも自己修正リトライの全attemptで
+    # 不変のままmessages[0]に居座り続けるため、Prompt Cachingの対象として最も効果が高い。
     # 2回目以降のリトライではこのブロックがキャッシュヒットし、トークン消費を抑える。
-    error_log_text = f"【エラーログ】\n{compact_context}"
+    # Gemmaの中間評価を先に置き、直後にグラウンディング根拠そのもの(compact_context)を
+    # 全文残すことで、Claudeが中間評価の当否を自分自身でも検証できるようにする
+    # (中間評価の要約だけを渡して元の事実を失わせない)。
+    error_log_text = (
+        f"【Gemmaによる中間評価(グラウンディング済みトリアージ)】\n{gemma_triage_report}\n\n"
+        f"【エラーログ(AST圧縮済み・グラウンディング根拠)】\n{compact_context}"
+    )
     messages: list = [
         {
             "role": "user",
@@ -1001,6 +1099,7 @@ async def phase2_claude_translation(
                     usage, "output_tokens", 0
                 )
                 TokenCircuitBreaker.add(total_tokens)
+            _log_cache_usage(usage)
 
             submit_block = next(
                 (
@@ -1021,7 +1120,7 @@ async def phase2_claude_translation(
             try:
                 validated_tasks = []
                 for raw_task in submit_block.input.get("tasks", []):
-                    validated = AstModificationInstruction(**raw_task)
+                    validated = AstModificationDesign(**raw_task)
                     task_dict = validated.model_dump()
                     task_dict["mode"] = "ast_replace"
                     validated_tasks.append(task_dict)
@@ -1089,7 +1188,7 @@ async def phase2_claude_translation(
     finally:
         await http_client.aclose()
 
-    triage_path = TOOLS_DIR / "audit_reports" / "triage_result.json"
+    triage_path = BASE_DIR / "run" / "audit_reports" / "triage_result.json"
     with open(triage_path, "w", encoding="utf-8") as f:
         json.dump(result_json, f, indent=2, ensure_ascii=False)
 
@@ -1356,6 +1455,7 @@ async def phase2_claude_tool_augmented(
                     usage, "output_tokens", 0
                 )
                 TokenCircuitBreaker.add(total_tokens)
+            _log_cache_usage(usage)
 
             submit_block = next(
                 (
@@ -1433,7 +1533,7 @@ async def phase2_claude_tool_augmented(
     finally:
         await http_client.aclose()
 
-    triage_path = TOOLS_DIR / "audit_reports" / "triage_result.json"
+    triage_path = BASE_DIR / "run" / "audit_reports" / "triage_result.json"
     with open(triage_path, "w", encoding="utf-8") as f:
         json.dump(result_json, f, indent=2, ensure_ascii=False)
 
@@ -1617,7 +1717,7 @@ async def phase3_aider_execution(
                 )
                 continue
 
-            ast_instruction_path = TOOLS_DIR / "audit_reports" / f"_ast_task_{idx}.json"
+            ast_instruction_path = BASE_DIR / "run" / "audit_reports" / f"_ast_task_{idx}.json"
             ast_instruction_path.parent.mkdir(parents=True, exist_ok=True)
             with open(ast_instruction_path, "w", encoding="utf-8") as f:
                 json.dump(
@@ -1818,7 +1918,7 @@ def _has_staged_changes(cwd: Path, files: list[str]) -> bool:
 def _commit_or_shadow(target_dir: Path, files: list[str], commit_message: str) -> bool:
     """settings.shadow_mode(instructions/182)が有効な場合、実際のgit add/commitを
     一切行わず(インデックスへのステージすら行わない)、コミットされたはずの内容を
-    tools/shadow_mode_log.jsonlへ記録するのみに留める。無効な場合は従来通り一括
+    run/shadow_mode_log.jsonlへ記録するのみに留める。無効な場合は従来通り一括
     コミットを行う。戻り値は「実際にコミットが行われたか」(False=シャドウ抑止/
     ステージ済み変更なしのいずれか)。呼び出し元は、この戻り値でコミット後の
     後続処理(学習データ抽出フック等)を実行すべきかどうかを判断できる。
@@ -1840,6 +1940,113 @@ def _commit_or_shadow(target_dir: Path, files: list[str], commit_message: str) -
     subprocess.run(["git", "commit", "-m", commit_message, "--"] + files, cwd=str(target_dir), check=True)
     print("✅ 一括コミット完了。")
     return True
+
+
+def _create_and_open_pr(
+    target_dir: Path, files: list[str], commit_message: str, branch_prefix: str
+) -> tuple[bool, bool | None]:
+    """Agentによる修正を、共有ブランチへの直接コミットではなく専用の作業ブランチへ
+    退避してコミットし、GitHub CLI(`gh pr create --draft`)でPRドラフトを作成する。
+
+    instructions/245(SSoT第6項「Human-in-the-Loop」原則): Agent(nazo_agent.py)が
+    `main`(共有の作業ブランチ)へ自律的に直接コミット・Push(特にpush --force)する
+    挙動を禁止し、必ず新しい作業ブランチを介したPRドラフトとして人間のレビュー・
+    マージに委ねる。settings.shadow_mode有効時は_commit_or_shadowの既存の抑止経路
+    (ログのみ記録)に完全に委ね、ブランチ作成すら行わない。
+
+    このスクリプト自身がtarget_dirを共有の作業ディレクトリとして使い続けるデーモン
+    であるため、コミット・Push・PR作成のどの段階で終わっても、finallyで必ず元居た
+    ブランチへcheckoutし直す(ブランチを切り替えたまま放置しない)。
+
+    戻り値: (PRドラフトの作成に成功したか, 6次元定量評価ゲートに合格したか)。
+    ゲート自体を評価できなかった場合(shadow_mode抑止・実質的な変更なしでコミットが
+    発生しなかった場合)、2番目の要素はNoneとなる。
+    """
+    if settings.shadow_mode:
+        _commit_or_shadow(target_dir, files, commit_message)
+        return False, None
+
+    original_branch = subprocess.run(
+        ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+        cwd=str(target_dir),
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="strict",
+        check=True,
+    ).stdout.strip()
+
+    branch_name = (
+        f"{branch_prefix}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    )
+    subprocess.run(["git", "checkout", "-b", branch_name], cwd=str(target_dir), check=True)
+
+    try:
+        committed = _commit_or_shadow(target_dir, files, commit_message)
+        if not committed:
+            return False, None
+
+        # rollback=False: このコミットはまだ共有ブランチへマージされていない専用
+        # ブランチ上の下書きであり、git revertで打ち消してもレビュー対象のPRを
+        # 汚すだけなので、判定結果のみをPR本文へ記載し人間の判断に委ねる。
+        gate_passed = _run_post_commit_quality_gate(target_dir, rollback=False)
+
+        push_result = subprocess.run(
+            ["git", "push", "-u", "origin", branch_name],
+            cwd=str(target_dir),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+        )
+        if push_result.returncode != 0:
+            print(
+                f"🚨 [PR Workflow] ブランチ '{branch_name}' のPushに失敗しました: "
+                f"{push_result.stderr.strip()}"
+            )
+            print(f"   ローカルには残っています。手動でのPushは以下で可能です: git push -u origin {branch_name}")
+            return False, gate_passed
+
+        gate_note = (
+            "✅ 6次元定量評価ゲート: 合格"
+            if gate_passed
+            else "⚠️ 6次元定量評価ゲート: 不合格または評価不能(マージ前に必ず内容を確認してください)"
+        )
+        pr_result = subprocess.run(
+            [
+                "gh",
+                "pr",
+                "create",
+                "--draft",
+                "--base",
+                "main",
+                "--head",
+                branch_name,
+                "--title",
+                commit_message,
+                "--body",
+                "Nazo-Agentによる自律修正です(instructions/245: SSoT第6項 Human-in-the-Loop)。\n\n"
+                f"{gate_note}\n\n"
+                "マージの可否は必ず人間のレビューによって判断してください。",
+            ],
+            cwd=str(target_dir),
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="strict",
+        )
+        if pr_result.returncode != 0:
+            print(f"🚨 [PR Workflow] PRドラフトの作成に失敗しました: {pr_result.stderr.strip()}")
+            print(
+                f"   ブランチ '{branch_name}' はPush済みです。手動でのPR作成は以下で可能です: "
+                f"gh pr create --draft --base main --head {branch_name}"
+            )
+            return False, gate_passed
+
+        print(f"✅ [PR Workflow] PRドラフトを作成しました:\n{pr_result.stdout.strip()}")
+        return True, gate_passed
+    finally:
+        subprocess.run(["git", "checkout", original_branch], cwd=str(target_dir), check=True)
 
 
 def _autonomous_rollback(target_dir: Path, commit_hash: str = "HEAD") -> None:
@@ -1902,7 +2109,7 @@ def _autonomous_rollback(target_dir: Path, commit_hash: str = "HEAD") -> None:
     sys.exit(1)
 
 
-def _run_post_commit_quality_gate(target_dir: Path) -> bool:
+def _run_post_commit_quality_gate(target_dir: Path, rollback: bool = True) -> bool:
     """Nazo-Agentがtarget_dirへ実際にコミット(shadow_mode抑止でない、_commit_or_shadow
     がTrueを返した場合のみ呼ぶこと)した直後、6次元定量評価ゲート
     (tools/benchmark/run_benchmark.py: evaluate_6d_quality_gate)を再実行し、退行
@@ -1922,8 +2129,15 @@ def _run_post_commit_quality_gate(target_dir: Path) -> bool:
     参照)。ロールバックするのはreport["quality_gate_6d"]["passed"]が明示的にFalseの
     場合のみ。
 
+    rollback=False(instructions/245: PRドラフト運用)の場合、退行を検知しても
+    git revertは行わない。専用の作業ブランチ上のコミットはまだ共有ブランチへ
+    マージされていない使い捨ての下書きであり、そこにrevertコミットを積んでも
+    レビュー対象のPRを汚すだけで意味がないため、判定結果のみを呼び出し元
+    (_create_and_open_pr)へ返し、PR本文への記載を通じて人間の判断に委ねる。
+
     戻り値: ゲートに合格した、またはゲート自体を評価できなかった場合はTrue(いずれも
-    ロールバック不要)。退行を明示的に検知してロールバックを実行した場合はFalse。
+    ロールバック不要)。退行を明示的に検知した場合はFalse
+    (rollback=Trueの場合はさらに_autonomous_rollback()を実行してから返す)。
     ロールバック自体が失敗した場合は_autonomous_rollback内でsys.exit(1)しこの関数から
     戻らない。
     """
@@ -1962,6 +2176,14 @@ def _run_post_commit_quality_gate(target_dir: Path) -> bool:
     if gate.get("passed"):
         print("✅ [Fail-Safe] 6次元定量評価ゲートに合格しました。ロールバックは不要です。")
         return True
+
+    if not rollback:
+        print(
+            "🚨 [Fail-Safe] 6次元定量評価ゲートで退行を検知しました"
+            f"({json.dumps(gate.get('dimensions'), ensure_ascii=False)})。"
+            "ロールバックは行わず、PRドラフトへ結果を記録します(マージの可否は人間が判断してください)。"
+        )
+        return False
 
     print(
         "🚨 [Fail-Safe] 6次元定量評価ゲートで退行を検知しました。直前のコミットを"
@@ -2065,6 +2287,103 @@ async def verify_logic_with_pytest(target_file: Path) -> tuple[bool, str]:
     return False, tail[-4000:]
 
 
+# --- ローカルCoderへの実装委譲(instructions/244: FinOpsコスト削減) ---
+# Claude API の出力トークンコストを削減するため、Claudeには「設計(修正方針)」のみを
+# 出力させ、実際のコード生成(実装)はローカルのOllama(qwen2.5-coder)へ委譲する。
+LOCAL_CODER_MODEL = "qwen2.5-coder:7b"
+LOCAL_CODER_URL = "http://127.0.0.1:11434/api/generate"
+
+_CODE_FENCE_START_RE = re.compile(r"^```[a-zA-Z]*\n")
+_CODE_FENCE_END_RE = re.compile(r"\n```$")
+
+
+def _strip_code_fences(text: str) -> str:
+    """ローカルCoderの応答からMarkdownのコードフェンス(```python ... ```)を除去する。
+
+    プロンプトでフェンスを付けないよう指示しても、小型モデルは癖でフェンスを
+    付けてくることがあるため、防御的に取り除く(付いていなければ何もしない)。
+    """
+    stripped = text.strip()
+    stripped = _CODE_FENCE_START_RE.sub("", stripped)
+    stripped = _CODE_FENCE_END_RE.sub("", stripped)
+    return stripped.strip()
+
+
+def _get_original_code(file_path: str, target_name: str) -> str:
+    """file_path内でtarget_nameに完全一致する関数/クラスの現在のソースを取得する。
+
+    ローカルCoderへの委譲には、Claudeが出力したmodification_instructionだけでなく
+    書き換え対象の現在のコードが必須のため、既存のACD Engine(acd_extract_function_blocks)
+    を流用して取得する(新規の探索ロジックは追加しない)。
+    """
+    resolved = _resolve_target_file(file_path)
+    if resolved is None:
+        return ""
+    for _, _, name, source in acd_extract_function_blocks(resolved):
+        if name == target_name:
+            return source
+    return ""
+
+
+async def generate_code_with_local_coder(original_code: str, instruction: str) -> str:
+    """元コード(original_code)と設計指示(instruction)から、ローカルのOllama
+    (qwen2.5-coder)に修正後の関数/クラスコードを生成させる。
+
+    Claude(高コスト)には設計(modification_instruction)のみを出力させ、実際の
+    コード生成をこの関数へ委譲することでAPI出力トークンコストを削減する
+    (instructions/244)。
+    """
+    prompt = (
+        "あなたは熟練のPythonエンジニアです。以下の「元のコード」を「修正方針」に"
+        "従って書き換えてください。\n\n"
+        f"【元のコード】\n```python\n{original_code}\n```\n\n"
+        f"【修正方針】\n{instruction}\n\n"
+        "【絶対厳守: AST置換前提の完全性維持】この出力はlibcstによって関数/クラス"
+        "ノード単位でそのまま置換されます。「修正方針」が触れていない既存の行は"
+        "一字一句そのまま保持し、変更が必要な箇所だけを書き換えてください。"
+        "「...」「# 以下省略」「# 変更なし」「# rest of the code remains the same」の"
+        "ような省略表現で既存のロジックを要約・圧縮・削除することは絶対に禁止です。"
+        "出力は必ず、置換対象の関数/クラス全体を最初のdef/classから最後の行まで"
+        "省略なく含む、そのまま実行可能な完全なコードにしてください。\n\n"
+        "出力は修正後の関数またはクラス定義のコードのみとし、解説文やMarkdownの"
+        "コードフェンス(```)は一切付けないでください。"
+    )
+    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=10.0)) as client:
+        response = await client.post(
+            LOCAL_CODER_URL,
+            json={"model": LOCAL_CODER_MODEL, "prompt": prompt, "stream": False},
+        )
+        response.raise_for_status()
+        raw_text = response.json().get("response", "")
+    return _strip_code_fences(raw_text)
+
+
+async def _delegate_code_generation_to_local_coder(tasks: list[dict]) -> None:
+    """Claudeが出力した設計(modification_instruction)を、ローカルCoderによる実装
+    (new_code)へ変換し、各taskへ書き戻す。
+
+    下流(phase3_aider_execution の ast_replace 分岐 / _escalate_test_update_tasks_to_sandbox)は
+    いずれも task["new_code"] を前提としているため、ここで埋めることで既存の適用経路
+    (libcstによるAST置換・多段バリデーションゲート)を一切変更せずに済む。
+    元コードが見つからない場合は空文字のままとし、下流の必須チェックにより
+    そのタスクは安全にスキップされる(縮退運転)。
+    """
+    for task in tasks:
+        file_path = task.get("file_path", "")
+        target_name = task.get("target_name", "")
+        instruction = task.get("modification_instruction", "")
+        original_code = _get_original_code(file_path, target_name)
+        if not original_code:
+            print(
+                f"⚠️ 警告: '{target_name}' の元コードが '{file_path}' 内に見つからず、"
+                "ローカルCoderへの委譲をスキップします。"
+            )
+            task["new_code"] = ""
+            continue
+        print(f"   🧑‍💻 [Local Coder] {file_path} :: {target_name}() の実装を生成中...")
+        task["new_code"] = await generate_code_with_local_coder(original_code, instruction)
+
+
 async def _run_claude_pipeline_and_commit(
     user_instruction: str, log_path: Path, deduped_log: str, commit_message: str
 ) -> None:
@@ -2085,6 +2404,8 @@ async def _run_claude_pipeline_and_commit(
     triage_data = await phase2_claude_translation(user_instruction, log_path)
     tasks = triage_data.get("tasks", [])
 
+    await _delegate_code_generation_to_local_coder(tasks)
+
     test_update_tasks = [t for t in tasks if t.get("triage_type") == "test_update"]
     bug_fix_tasks = [t for t in tasks if t.get("triage_type") != "test_update"]
 
@@ -2100,16 +2421,15 @@ async def _run_claude_pipeline_and_commit(
 
     if success_count > 0 and successful_files:
         print(
-            f"\n📦 {success_count}件の成功ファイルを一括コミット(Bulk Commit)します..."
+            f"\n📦 {success_count}件の成功ファイルをPRドラフトとして提出します"
+            "(instructions/245: 直接コミット・Pushは行いません)..."
         )
         try:
-            committed = _commit_or_shadow(TARGET_APP_DIR, successful_files, commit_message)
-            # 【instructions/188】実際にライブブランチへコミットした場合のみ、6次元定量
-            # 評価ゲートで退行を検証する(shadow_mode抑止時はコミット自体が存在しない)。
-            if committed:
-                _run_post_commit_quality_gate(TARGET_APP_DIR)
+            _create_and_open_pr(
+                TARGET_APP_DIR, successful_files, commit_message, "fix/agent-auto-repair"
+            )
         except Exception as e:
-            print(f"⚠️ コミット失敗: {e}")
+            print(f"⚠️ PRドラフトの作成に失敗しました: {e}")
 
 
 async def _process_target(user_instruction: str, engine: str, log_path: Path) -> None:
@@ -2183,25 +2503,27 @@ async def _process_target(user_instruction: str, engine: str, log_path: Path) ->
                     if test_ok:
                         rel_path = str(resolved_target)
                         print(
-                            "\n📦 自律修復ループによる変更を一括コミット(Bulk Commit)します..."
+                            "\n📦 自律修復ループによる変更をPRドラフトとして提出します"
+                            "(instructions/245: 直接コミット・Pushは行いません)..."
                         )
                         try:
-                            committed = _commit_or_shadow(
+                            opened_pr, gate_passed = _create_and_open_pr(
                                 TARGET_APP_DIR,
                                 [rel_path],
                                 "fix: LangGraph自律修復ループによる自動修正",
+                                "fix/agent-auto-repair",
                             )
 
                             # --- 推論軌跡SFTデータ自動抽出フック(フライホイール化) ---
-                            # 【instructions/182】シャドウモードで実コミットが抑止された
-                            # 場合(committed=False)、抽出対象となる実際のコミットが
+                            # 【instructions/182】シャドウモードでPR作成自体が抑止された
+                            # 場合(opened_pr=False)、抽出対象となる実際のコミットが
                             # 存在しないため、このフック自体もスキップする。
-                            # 【instructions/188】6次元定量評価ゲートで退行を検知して
-                            # 自律ロールバックした場合(_run_post_commit_quality_gateが
-                            # Falseを返す)、そのコミットは既に取り消されているため、
-                            # 学習データとして抽出・蓄積しない(フライホイールが退行を
-                            # 「成功修復」として誤学習することを防ぐ)。
-                            if committed and _run_post_commit_quality_gate(TARGET_APP_DIR):
+                            # 【instructions/188 / 245】6次元定量評価ゲートで退行を
+                            # 検知した場合(gate_passed=False)、その修正は既にPRドラフト
+                            # 内に留め置かれ人間のレビュー待ちであり、まだ「成功修復」と
+                            # 確定していないため、学習データとして抽出・蓄積しない
+                            # (フライホイールが退行を誤学習することを防ぐ)。
+                            if opened_pr and gate_passed:
                                 print(
                                     "\n🌀 [Flywheel] 今回の修復軌跡を学習データとして抽出します..."
                                 )
@@ -2229,7 +2551,7 @@ async def _process_target(user_instruction: str, engine: str, log_path: Path) ->
                                         f"⚠️ 学習データの抽出に失敗しました (code={sft_result.returncode})。"
                                     )
                         except Exception as e:
-                            print(f"⚠️ コミット失敗: {e}")
+                            print(f"⚠️ PRドラフトの作成に失敗しました: {e}")
                     else:
                         print(
                             "\n🚨 [Escalation] Ollamaの修正が論理テストに失敗しました。"
@@ -2316,12 +2638,14 @@ async def main_flow(user_instruction: str, engine: str = "ollama"):
     print("\n" + "🌟" * 25)
     print("🎯 【V8.8 (Tool-Augmented) 対話型・自律パイプライン完走 (超・可観測仕様)】")
     print(
-        "   すべてのフェーズが終了しました。Gitログと final_error_log.txt を確認してください。"
+        "   すべてのフェーズが終了しました。final_error_log.txt と、"
+        "作成されたPRドラフト(`gh pr list --draft`)を確認してください。"
     )
     print(
-        "   ※ 万が一、修正に失敗しエラーが悪化していた場合は、以下のコマンドで一撃ロールバックが可能です:"
+        "   ※ instructions/245により、Agentは修正をmain(共有ブランチ)へ直接コミット・"
+        "Pushしません。修正はすべて専用ブランチ上のPRドラフトとして提出されるため、"
+        "問題があれば単にそのPRをマージしなければ安全です。"
     )
-    print(f"   git -C {TARGET_APP_DIR} reset --hard HEAD~1")
     print("🌟" * 25 + "\n")
 
     # --- V8.9: Graceful Shutdown ---

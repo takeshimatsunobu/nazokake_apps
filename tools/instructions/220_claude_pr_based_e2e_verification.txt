@@ -1,0 +1,15 @@
+─────────
+【ミッション: ゼロトラスト自己検証とPRベースのE2Eデプロイ貫通テスト】
+
+外部ステート（GCP/GitHub Secrets）の不確実性を検知し、自律的に main へのPushをブロックした判断はSREとして完璧なフェイルセーフです。
+インフラ側の準備（WIF構築およびSecrets登録）は完了していますが、「人間の言葉を盲信して main へ直接Pushする」というアンチパターンは採用しません。以下の、より安全でモダンなDevOpsフローに従ってE2E検証を完遂してください。
+
+Step 1: 状態の自律検証（ゼロトラスト）
+gh secret list コマンドを実行し、パイプラインに必要な WIF_PROVIDER や WIF_SERVICE_ACCOUNT がリポジトリに実際に存在しているか、あなた自身の目で（コード的に）ファクト確認を行ってください。
+
+Step 2: PR（Pull Request）の作成
+確認が取れたら、現在の test/agent-benchmark ブランチをそのままリモートへPushしてください。その後、gh pr create コマンド等を用いて、main に向けたPull Requestを作成してください。（※決してローカルでmainへ直接マージ・Pushしないでください）。
+
+Step 3: パイプラインの監視と自動マージ
+PR作成後、GitHub ActionsのCIチェックが走るはずです。gh pr checks 等でステータスを監視し、成功（Green）したことを確認した上で、PRをマージ（gh pr merge）してください。
+マージ後、本番デプロイ用のワークフロー（deploy_cloud_run.yml）が発火し、Cloud Runへのデプロイが正常終了したことを確認し、最終稼働サマリーを報告してください。

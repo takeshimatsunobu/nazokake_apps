@@ -24,11 +24,15 @@
 *-wal
 *-shm
 
+# 【instructions/265: tools/自己保護とステート分離】tools/をインフラ層でRead-Only化する
+# ため、エージェント関連ツール群の一時ファイル・ログ・状態ファイルはすべて run/ 配下へ
+# 出力する(tools/配下ではない)。以下、run/配下の再生成可能な成果物をまとめて除外する。
+
 # Nazo-Agentの出力物(デッドレター・監査ログ等、再生成可能な成果物)
-tools/audit_reports/
+run/audit_reports/
 
 # ベンチマークハーネスの生成物(メトリクスJSON等、再生成可能な成果物)
-tools/benchmark/reports/
+run/benchmark/reports/
 
 # VRAMグローバル排他ロック(ランタイムのみ存在するファイルロック本体)
 .vram.lock
@@ -37,14 +41,34 @@ tools/benchmark/reports/
 *.migration.lock
 
 # mlops_trigger.pyの「前回トリガー時点の件数」永続化状態(再生成可能)
-tools/mlops_trigger_state.json
+run/mlops_trigger_state.json
 
 # mlops_trigger.pyの直前サイクルの判定結果(instructions/169、再生成可能)
-tools/mlops_trigger_last_run.json
-tools/mlops_trigger_last_run.tmp.json
+run/mlops_trigger_last_run.json
+run/mlops_trigger_last_run.tmp.json
 
 # scheduler_daemon.pyの最終実行時刻・終了コード(instructions/161、再生成可能)
-tools/scheduler_daemon_state.json
+run/scheduler_daemon_state.json
+
+# preflight_check.py/context_manager.pyのタスク状態・エージェント長期記憶(再生成可能)
+run/tasks_state.json
+run/tasks_state.json.lock
+run/context_state.json
+run/context_state.json.lock
+
+# shadow_mode.pyの検証用ログ(再生成可能)
+run/shadow_mode_log.jsonl
+run/shadow_mode_log.jsonl.lock
+run/shadow_mode_log.tmp.jsonl
+
+# compile_knowledge.pyのビルド成果物(tools/instructions/から再生成可能)
+run/ai_knowledge_base.json
+
+# extract_agent_sft.pyが抽出する自己修復トレース(再生成可能、実行ログ由来のため非コミット)
+run/dataset/
+
+# mlops_experiments_db.py(*.dbパターンで既にカバーされるが明示しておく)
+run/mlops_experiments.db
 
 # safe_reset_infra.pyの一時バックアップ(異常終了時の残骸を誤コミットしないためのガード)
 data/db_backup_temp.json
@@ -53,6 +77,10 @@ data/db_backup_temp.json
 data/sft_dataset.jsonl
 data/dpo_dataset.jsonl
 data/extraction_stats.json
+
+# extract_training_data.pyが生成するインストラクション・チューニング用JSONL
+# (instructions/241、再生成可能な成果物かつ実ユーザーデータを含むため非コミット)
+data/training/
 
 # 一時ファイル・スモークテストの残骸
 _tmp*

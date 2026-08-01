@@ -54,16 +54,21 @@ from tools.ast_modifier import AstModificationInstruction
 from tools.compile_knowledge import extract_keywords
 from tools.config import settings
 from tools.knowledge_retriever import record_experience, retrieve_experiences
+from tools.pyright_tool import check_types_for_gate
 
 MAX_JSON_RETRIES = 3
 OLLAMA_MODEL = "qwen2.5-coder:7b"
 GEMMA_MODEL = "gemma4:12b"
 CTO_MODEL = "claude-sonnet-5"
 BASE_DIR = Path(__file__).resolve().parent.parent
-DEAD_LETTER_DIR = BASE_DIR / "tools" / "audit_reports" / "dead_letters"
-PR_DRAFT_DIR = BASE_DIR / "tools" / "audit_reports" / "pr_drafts"
+DEAD_LETTER_DIR = BASE_DIR / "run" / "audit_reports" / "dead_letters"
+PR_DRAFT_DIR = BASE_DIR / "run" / "audit_reports" / "pr_drafts"
 SSOT_PATH = BASE_DIR / "SSoT_architecture.md"
-BENCHMARK_REPORTS_DIR = BASE_DIR / "tools" / "benchmark" / "reports"
+BENCHMARK_REPORTS_DIR = BASE_DIR / "run" / "benchmark" / "reports"
+# 【instructions/266: 型保証境界】自己修復ループ(Hot Loop)・CTOエスカレーション
+# サンドボックスの両方で、コミット前のPyright型チェック結果をトリアージ可能な
+# JSONとしてここへ記録する(先のタスクで分離したrun/audit_reports/配下)。
+PYRIGHT_LOG_DIR = BASE_DIR / "run" / "audit_reports" / "pyright_checks"
 
 # tools/nazo_agent.pyと同様、cto_node()のANTHROPIC_API_KEY(os.getenv経由)がインポート
 # 時点で確実にos.environへ反映されるよう、ここで明示的に.envを読み込む
@@ -110,6 +115,11 @@ CRAFTSMAN_FEWSHOT_EXAMPLE = """\
 - file_path: 修正対象ファイルのパス(文字列)。
 - target_name: 置換対象の関数名またはクラス名(完全一致・文字列)。
 - new_code: 置換後の関数/クラス定義の完全なソースコード(文字列。改行は\\nでエスケープ)。
+  【絶対厳守: AST置換前提の完全性維持】この値はlibcstによって関数/クラスノード単位で
+  そのまま置換される。現場監督の診断が触れていない既存の行は一字一句そのまま保持し、
+  変更が必要な箇所だけを書き換えること。「...」「# 以下省略」「# 変更なし」のような
+  省略表現で既存のロジックを要約・圧縮・削除することは絶対に禁止。最初のdef/classから
+  最後の行まで省略なく含む、そのまま実行可能な完全なコードにすること。
 - triage_type: "bug_fix" または "test_update" のいずれか。
 - confidence_score: この修正案そのものの正しさに対する自己評価(0.0〜1.0)。診断が明確で
   修正が単純明快なら1.0に近い値、原因が複数考えられる・複数ファイルへの影響が疑われる・
@@ -130,6 +140,7 @@ class AuditState(TypedDict):
     diagnosis: str
     retry_count: int
     last_validation_error: str
+    last_pyright_error: str
     raw_json_text: str
     result_message: str
     escalated: bool
@@ -204,6 +215,15 @@ def craftsman_node(state: AuditState) -> dict:
             f"\n\n【前回の出力エラー(必ず修正すること)】\n{state['last_validation_error']}\n"
             "上記のスキーマ違反・JSON構文エラーを修正し、正しいJSONのみを再度出力してください。"
         )
+    elif state.get("last_pyright_error"):
+        # 【instructions/266: 型保証境界】JSONスキーマ自体は妥当だったが、適用結果を
+        # Pyrightで検査したところ型推論エラーが検出された場合の再修正指示。
+        retry_note = (
+            f"\n\n【前回の適用結果に対する型チェックエラー(必ず修正すること)】\n"
+            f"{state['last_pyright_error']}\n"
+            "上記の型推論エラーが解消されるよう修正指示を作り直し、正しいJSONのみを"
+            "再度出力してください。"
+        )
 
     prompt = (
         "あなたは腕利きの職人です。現場監督の診断結果に基づき、AST置換用の修正指示を"
@@ -253,6 +273,9 @@ def validate_node(state: AuditState) -> dict:
         audit_entry += " -> CTOエスカレーション対象"
     return {
         "last_validation_error": "",
+        # 新しい修正指示が生成された以上、前回の型チェックエラーは無関係になるため
+        # ここでクリアする(次のapply/typecheckサイクルで最新の判定結果に置き換わる)。
+        "last_pyright_error": "",
         "requires_cto_escalation": requires_cto_escalation,
         "audit_history": [audit_entry],
     }
@@ -304,6 +327,55 @@ def apply_node(state: AuditState) -> dict:
         "result_message": output,
         "audit_history": [f"[適用] {output}"],
     }
+
+
+def typecheck_node(state: AuditState) -> dict:
+    """【instructions/266: 型保証境界】apply_nodeによるAST置換適用後・コミット前の
+    静的型検査ゲート。tools/pyright_tool.py.check_types_for_gate()(--outputjson
+    モード)で対象ファイルを検査し、severity=="error"の診断が1件でも検出された
+    場合はFail-Closedとして扱い、その内容をcraftsman_node(職人=Qwen)への再修正
+    指示として申し送る自己修復ループを構成する(retry_countの予算はJSONスキーマ
+    検証の再試行と共有し、MAX_JSON_RETRIES回を使い切ったらgemma_fallbackへ
+    サーキットブレーカーが作動する、既存のRetryループと同じ設計)。
+
+    apply_node自体が失敗している(ast_modifier.pyがエラーを返し、ファイルへの
+    書き込みが行われていない)場合は、型チェックしても意味を持たないためスキップする。
+    """
+    if not state.get("result_message", "").startswith("✅"):
+        return {
+            "audit_history": ["[型チェック] 適用が失敗しているためスキップしました。"],
+        }
+
+    log_path = (
+        PYRIGHT_LOG_DIR
+        / f"hotloop_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.json"
+    )
+    check = check_types_for_gate(state["file_path"], cwd=str(BASE_DIR), log_path=log_path)
+
+    if check["passed"]:
+        return {
+            "last_pyright_error": "",
+            "audit_history": ["[型チェック] Pyright OK(エラーなし)。"],
+        }
+
+    error_summary = check["raw_error"] or "\n".join(check["errors"])
+    next_retry = state["retry_count"] + 1
+    return {
+        "last_pyright_error": error_summary,
+        "retry_count": next_retry,
+        "audit_history": [
+            f"[型チェック] Pyright型推論エラーを検出(試行{next_retry}回目、"
+            f"ログ: {log_path}): {error_summary}"
+        ],
+    }
+
+
+def _route_after_typecheck(state: AuditState) -> str:
+    if not state.get("last_pyright_error"):
+        return "reporter"
+    if state["retry_count"] >= MAX_JSON_RETRIES:
+        return "gemma_fallback"
+    return "craftsman"
 
 
 def _load_ssot_context() -> str:
@@ -713,6 +785,18 @@ def sandbox_verify_node(state: AuditState) -> dict:
     このノードに到達するのはcto_instructionが設定されている場合のみ(_route_after_cto)。
     worktree自体は managed_git_worktree により処理の成功・失敗に関わらず必ず破棄される
     (使い捨て)。人間レビューのために残るのはGitブランチのみ。
+
+    【instructions/270で再確認・意図的据え置き】tools/nazo_agent.py の
+    _create_and_open_pr(instructions/245、Gemma/Qwenの通常修正パス)は既に
+    git push + `gh pr create --draft` まで自動化済みだが、このノード(CTOへ
+    エスカレーションされた最難関のケース専用)は意図的にそこで止め、実際の
+    Push/PR作成は人間の手動操作に委ねる。ブランチ自動作成・個別パスでの
+    `git add`・ローカルコミットまでは同じ安全策を共有しつつ、Qwenが解決できず
+    Claudeまでエスカレーションされた=最もリスクの高い修正群についてのみ、
+    リモートへの反映(Push)を人間の意思決定なしに行わない、という二段構えの
+    保守性を意図的に維持している。将来の指示でこの手動ハンドオフを「未実装の
+    ギャップ」として再度自動化しようとする前に、これが2026-08-01にユーザーの
+    明示的な確認を得た上での意図的な設計判断であることを踏まえること。
     """
     instruction = state["cto_instruction"]
     repo_root = _find_git_repo_root(state["file_path"])
@@ -753,6 +837,29 @@ def sandbox_verify_node(state: AuditState) -> dict:
                 message = (
                     "🚨 [サンドボックス検証失敗] CTOの修正案の適用(ast_modifier.py)に"
                     f"失敗しました: {(apply_result.stdout + apply_result.stderr).strip()}"
+                )
+                return {
+                    "result_message": message,
+                    "escalation_branch": branch_name,
+                    "audit_history": [f"[サンドボックス検証] {message}"],
+                }
+
+            # 【instructions/266: 型保証境界】コミット前の最終ゲート。CTOエスカレーション
+            # 経路にはHot LoopのようなQwenへの再修正ループが存在しない(適用済みの
+            # instructionはClaude/CTOが既に確定させたものであり、職人ロールの出番が
+            # ないため)。型推論エラーが1件でも検出された場合はFail-Closedとして
+            # コミット自体を行わず中断する(worktree自体はmanaged_git_worktreeの
+            # finallyで必ず破棄されるため、ここで書き込まれたファイルが残留することはない)。
+            type_check = check_types_for_gate(
+                str(worktree_path / relative_path),
+                cwd=str(BASE_DIR),
+                log_path=PYRIGHT_LOG_DIR / f"sandbox_{branch_name.replace('/', '_')}.json",
+            )
+            if not type_check["passed"]:
+                error_summary = type_check["raw_error"] or "\n".join(type_check["errors"])
+                message = (
+                    "🚨 [型保証ゲート] CTOの修正案にPyright型推論エラーが検出されたため、"
+                    f"コミットをブロックしました(Fail-Closed): {error_summary}"
                 )
                 return {
                     "result_message": message,
@@ -850,10 +957,11 @@ def _write_gemma_dead_letter(
     current_code: str,
     audit_history: list[str],
     last_validation_error: str,
+    last_pyright_error: str,
     gemma_analysis: str,
 ) -> Path:
     """Gemmaによる最終分析結果を、tools/nazo_agent.pyの_write_dead_letterと同じ
-    命名規則(dead_letter_YYYYMMDD_HHMMSS_UUID.json)でtools/audit_reports/dead_letters/
+    命名規則(dead_letter_YYYYMMDD_HHMMSS_UUID.json)でrun/audit_reports/dead_letters/
     へ構造化JSONとして保存する。
 
     ここに含まれるのはコード・エラーログ・診断テキストのみで、nazo_agent.py側の
@@ -873,6 +981,7 @@ def _write_gemma_dead_letter(
         "current_code": current_code,
         "qwen_audit_history": audit_history,
         "last_validation_error": last_validation_error,
+        "last_pyright_error": last_pyright_error,
         "gemma_analysis": gemma_analysis,
     }
     dead_letter_path.write_text(
@@ -901,11 +1010,14 @@ def gemma_fallback_node(state: AuditState) -> dict:
         "(診断結果・生成したJSON・スキーマ検証エラー)を精査し、なぜQwenが"
         "解決できなかったのかを論理的に深く分析してください。人間またはClaudeへの"
         "エスカレーション用レポートとして、根本原因の分析と推奨される次のアクションを"
-        "簡潔にまとめてください。\n\n"
+        "簡潔にまとめてください。分析の中で対象コードやQwenの出力を引用する際は、"
+        "要約・言い換えをせず該当箇所を原文のまま正確に引用してください"
+        "(このレポートはデッドレターとして保存され、後で人間やClaudeがそのまま参照します)。\n\n"
         f"【エラーログ】\n{state.get('error_log') or '(なし。汎用コードレビュー)'}\n\n"
         f"【対象ファイル: {state['file_path']}】\n```python\n{state['current_code']}\n```\n\n"
         f"【Qwenの失敗履歴】\n{failure_history}\n\n"
-        f"【最終スキーマ検証エラー】\n{state.get('last_validation_error', '')}"
+        f"【最終スキーマ検証エラー】\n{state.get('last_validation_error', '')}\n\n"
+        f"【最終Pyright型チェックエラー(instructions/266)】\n{state.get('last_pyright_error', '') or '(なし)'}"
     )
     gemma_analysis = _extract_text(gemma_llm.invoke(prompt))
 
@@ -915,6 +1027,7 @@ def gemma_fallback_node(state: AuditState) -> dict:
         current_code=state["current_code"],
         audit_history=state["audit_history"],
         last_validation_error=state.get("last_validation_error", ""),
+        last_pyright_error=state.get("last_pyright_error", ""),
         gemma_analysis=gemma_analysis,
     )
 
@@ -969,6 +1082,7 @@ def build_graph():
     graph.add_node("craftsman", craftsman_node)
     graph.add_node("validate", validate_node)
     graph.add_node("apply", apply_node)
+    graph.add_node("typecheck", typecheck_node)
     graph.add_node("cto_node", cto_node)
     graph.add_node("sandbox_verify", sandbox_verify_node)
     graph.add_node("gemma_fallback", gemma_fallback_node)
@@ -998,7 +1112,20 @@ def build_graph():
         _route_after_cto,
         {"sandbox_verify": "sandbox_verify", "reporter": "reporter"},
     )
-    graph.add_edge("apply", "reporter")
+    # 【instructions/266: 型保証境界】apply後は直接reporterへ進まず、必ずtypecheckで
+    # Pyrightゲートを通す。型エラーがなければreporterへ、あればリトライ余地に応じて
+    # 職人ノードへ差し戻すか(自己修復ループ)、リトライを使い果たしていれば
+    # gemma_fallbackへサーキットブレーカーが作動する(validateの既存Retry予算を共有)。
+    graph.add_edge("apply", "typecheck")
+    graph.add_conditional_edges(
+        "typecheck",
+        _route_after_typecheck,
+        {
+            "reporter": "reporter",
+            "craftsman": "craftsman",
+            "gemma_fallback": "gemma_fallback",
+        },
+    )
     graph.add_edge("sandbox_verify", "reporter")
     graph.add_edge("gemma_fallback", "reporter")
     graph.add_edge("reporter", END)
@@ -1027,6 +1154,7 @@ def run_self_repair(file_path: str, error_log: str = "") -> dict:
         "diagnosis": "",
         "retry_count": 0,
         "last_validation_error": "",
+        "last_pyright_error": "",
         "raw_json_text": "",
         "result_message": "",
         "escalated": False,

@@ -42,6 +42,19 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 # ロックのため、プロセスが異常終了してもOSが自動的に解放する)。
 VRAM_LOCK_PATH = PROJECT_ROOT / ".vram.lock"
 
+# 【instructions/265: tools/自己保護とステート分離】インフラ層(infra/docker-compose.yml)で
+# tools/ をRead-Only(:ro)マウントする前提のもと、エージェント関連ツール群が実行時に
+# 生成する一時ファイル・ログ・キャッシュ・状態ファイルはすべてこの揮発性ディレクトリへ
+# 出力する。tools/ 配下に出力すると、Read-Only化した瞬間に書き込みエラーでクラッシュする
+# ため、状態(state)と静的なツール本体(code)を物理的に分離する。
+RUN_DIR = PROJECT_ROOT / "run"
+
+# tools/nazo_agent.py・tools/agent_graph.py・tools/mlops_pipeline_nazo.py・
+# tools/evaluate_model.py・tools/safe_reset_infra.py・tools/manage_local_processes.ps1が
+# 共有する監査ログ/デッドレター/PR下書き等の出力先。以前は`tools/audit_reports/`
+# だったが、上記と同じ理由でrun/配下へ移設した。
+AUDIT_REPORTS_DIR = RUN_DIR / "audit_reports"
+
 # クライアント接続先としては到達不能な「サーバーのbind用アドレス」。OLLAMA_HOSTに
 # これが設定されていた場合、フォーマット自体は妥当でも実質的に不正な設定とみなす。
 _WILDCARD_HOSTS = {"0.0.0.0", "::", "*", ""}
@@ -179,10 +192,22 @@ class ToolsSettings(BaseSettings):
     # (nazokake_core.quality_circuit_breaker)が実戦で十分に検証されるまでの段階的
     # 始動措置。有効な間は、これらのモジュールの実際のDB更新(トリガー状態のclaim・
     # エフェメラルVMキック)・Gitコミット(適用)を一切行わず、実行されたはずの内容を
-    # tools/shadow_mode.py経由でログ/検証用ファイル(tools/shadow_mode_log.jsonl)へ
+    # tools/shadow_mode.py経由でログ/検証用ファイル(run/shadow_mode_log.jsonl)へ
     # 出力するのみに留める。当面はこれを既定で有効(True)とし、無効化する場合のみ
     # 環境変数SHADOW_MODE=falseで明示的に上書きする。
     shadow_mode: bool = True
+
+    # 【instructions/261: ポート管理のSSoT化】ローカル開発用APIサーバー(run_api.ps1が
+    # 起動するuvicorn main:app)の正規リッスンポート。以前はrun_api.ps1・
+    # tools/nazo_agent.py・フロントエンドの複数JSファイルに7800という値が個別に
+    # ハードコードされており、出自不明な別ポート(instructions/260で発見した8095の
+    # ゾンビuvicorn等)との区別がつかない構成ドリフトの温床となっていた。
+    api_dev_port: int = 7800
+
+    # ローカル開発用フロントエンド静的サーバー(dev_server.py)の正規リッスンポート。
+    # api_dev_port と同じ理由でSSoT化するが、本設定を実際に参照するようリファクタ
+    # 済みなのは現時点でrun_api.ps1のみ(instructions/261 Step 2の対象範囲)。
+    frontend_dev_port: int = 7300
 
 
 def load_settings() -> ToolsSettings:

@@ -1,0 +1,17 @@
+【ミッション: Git履歴断絶の解消と、main上書きによるE2Eデプロイ発火】
+
+孤立したmainブランチを検知し、破壊的操作の前に自律停止した判断をアーキテクトとして高く評価します。
+調査結果に基づくインフラ管理者の最終判断は以下の通りです。
+
+前提の承認:
+origin/main に存在する2026年5月のコミットは、リポジトリ作成時のダミーコミットであり破棄して構いません。148コミットを持つ現在の test/agent-benchmark ブランチが「真の正統な歴史」です。
+
+Step 1: mainブランチの完全上書き (Force Push)
+無関係な履歴をマージ（PR作成）するのではなく、test/agent-benchmark の状態を origin/main へ強制的に上書き（Force Push）してください。
+例: git push origin test/agent-benchmark:main --force
+※これにより、mainブランチの歴史が正しく書き換わります。
+
+Step 2: CI/CDの監視と完了報告
+main へのPushが成功すると、GitHub Actions（deploy_cloud_run.yml）が発火するはずです。
+gh run list や gh run watch 等のコマンドを用いて、このワークフローの実行ステータスを監視してください。
+WIF認証を通過し、Cloud Runへのデプロイが正常終了（Green）したことを確認したら、最終的なデプロイ完了サマリーを報告してください。

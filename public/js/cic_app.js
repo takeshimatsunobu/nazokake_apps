@@ -20,9 +20,8 @@ console.log("[CIC] SYSTEM BOOT: JS Loading");
         statusMsg.textContent = ">>> SCANNING TARGET...";
         btnAcquire.disabled = true;
 
-        fetch('/api/cic/webhook/share', {
+        cicAuthFetch('/api/cic/webhook/share', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ url: targetUrl.value })
         })
         .then(function(res) {
@@ -99,18 +98,16 @@ console.log("[CIC] SYSTEM BOOT: JS Loading");
         if(!currentMissionId) return;
         console.log("[CIC] Firing sequence started.");
         
-        fetch('/api/cic/missions/' + currentMissionId + '/audit', {
+        cicAuthFetch('/api/cic/missions/' + currentMissionId + '/audit', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ selected_warhead: text })
         })
         .then(function(res) { return res.json(); })
         .then(function(auditData) {
             showToast("G-7 AUDIT: " + auditData.warning_message);
             setTimeout(function() {
-                fetch('/api/cic/missions/' + currentMissionId + '/fire', {
+                cicAuthFetch('/api/cic/missions/' + currentMissionId + '/fire', {
                     method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ selected_warhead: text })
                 })
                 .then(function(res) { return res.json(); })

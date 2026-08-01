@@ -5,7 +5,12 @@ GET  /status/{doc_id} : 段階的ステータス（processing → gemini_complet
 
 フロー（生成と評価を分離）:
   1. Gemini 生成 → status:gemini_generated（本文先行）→ 評価 → status:gemini_completed
-  2. 裏でローカル ELYZA 生成 → llmjp_status:generated（本文先行）→ 評価 → status:all_completed
+  2. 裏でELYZA 生成 → llmjp_status:generated（本文先行）→ 評価 → status:all_completed
+     【instructions/258】ローカル開発(K_SERVICE未設定)では直接Ollamaを呼ぶ経路A。
+     Cloud Run本番(K_SERVICE設定済み)ではLLMJP_URL等のトンネル設定が無く経路Aが
+     構造的に到達不能なため試みず、generate_ai()が書き込むelyza_job_status経由の
+     オンデマンドジョブキュー(instructions/250, workers/ondemand_elyza_worker.py)
+     である経路Bにのみ委ねる。
 Gemini(信頼パス)の失敗のみ status:error。ELYZA(おまけ)の失敗は graceful（llmjp_status:failed）。
 
 【Local-First】永続化先はFirestoreではなく packages/shared_core/nazokake_core/database.py の
@@ -15,12 +20,14 @@ Serialized Writer(ローカルSQLite)。async_upsert_item() は内部で1回のo
 """
 
 import asyncio
+import os
 import random
 import uuid
 from datetime import datetime, timezone
 from loguru import logger
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from firebase_admin import firestore
 
 from api.deps import get_db, handle_exceptions
 from api.routers.admin_costs import is_budget_exceeded
@@ -28,7 +35,7 @@ from models.schemas import GenerateRequest
 from services.generation import generate_via_gemini, generate_via_llmjp
 from services.evaluation import run_evaluation, AXES
 from nazokake_core.database import async_get_item, async_upsert_item
-from nazokake_core.firestore_sync import sync_once_safe
+from nazokake_core.firestore_sync import _ensure_firebase_app, _resolve_collection, sync_once_safe
 from nazokake_core.quality_circuit_breaker import async_record_evaluation_score
 from nazokake_core.schemas import Result, Scores
 
@@ -139,7 +146,24 @@ async def progressive_generate(db, doc_id: str, odai: str, pair_id: str):
             return False
 
     async def process_elyza() -> None:
-        """おまけパス: 生成→本文先行→評価→スコア。失敗は graceful に llmjp_status:failed。"""
+        """おまけパス: 生成→本文先行→評価→スコア。失敗は graceful に llmjp_status:failed。
+
+        【instructions/258: 経路Aの到達不能修復】Cloud Run本番環境にはLLMJP_URL/
+        CF_CLIENT_ID等のトンネル設定が存在せず(cloudbuild.yaml確認済み)、
+        デフォルトのlocalhost:11434は構造的に到達不能(instructions/257で実測確認)。
+        K_SERVICE(Cloud Run自身が注入する環境変数。main.pyのログ初期化と同じ検出規約)
+        が設定されている場合はこの直接呼び出し自体を試みず、generate_ai()が既に
+        書き込み済みのelyza_job_status="pending"を経由するinstructions/250の
+        オンデマンドジョブキュー(workers/ondemand_elyza_worker.py)のみに委ねる
+        (無駄な接続タイムアウトを避ける)。ローカル開発(K_SERVICE未設定)では
+        従来通りこの直接呼び出しを試みる。
+        """
+        if os.getenv("K_SERVICE"):
+            logger.info(
+                f"[{doc_id}] ℹ️ Cloud Run環境のため直接ELYZA呼び出し(経路A)をスキップし、"
+                "オンデマンドジョブキュー(経路B)に委ねます。"
+            )
+            return
         try:
             raw_result_l = await generate_via_llmjp(odai)
             validated_result_l = _validate_result_with_fallback(
@@ -195,17 +219,77 @@ async def _guarded_progressive(db, doc_id: str, odai: str, pair_id: str):
             logger.error(f"[{doc_id}] エラーステータスのDB書き込みに失敗: {db_e}")
 
 
+# 【instructions/250】オンデマンドELYZAワーカーがFirestoreへ書き戻す結果のうち、
+# GET /status がマージしてよいフィールドのみを明示的に列挙する(スコープ限定)。
+# status/eval_status/result/scores等のGemini・主系フィールドはここに含めない
+# (SSoT §8.2の一方向同期原則への例外はこの狭いフィールド集合に限定されるため)。
+_ELYZA_JOB_MERGE_FIELDS = (
+    "llmjp_status",
+    "result_llmjp",
+    "nazokake_text_llmjp",
+    "scores_llmjp",
+    "s_total_llmjp",
+    "overall_llmjp",
+    "axis_comments_llmjp",
+)
+
+
+def _fetch_completed_elyza_job_sync(doc_id: str) -> dict | None:
+    """Firestoreの該当ドキュメントを直接読み取り、オンデマンドELYZAワーカーが
+    elyza_job_status="completed"を書き込み済みであれば、マージ対象フィールドのみを
+    返す(読み取り専用。Cloud Run側からのFirestoreへの書き込みは一切行わない)。
+
+    firebase_adminの同期APIをそのまま使う(呼び出し元でasyncio.to_threadに包む)。
+    """
+    _ensure_firebase_app()
+    db = firestore.client()
+    snapshot = db.collection(_resolve_collection()).document(doc_id).get()
+    if not snapshot.exists:
+        return None
+    remote = snapshot.to_dict() or {}
+    if remote.get("elyza_job_status") != "completed":
+        return None
+    return {field: remote.get(field) for field in _ELYZA_JOB_MERGE_FIELDS}
+
+
+async def _fetch_completed_elyza_job(doc_id: str) -> dict | None:
+    """Firestore参照が失敗しても(オフライン・権限エラー等)、ローカルSQLite単独の
+    結果へ安全に縮退できるよう、例外はここで吸収してNoneを返す
+    (呼び出し元のポーリングエンドポイント自体を落とさない)。
+    """
+    try:
+        return await asyncio.to_thread(_fetch_completed_elyza_job_sync, doc_id)
+    except Exception as e:
+        logger.warning(f"⚠️ [ELYZA Job] Firestoreからの結果マージに失敗(ローカルのみで続行): {e}")
+        return None
+
+
 @router.get("/status/{doc_id}")
 @handle_exceptions
-async def get_status(doc_id: str, background_tasks: BackgroundTasks):
+async def get_status(doc_id: str):
     # instructions/239: progressive_generate()自体はasyncio.create_taskで発火される
     # 検出不能なバックグラウンドタスク(FastAPIのリクエストコンテキストを持たない)ため、
     # "all_completed"等の後続状態のFirestoreバックアップは、フロントが完了まで繰り返す
     # このポーリング呼び出しに便乗させて拾う。
-    background_tasks.add_task(sync_once_safe)
+    # 【instructions/283】Cloud RunはCPUをリクエスト処理中のみ割り当てる仕様のため、
+    # レスポンス送出後に実行されるBackgroundTasksはスケジュールされる保証が無く、
+    # 同期が発火しないまま次のリクエストまでインスタンスがサスペンドされ得た
+    # (instructions/282のFirestore同期欠落調査で判明)。レスポンスを返す前に
+    # 同期的に完了させることで、CPUが確実に割り当てられているリクエスト処理中に
+    # 同期を完結させる。
+    await sync_once_safe()
     data = await async_get_item(doc_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Not found")
+
+    # 【instructions/250】ローカルSQLite側でELYZAがまだ完了していない場合のみ、
+    # オンデマンドワーカーがFirestoreへ書き戻した結果がないか確認してマージする
+    # (ローカルが既に完了済みならFirestoreへは問い合わせない: 無駄なAPI呼び出し削減)。
+    if data.get("llmjp_status") != "completed":
+        elyza_job_result = await _fetch_completed_elyza_job(doc_id)
+        if elyza_job_result is not None:
+            data = {**data, **elyza_job_result}
+
     return {
         "status": data.get("status") or "unknown",
         "eval_status": data.get("eval_status") or "unknown",
@@ -231,7 +315,7 @@ async def get_status(doc_id: str, background_tasks: BackgroundTasks):
 
 @router.post("/generate")
 @handle_exceptions
-async def generate_ai(req: GenerateRequest, background_tasks: BackgroundTasks, db=Depends(get_db)):
+async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
     doc_id = uuid.uuid4().hex
     # バッチ工場(batch/main.py)と同一フォーマットのDPOペアID。Gemini/ELYZA両パスの
     # ローカルDB更新へ記録し、抽出スクリプトがバッチ由来・アプリ由来を同一ロジックで
@@ -243,14 +327,23 @@ async def generate_ai(req: GenerateRequest, background_tasks: BackgroundTasks, d
         "status": "processing",
         "eval_status": "processing",
         "llmjp_status": "pending",
+        # 【instructions/250】オンデマンドELYZAワーカー用のジョブキュー合図。ここで
+        # Firestoreへ直接書き込むことは絶対にしない(SSoT §8.2の一方向同期原則)。
+        # この値は他フィールドと同様にローカルSQLiteへ書くだけであり、直後の
+        # sync_once_safe(既存の一方向Push)が自動的にFirestoreへ伝播させる。
+        "elyza_job_status": "pending",
         "message": "AIが生成中...",
         "created_at": datetime.now(timezone.utc).isoformat(),
         "random_weight": random.random(),  # noqa: S311 (無限スクロール用シーク乱数。暗号用途ではない)
         "dpo_pair_id": pair_id,
     })
-    # instructions/239: Cloud Run上のSQLiteはエフェメラルなため、書き込み直後に
-    # Firestoreへのバックアップ同期をBackgroundTasksで試みる(レスポンスをブロックしない)。
-    background_tasks.add_task(sync_once_safe)
+    # 【instructions/283】Cloud RunはCPUをリクエスト処理中のみ割り当てる仕様のため、
+    # レスポンス送出後に実行されるBackgroundTasksはスケジュールされる保証が無く、
+    # 同期が発火しないまま次のリクエストまでインスタンスがサスペンドされ得た
+    # (instructions/282のFirestore同期欠落調査で判明)。書き込み直後、レスポンスを
+    # 返す前に同期的に完了させることで、CPUが確実に割り当てられているリクエスト
+    # 処理中に同期を完結させる。
+    await sync_once_safe()
     # 背景で生成パイプラインを発火し、即座にレスポンスを返す（HTTPをブロックしない）
     task = asyncio.create_task(_guarded_progressive(db, doc_id, req.odai, pair_id))
     _bg_tasks.add(task)

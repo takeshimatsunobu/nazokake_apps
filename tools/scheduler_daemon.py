@@ -51,11 +51,11 @@ if sys.platform == "win32":
 from tools import export_daemon_heartbeat  # noqa: E402
 
 INTERVAL_SEC = 3600
-STATE_PATH = Path(__file__).resolve().parent / "scheduler_daemon_state.json"
+STATE_PATH = BASE_DIR / "run" / "scheduler_daemon_state.json"
 # tools/mlops_trigger.pyがサイクルごとに書き出す判定結果(閾値未達でスキップ/実際に
 # 起動を試みた)。instructions/169: このデーモン自身の生存監視タイル
 # (apps/evaluator/frontend/public/data/daemon_heartbeat.json)の材料として読む。
-TRIGGER_LAST_RUN_PATH = BASE_DIR / "tools" / "mlops_trigger_last_run.json"
+TRIGGER_LAST_RUN_PATH = BASE_DIR / "run" / "mlops_trigger_last_run.json"
 
 _shutdown_requested = False
 
@@ -150,7 +150,7 @@ def _run_trigger_cycle() -> None:
     # 【instructions/169】「デーモンが最後にいつポーリングし、何を決定したか」を
     # ブラウザの管理画面(admin.html)から1クリックで確認できるようにする。
     # tools/mlops_trigger.pyが「閾値未達で何もしなかった(正常)」のか「実際に起動を
-    # 試みて失敗した」のかを区別して記録したtools/mlops_trigger_last_run.jsonと、
+    # 試みて失敗した」のかを区別して記録したrun/mlops_trigger_last_run.jsonと、
     # このサブプロセス自体のreturncodeを突き合わせて、生存監視タイルの表示状態を
     # 決定する。
     trigger_last_run = _read_trigger_last_run()

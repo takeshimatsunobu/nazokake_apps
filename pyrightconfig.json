@@ -1,0 +1,23 @@
+{
+  "executionEnvironments": [
+    {
+      "root": "apps/tactical_cic",
+      "extraPaths": ["apps/evaluator/backend"]
+    },
+    {
+      "root": "workers",
+      "extraPaths": ["apps/evaluator/backend"]
+    },
+    {
+      "root": "tests",
+      "extraPaths": ["tools", "apps/evaluator/backend"]
+    },
+    {
+      "root": "apps/evaluator/backend",
+      "extraPaths": ["apps/evaluator/backend"]
+    },
+    {
+      "root": "."
+    }
+  ]
+}

@@ -6,11 +6,11 @@ tools/preflight_check.py
 AI(Claude Code)自身の会話コンテキスト・推論に依存した「このタスクはもう完了した
 はず」という判断は、要約の欠落や文脈の取り違えによるハルシネーションの温床であり、
 同一タスク(instructions/NNN)を誤って重複実行してしまうリスクを構造的に排除できない。
-本ツールはAIの推論を一切介さず、tools/tasks_state.json(各タスクIDの実行状態と
+本ツールはAIの推論を一切介さず、run/tasks_state.json(各タスクIDの実行状態と
 完了時のコミットハッシュを記録する外部SSoT)を機械的に読むだけで、多重実行を
 決定論的にブロックするPre-flight Checkとして機能する。
 
-tools/tasks_state.jsonのスキーマ(タスクIDをキーとするdict):
+run/tasks_state.jsonのスキーマ(タスクIDをキーとするdict):
     {
         "task_180": {"status": "done", "commit_hash": "abc1234"},
         "task_181": {"status": "in_progress"}
@@ -18,7 +18,7 @@ tools/tasks_state.jsonのスキーマ(タスクIDをキーとするdict):
 statusは "todo" / "in_progress" / "done" のいずれか。
 
 【Fail-Closed(SRE監査による差し戻し、instructions/181)】以前の実装は、
-tools/tasks_state.jsonの不在・JSON破損を「タスク記録なし」として黎明に読み替え、
+run/tasks_state.jsonの不在・JSON破損を「タスク記録なし」として黎明に読み替え、
 処理をブロックせず先へ進めていた(Fail-Open)。これは外部SSoT自体が信頼できない
 状態にもかかわらず「安全」と誤認して進行してしまう、SSoTの原則そのものを破壊する
 アンチパターンである。本改修では、状態ファイルの読み込みに失敗した場合
@@ -27,7 +27,7 @@ tools/tasks_state.jsonの不在・JSON破損を「タスク記録なし」とし
 ブロックしてしまうリスク」よりも「破損・不在に気づかず多重実行してしまうリスク」の
 方が重大という判断に基づく。
 
-【アトミックI/Oと排他ロック(instructions/181)】今後tools/tasks_state.jsonを更新する
+【アトミックI/Oと排他ロック(instructions/181)】今後run/tasks_state.jsonを更新する
 処理(update_task_state())は、複数プロセスが同時に「読む→更新→書く」を行うと、
 後勝ちの書き込みが先勝ちの更新を silently 上書きするレースコンディション、および
 書き込み途中のプロセスクラッシュによるJSON破損の両方を引き起こしうる。
@@ -40,7 +40,7 @@ tools/mlops_trigger.py._save_last_run_statusと同じ)で書き込む。読み�
 使い方:
     uv run python tools/preflight_check.py task_180
     # 完了済み(status=="done")の場合はsys.exit(1)、それ以外はsys.exit(0)
-    # tools/tasks_state.jsonの不在・破損時もsys.exit(1)(Fail-Closed)
+    # run/tasks_state.jsonの不在・破損時もsys.exit(1)(Fail-Closed)
 """
 
 from __future__ import annotations
@@ -55,7 +55,7 @@ from pathlib import Path
 import filelock
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-TASKS_STATE_PATH = BASE_DIR / "tools" / "tasks_state.json"
+TASKS_STATE_PATH = BASE_DIR / "run" / "tasks_state.json"
 # ast_modifier.py.FILE_LOCK_TIMEOUT_SECと同じ桁数(小さなJSONファイル1個のみを保護する
 # ロックのため、長時間の保持は想定しない)。
 TASKS_STATE_LOCK_TIMEOUT_SEC = 10
@@ -67,7 +67,7 @@ if sys.platform == "win32":
 
 
 def _load_tasks_state() -> dict:
-    """tools/tasks_state.jsonを読み込む。
+    """run/tasks_state.jsonを読み込む。
 
     【Fail-Closed】ファイル不在(FileNotFoundError)・JSON破損(json.JSONDecodeError)
     のいずれも、この関数では一切捕捉せずそのまま呼び出し元へ伝播させる。外部SSoTが
@@ -92,7 +92,7 @@ def is_task_done(task_id: str, tasks_state: dict) -> bool:
 
 
 def update_task_state(task_id: str, status: str, *, commit_hash: str | None = None) -> None:
-    """tools/tasks_state.jsonへ、指定タスクIDのstatus(と完了時のcommit_hash)を
+    """run/tasks_state.jsonへ、指定タスクIDのstatus(と完了時のcommit_hash)を
     排他ロック配下でアトミックに書き込む(instructions/181で確立した、今後の更新
     処理が従うべき設計)。
 
@@ -130,7 +130,7 @@ def update_task_state(task_id: str, status: str, *, commit_hash: str | None = No
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="tools/tasks_state.jsonに基づく決定論的なタスク多重実行ブロック"
+        description="run/tasks_state.jsonに基づく決定論的なタスク多重実行ブロック"
     )
     parser.add_argument("task_id", help='チェック対象のタスクID(例: "task_180")')
     args = parser.parse_args()

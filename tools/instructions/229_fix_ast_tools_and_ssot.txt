@@ -1,0 +1,25 @@
+【ミッション: 防弾ツール群の脆弱性修正とSSoTの同期】
+
+ASTファクト監査の結果、tools/ 内の防弾仕様に重大な脆弱性と欠落が発見されました。
+以下の4つのステップを実行し、システムの堅牢性をSSoTの定義通りに引き上げてください。
+
+Step 1: 文字列置換フォールバックの完全廃止 (tools/ast_modifier.py)
+- `tools/ast_modifier.py` から `_string_based_fallback_replace` および `_apply_string_fallback` 関数を完全に削除してください。
+- `apply_modification` 等でパースエラー（libcst.ParserSyntaxError等）が発生した場合、フォールバック処理を行わず、即座にエラーとして処理を中断（Fail-Closed）するようにロジックを修正してください。
+
+Step 2: アトミック書き込みの完全化 (tools/ast_modifier.py)
+- `tools/ast_modifier.py` の `_atomic_write_text` 関数内において、一時ファイルにコンテンツを書き込んだ後、`os.replace` で上書きする直前に `shutil.copymode(path, temp_path)` を実行し、元のファイルのパーミッション・メタデータを確実に保持するように修正してください。
+
+Step 3: ast_mapper.py の新規作成 (tools/ast_mapper.py)
+- `tools/ast_mapper.py` を新規作成してください。
+- AST（astモジュールまたはlibcst）を用いて、指定されたファイルから特定の関数やクラスのソースコード（定義ブロック）を正確に抽出する関数 `get_symbol_definition(file_path: str, symbol_name: str) -> str` を実装してください。
+- このツールは、Agentがコードを修正する前にコンテキストを正確に把握するための「読み取り専用の防弾ツール」として機能します。
+
+Step 4: SSoT_architecture.md の更新
+- `SSoT_architecture.md` を開き、以下の更新を行ってください。
+  1. 第7項（Active Backlog）の「課題I: tools/ 内におけるアトミック書き込みの完全化」を【完了 (Done)】ステータスに変更してください。
+  2. 第8.4項（Agent Security & Tooling Layer）に、`ast_mapper.py` の役割（ASTを用いたシンボル定義の正確な抽出）を追記してください。
+
+Step 5: 最終確認とコミット
+- 修正が完了したら、pytest等で既存のテストが壊れていないか確認し、問題なければ `git add` で対象ファイルを個別にステージングし、コミットしてください。
+- 完了後、修正のサマリーを報告してください。

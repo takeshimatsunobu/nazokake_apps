@@ -1,0 +1,12 @@
+【ミッション: デプロイパイプラインの完全自動化とE2E貫通検証】
+
+uv sync --frozen による不変コンテナビルドの実装、および .dockerignore によるシークレット遮断、見事なセキュアコーディングです。
+しかし、デプロイパイプラインの開通を「完全自動」にするため、以下の最後の仕上げ（Must Fix）を行ってください。
+
+Step 1: GitHub Secrets自動設定の組み込み (gh CLIの活用)
+infra/scripts/setup_gcp_wif_and_secrets.sh の末尾で、人間に WIF_PROVIDER や WIF_SERVICE_ACCOUNT を手動コピペさせるのではなく、GitHub CLI（gh secret set）を用いてリポジトリのSecrets/Variablesへ直接登録するロジックを追加してください（※ gh が未ログインの場合はフォールバックとして出力する冪等性を保つこと）。
+
+Step 2: パイプラインの完全貫通検証 (End-to-End Test)
+スクリプトの修正後、修正内容をコミットして main（またはデプロイ対象ブランチ）へ Push してください。実際に GitHub Actions ワークフローを発火させ、WIF経由で Cloud Run（または対象インフラ）へのデプロイが正常終了するログ（ファクト）を確認してください。
+
+上記が完了し、GitHub Actions の実行成功ログが確認できた時点で「デプロイ土管の開通完了」と判定します。実装とPushを実行してください。

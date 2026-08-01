@@ -48,6 +48,24 @@ _RESTORE_CHUNK_SIZE = 200
 # ローカルDB専用のブックキーピングカラムはFirestore側へは送らない。
 _LOCAL_ONLY_FIELDS = {"sync_status", "last_sync_error"}
 
+# 【instructions/282】workers/ondemand_elyza_worker.pyが唯一の書き手として直接
+# Firestoreへ書き込むと定められた狭いフィールド集合(SSoT §8.2、instructions/250)。
+# ローカルSQLite側は、オンデマンドジョブキューへの初回合図("pending")として一度
+# しかこれらの値を書かない(以降の状態遷移はワーカーがFirestore側で直接行う)ため、
+# ローカル値はワーカーが一度でも更新した後は必ず陳腐化する。既存のmerge=True
+# (_push_one_sync参照)は「ローカル行が知らないフィールドを消さない」効果しか
+# 持たず、「ローカル行が保持する陳腐化した値でワーカーの最新値を上書きしてしまう」
+# ケースまでは防げていなかった(このバグにより、ワーカーがelyza_job_statusを
+# "processing"/"completed"へ進めた直後に、Cloud Run側の定期バックアップPushが
+# ローカルの古い"pending"で上書きし、フィールドの状態が意図せず巻き戻る/消える
+# ことがあった)。_build_push_payload()でリモート側に既に値が存在する場合のみ
+# これらのフィールドをpayloadから除外し、ワーカーの書き込みを優先する。
+_WORKER_OWNED_ELYZA_JOB_FIELDS = {
+    "elyza_job_status",
+    "elyza_job_locked_at",
+    "elyza_job_retry_count",
+}
+
 
 def _resolve_collection() -> str:
     """環境変数 FIRESTORE_SYNC_COLLECTION で同期先コレクションを上書きできる
@@ -64,8 +82,23 @@ def _ensure_firebase_app() -> None:
             firebase_admin.initialize_app()
 
 
-def _build_push_payload(row: dict[str, Any]) -> dict[str, Any]:
-    return {k: v for k, v in row.items() if k not in _LOCAL_ONLY_FIELDS and v is not None}
+def _build_push_payload(
+    row: dict[str, Any], *, remote_data: dict[str, Any] | None
+) -> dict[str, Any]:
+    """Cloud Run側の定期バックアップPushのpayloadを組み立てる。
+
+    remote_dataは同一トランザクション内で読んだリモートドキュメントの現在値
+    (存在しない場合はNone)。_WORKER_OWNED_ELYZA_JOB_FIELDSのうち、リモート側に
+    既に値が設定されているものは、ローカルの陳腐化した値で上書きしないよう
+    payloadから除外する(instructions/282)。リモートにまだ存在しない場合
+    (ドキュメント新規作成時の初回"pending"合図)は、通常通りローカル値を含める。
+    """
+    payload = {k: v for k, v in row.items() if k not in _LOCAL_ONLY_FIELDS and v is not None}
+    if remote_data:
+        for field in _WORKER_OWNED_ELYZA_JOB_FIELDS:
+            if field in payload and remote_data.get(field) is not None:
+                del payload[field]
+    return payload
 
 
 def _push_one_sync(db, collection: str, row: dict[str, Any]) -> str:
@@ -74,15 +107,29 @@ def _push_one_sync(db, collection: str, row: dict[str, Any]) -> str:
     Firestore上の既存ドキュメントのupdated_atがローカルのそれより新しい場合は
     「順序逆転」とみなし、上書きせずスキップする。戻り値は "pushed" または
     "skipped_stale"。
+
+    【instructions/250】merge=Trueで書き込む(非merge の set() は、payload に
+    含まれないフィールドをすべて削除する全置換のため)。このローカル行が知らない
+    フィールド(例: workers/ondemand_elyza_worker.pyがelyza_job_status等の狭い
+    フィールド集合にスコープを絞って直接書き込んだ結果)を、Cloud Run側の定期的な
+    バックアップPushが誤って消し去ることを防ぐ。skip_staleの判定ロジック自体は
+    このmerge化と無関係(判定は書き込みの実行有無のみを左右し、書き込み方式には
+    影響しない)。
+
+    【instructions/282】上記のmerge=True保護は「ローカル行が知らないフィールドを
+    消さない」効果しか持たず、「ローカル行が持つ(が既に陳腐化した)値でワーカーの
+    最新値を上書きしてしまう」ケースは別途_build_push_payload()のremote_data参照で
+    防ぐ(このためtransaction内で読んだsnapshotをpayload組み立てに渡す)。
     """
     doc_ref = db.collection(collection).document(row["doc_id"])
-    payload = _build_push_payload(row)
     local_updated_at = row.get("updated_at")
 
     @firestore.transactional
     def _txn(transaction) -> str:
         snapshot = doc_ref.get(transaction=transaction)
+        remote_data = None
         if snapshot.exists:
+            remote_data = snapshot.to_dict()
             remote_updated_at = snapshot.get("updated_at")
             if (
                 remote_updated_at is not None
@@ -90,7 +137,8 @@ def _push_one_sync(db, collection: str, row: dict[str, Any]) -> str:
                 and remote_updated_at > local_updated_at
             ):
                 return "skipped_stale"
-        transaction.set(doc_ref, payload)
+        payload = _build_push_payload(row, remote_data=remote_data)
+        transaction.set(doc_ref, payload, merge=True)
         return "pushed"
 
     return _txn(db.transaction())

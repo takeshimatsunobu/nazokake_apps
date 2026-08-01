@@ -32,7 +32,9 @@
 
 [CmdletBinding(PositionalBinding = $false)]
 param(
-    [int]$Port = 7800,
+    # 0 は「未指定」を表すセンチネル値。実際のポート番号としては使用され得ないため、
+    # 下記【ポートSSoT】でtools/config.pyから解決する対象かどうかを安全に判定できる。
+    [int]$Port = 0,
     [string]$BindHost = "127.0.0.1",
     [Parameter(ValueFromRemainingArguments = $true)]
     [string[]]$ExtraArgs
@@ -79,6 +81,22 @@ if (-not (Test-Path $VenvPython)) {
 if (-not (Test-Path $BackendDir)) {
     Write-Error "バックエンドディレクトリが見つかりません: $BackendDir"
     exit 1
+}
+
+# --- 【ポートSSoT】(instructions/261) ---------------------------------------
+# -Port が明示指定されなかった場合(既定値0)は、tools/config.py の
+# ToolsSettings.api_dev_port を単一の正データとして解決する。7800をこのファイルへ
+# 重複してハードコードすると、tools/config.py側の値を変更した際にここが追従せず、
+# 構成ドリフト(instructions/260で確認された8095ゾンビ等)の温床となるため。
+# sys.path への挿入は tools/nazo_agent.py と同じ理由: このスクリプトが
+# `tools\config.py` を直接 `-c` 実行する際、`tools` パッケージの親(リポジトリ
+# ルート)がsys.pathに含まれないと `from tools.config import settings` が失敗する。
+if ($Port -eq 0) {
+    $Port = [int](& $VenvPython -c "import sys; sys.path.insert(0, r'$ProjectRoot'); from tools.config import settings; print(settings.api_dev_port)")
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "tools/config.py からポート番号を解決できませんでした。"
+        exit 1
+    }
 }
 
 # --- 【VRAM保護】 -----------------------------------------------------------
