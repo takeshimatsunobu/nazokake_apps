@@ -11,7 +11,7 @@ import random
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, BackgroundTasks
+from fastapi import APIRouter
 
 from api.deps import handle_exceptions
 from models.schemas import HumanSubmitRequest
@@ -24,7 +24,7 @@ router = APIRouter()
 
 @router.post("/submit_human")
 @handle_exceptions
-async def submit_human(req: HumanSubmitRequest, background_tasks: BackgroundTasks):
+async def submit_human(req: HumanSubmitRequest):
     doc_id = uuid.uuid4().hex
     await async_upsert_item({
         "doc_id": doc_id,
@@ -60,7 +60,11 @@ async def submit_human(req: HumanSubmitRequest, background_tasks: BackgroundTask
             "eval_status": "error",
             "message": f"評価に失敗しました: {e}",
         })
-    # instructions/239: Cloud Run上のSQLiteはエフェメラルなため、一連の書き込み完了後に
-    # Firestoreへのバックアップ同期をBackgroundTasksで試みる(レスポンスをブロックしない)。
-    background_tasks.add_task(sync_once_safe)
+    # 【instructions/283】Cloud RunはCPUをリクエスト処理中のみ割り当てる仕様のため、
+    # レスポンス送出後に実行されるBackgroundTasksはスケジュールされる保証が無く、
+    # 同期が発火しないまま次のリクエストまでインスタンスがサスペンドされ得た
+    # (instructions/282のFirestore同期欠落調査で判明)。一連の書き込み完了後、
+    # レスポンスを返す前に同期的に完了させることで、CPUが確実に割り当てられている
+    # リクエスト処理中に同期を完結させる。
+    await sync_once_safe()
     return {"status": "processing", "doc_id": doc_id}

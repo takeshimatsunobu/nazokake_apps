@@ -26,7 +26,7 @@ import uuid
 from datetime import datetime, timezone
 from loguru import logger
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 from firebase_admin import firestore
 
 from api.deps import get_db, handle_exceptions
@@ -266,12 +266,18 @@ async def _fetch_completed_elyza_job(doc_id: str) -> dict | None:
 
 @router.get("/status/{doc_id}")
 @handle_exceptions
-async def get_status(doc_id: str, background_tasks: BackgroundTasks):
+async def get_status(doc_id: str):
     # instructions/239: progressive_generate()自体はasyncio.create_taskで発火される
     # 検出不能なバックグラウンドタスク(FastAPIのリクエストコンテキストを持たない)ため、
     # "all_completed"等の後続状態のFirestoreバックアップは、フロントが完了まで繰り返す
     # このポーリング呼び出しに便乗させて拾う。
-    background_tasks.add_task(sync_once_safe)
+    # 【instructions/283】Cloud RunはCPUをリクエスト処理中のみ割り当てる仕様のため、
+    # レスポンス送出後に実行されるBackgroundTasksはスケジュールされる保証が無く、
+    # 同期が発火しないまま次のリクエストまでインスタンスがサスペンドされ得た
+    # (instructions/282のFirestore同期欠落調査で判明)。レスポンスを返す前に
+    # 同期的に完了させることで、CPUが確実に割り当てられているリクエスト処理中に
+    # 同期を完結させる。
+    await sync_once_safe()
     data = await async_get_item(doc_id)
     if data is None:
         raise HTTPException(status_code=404, detail="Not found")
@@ -309,7 +315,7 @@ async def get_status(doc_id: str, background_tasks: BackgroundTasks):
 
 @router.post("/generate")
 @handle_exceptions
-async def generate_ai(req: GenerateRequest, background_tasks: BackgroundTasks, db=Depends(get_db)):
+async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
     doc_id = uuid.uuid4().hex
     # バッチ工場(batch/main.py)と同一フォーマットのDPOペアID。Gemini/ELYZA両パスの
     # ローカルDB更新へ記録し、抽出スクリプトがバッチ由来・アプリ由来を同一ロジックで
@@ -331,9 +337,13 @@ async def generate_ai(req: GenerateRequest, background_tasks: BackgroundTasks, d
         "random_weight": random.random(),  # noqa: S311 (無限スクロール用シーク乱数。暗号用途ではない)
         "dpo_pair_id": pair_id,
     })
-    # instructions/239: Cloud Run上のSQLiteはエフェメラルなため、書き込み直後に
-    # Firestoreへのバックアップ同期をBackgroundTasksで試みる(レスポンスをブロックしない)。
-    background_tasks.add_task(sync_once_safe)
+    # 【instructions/283】Cloud RunはCPUをリクエスト処理中のみ割り当てる仕様のため、
+    # レスポンス送出後に実行されるBackgroundTasksはスケジュールされる保証が無く、
+    # 同期が発火しないまま次のリクエストまでインスタンスがサスペンドされ得た
+    # (instructions/282のFirestore同期欠落調査で判明)。書き込み直後、レスポンスを
+    # 返す前に同期的に完了させることで、CPUが確実に割り当てられているリクエスト
+    # 処理中に同期を完結させる。
+    await sync_once_safe()
     # 背景で生成パイプラインを発火し、即座にレスポンスを返す（HTTPをブロックしない）
     task = asyncio.create_task(_guarded_progressive(db, doc_id, req.odai, pair_id))
     _bg_tasks.add(task)
