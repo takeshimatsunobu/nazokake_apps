@@ -1,9 +1,9 @@
 <#
 .SYNOPSIS
     Nazo-Agent verification server (GCP L4 GPU VM) closed-network GitOps
-    (pull-style deploy via bare repo) kick script (instructions/187). Fully
-    replaces tools/deploy/run_verification_server.ps1 (ZIP compression +
-    direct file transfer via gcloud compute scp/pscp.exe).
+    kick script (instructions/187, refactored to direct-from-GitHub pull by
+    instructions/299). Fully replaces tools/deploy/run_verification_server.ps1
+    (ZIP compression + direct file transfer via gcloud compute scp/pscp.exe).
 
 .DESCRIPTION
     The legacy approach (instructions/164-167) ran ClickOps: git archive the
@@ -14,28 +14,34 @@
     escalation (diff evaluation against past commit hashes / autonomous
     rollback). It was rejected in an SRE audit as an anti-pattern.
 
-    This script replaces that flow end-to-end as follows:
+    The immediate successor (instructions/187) replaced ClickOps with a
+    relay: this script `git push --force`d from local (Windows) to a bare
+    repo on the VM (~/nazokake_apps.git) over the IAP tunnel, and
+    infra/verification_env/deploy_pull.sh then fetched from that local bare
+    repo. In practice, pushing large objects through the IAP tunnel's
+    bandwidth constraints produced "Broken pipe" failures. instructions/299
+    removes that intermediary relay entirely: the VM now fetches directly
+    from GitHub (https://github.com/takeshimatsunobu/nazokake_apps.git)
+    inside deploy_pull.sh, so this script's job shrinks to exactly three
+    concerns:
       1. Idempotent VM start via gcloud compute instances start (identical
          implementation to Step 1 of run_verification_server.ps1).
       2. Wait loop for port 22 (SSH) to open (identical to the same Step 2).
-      3. If a bare repo (~/nazokake_apps.git) does not exist on the VM,
-         initialize one with git init --bare (idempotent).
-      4. git push --force from local (Windows) to the VM's bare repo, to a
-         fixed branch name (default "deploy"). The actual SSH connection is
-         bridged through gcloud_ssh_wrapper.ps1 to gcloud compute ssh (IAP
-         tunnel), via a GIT_SSH_COMMAND wrapper.
-      5. After a successful push, kick infra/verification_env/deploy_pull.sh
-         on the server asynchronously over SSH (nohup + disown). The
-         sequence of git fetch/reset --hard -> setup_verification_env.sh ->
-         docker compose up --build is deploy_pull.sh's own responsibility.
+      3. Kick infra/verification_env/deploy_pull.sh on the server
+         asynchronously over SSH (nohup + disown). deploy_pull.sh itself is
+         now solely responsible for `git fetch origin` + `git reset --hard
+         origin/main` directly against GitHub, followed by
+         setup_verification_env.sh -> docker compose up --build.
 
     [ABSOLUTE CONSTRAINT] This script must never include ZIP compression
-    (git archive/Compress-Archive) or direct file transfer logic such as
-    pscp.exe. Transfer relies solely on git's native push/fetch protocol.
+    (git archive/Compress-Archive), direct file transfer logic such as
+    pscp.exe, or any git push/bare-repo relay step. The VM must be the one
+    pulling directly from GitHub; this script only starts it and tells it to
+    pull.
 
-    [KNOWN LIMITATION (out of scope for instructions/187)] Step 5 only kicks
-    deploy_pull.sh asynchronously on the VM side; this script itself does
-    not wait for its completion (success/failure of docker compose up
+    [KNOWN LIMITATION (out of scope for instructions/187/299)] Step 3 only
+    kicks deploy_pull.sh asynchronously on the VM side; this script itself
+    does not wait for its completion (success/failure of docker compose up
     --build). Therefore the dashboard that polls this process's stdout
     (apps/evaluator/backend/api/routers/admin.py: deploy.log) will only show
     that the kick happened, while the VM side's actual build progress is
@@ -52,8 +58,6 @@ param(
     [string]$ProjectId = "nazokakeapp-137e5",
     [string]$InstanceName = "nazokake-l4-vm",
     [string]$Zone = "us-east1-b",
-    [string]$DeployBranch = "deploy",
-    [string]$RemoteUser = "takes",
     [int]$SshWaitMaxAttempts = 30,
     [int]$SshWaitDelaySeconds = 10,
     [int]$GcloudRetryMaxAttempts = 5,
@@ -66,8 +70,6 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$ProjectRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
-$SshWrapperPath = Join-Path $PSScriptRoot "gcloud_ssh_wrapper.ps1"
 
 # [instructions/201: handling ZONE_RESOURCE_POOL_EXHAUSTED]
 # The originally considered approach (auto-retry by switching --zone on
@@ -205,7 +207,7 @@ function Invoke-GcloudWithRetry {
 }
 
 # --- Step 1: Start the VM (idempotent) --------------------------------------
-Write-Host "[1/5] Checking current status of VM: $InstanceName (zone=$Zone) ..." -ForegroundColor Cyan
+Write-Host "[1/3] Checking current status of VM: $InstanceName (zone=$Zone) ..." -ForegroundColor Cyan
 $currentStatus = Invoke-ExternalCommand -ScriptBlock {
     gcloud compute instances describe $InstanceName `
         --project=$ProjectId --zone=$Zone --format="get(status)" 2>&1
@@ -248,7 +250,7 @@ if ($currentStatus -eq "RUNNING") {
 }
 
 # --- Step 2: Wait for SSH (port 22) to open ---------------------------------
-Write-Host "[2/5] Waiting for SSH (port 22) to open..." -ForegroundColor Cyan
+Write-Host "[2/3] Waiting for SSH (port 22) to open..." -ForegroundColor Cyan
 
 $externalIp = Invoke-ExternalCommand -ScriptBlock {
     gcloud compute instances describe $InstanceName `
@@ -291,63 +293,12 @@ Write-Host "[OK] SSH is open." -ForegroundColor Green
 # config state afterwards, regardless of how this block exits.
 Set-IapTlsTrust -CaBundlePath $CaCertBundlePath
 try {
-    # --- Step 3: Initialize the bare repo (idempotent) ----------------------
-    Write-Host "[3/5] Checking for the bare repo (~/nazokake_apps.git) on the VM..." -ForegroundColor Cyan
-
-    $bareRepoInitCommand = 'test -d ~/nazokake_apps.git || git init --bare ~/nazokake_apps.git'
-    Invoke-GcloudWithRetry -Description "Bare repo initialization check" -ScriptBlock {
-        gcloud compute ssh $InstanceName --project=$ProjectId --zone=$Zone `
-            --tunnel-through-iap --command=$bareRepoInitCommand 2>&1
-    }
-
-    # --- Step 4: Git push to the bare repo (via IAP tunnel) -----------------
-    Write-Host "[4/5] Pushing branch '$DeployBranch' to the VM's bare repo..." -ForegroundColor Cyan
-
-    # [instructions/187] This VM lives in a fully closed IAP-only network and is
-    # unreachable with a plain ssh client, so GIT_SSH_COMMAND is redirected to
-    # gcloud_ssh_wrapper.ps1 (which bridges to gcloud compute ssh
-    # --tunnel-through-iap). The hostname written into the remote URL below
-    # ($InstanceName) is not actually used by the wrapper itself (the connection
-    # target is already fixed via the -InstanceName/-Zone/-ProjectId arguments);
-    # it is kept as the real instance name purely for readability in `git remote`
-    # listings.
-    $env:GIT_SSH_COMMAND = "powershell -NoProfile -ExecutionPolicy Bypass -File " +
-        "`"$SshWrapperPath`" -InstanceName $InstanceName -ProjectId $ProjectId -Zone $Zone"
-
-    $remoteUrl = "${RemoteUser}@${InstanceName}:~/nazokake_apps.git"
-
-    Push-Location $ProjectRoot
-    try {
-        # [Deterministic remote name] Use a remote name dedicated to this
-        # verification VM, explicitly separate from any future real source
-        # control remote (e.g. "origin"), to avoid name collisions.
-        $existingRemote = Invoke-ExternalCommand -ScriptBlock { git remote get-url verification-vm 2>&1 }
-        if ($LASTEXITCODE -ne 0) {
-            Invoke-ExternalCommand -ScriptBlock { git remote add verification-vm $remoteUrl }
-        } else {
-            $existingRemote = ($existingRemote -join "").Trim()
-            if ($existingRemote -ne $remoteUrl) {
-                Invoke-ExternalCommand -ScriptBlock { git remote set-url verification-vm $remoteUrl }
-            }
-        }
-
-        # [Inherited from instructions/166] Push is also subject to automatic
-        # retry, anticipating transient auth errors caused by OS Login/IAP
-        # permission provisioning lag. Force-pushing to the fixed deploy branch
-        # ($DeployBranch) is safe to re-run (idempotent re-push of the same
-        # commit) since it is not a branch shared between developers.
-        Invoke-GcloudWithRetry -Description "git push (verification-vm)" -ScriptBlock {
-            git push --force verification-vm "HEAD:refs/heads/$DeployBranch"
-        }
-    } finally {
-        Pop-Location
-        Remove-Item Env:\GIT_SSH_COMMAND -ErrorAction SilentlyContinue
-    }
-
-    Write-Host "[OK] Push complete." -ForegroundColor Green
-
-    # --- Step 5: Asynchronously kick deploy_pull.sh on the server -----------
-    Write-Host "[5/5] Kicking deploy_pull.sh asynchronously..." -ForegroundColor Cyan
+    # --- Step 3: Asynchronously kick deploy_pull.sh on the server -----------
+    # [instructions/299] No bare-repo init and no git push happen here anymore.
+    # deploy_pull.sh itself now fetches directly from GitHub on the VM side,
+    # so this script's only remaining job (beyond starting the VM and waiting
+    # for SSH) is to tell the VM to go pull and rebuild.
+    Write-Host "[3/3] Kicking deploy_pull.sh asynchronously..." -ForegroundColor Cyan
 
     # Using nohup + disown lets this run continue on the VM side without waiting
     # for this SSH command itself (i.e. the gcloud compute ssh process) to exit

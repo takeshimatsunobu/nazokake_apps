@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # infra/verification_env/deploy_pull.sh
 # =========================================
-# 検証サーバー(GCP VM)側のPull型デプロイスクリプト(instructions/187)。
+# 検証サーバー(GCP VM)側のPull型デプロイスクリプト
+# (instructions/187、instructions/299でVM内Bareリポジトリの中継を完全に廃止)。
 #
 # 【背景】従来のtools/deploy/run_verification_server.ps1は、Windows側でgit archiveした
 # HEADスナップショットをZIP化しgcloud compute scpで転送、リモートでunzip -oするだけの
@@ -10,27 +11,30 @@
 # Nazo-Agentの自律エスカレーション(tools/agent_graph.py)が過去のコミットハッシュとの差分
 # を評価し自律的にロールバック(自己修復)する前提を、この履歴喪失が構造的に破壊していた。
 #
-# 【是正】VM上に恒久的なBareリポジトリ(~/nazokake_apps.git)を稼働ディレクトリとは別に
-# 保持し、これを稼働ディレクトリ(~/nazokake_apps)からの唯一のfetch元(origin、SSoT)と
-# 見なす。ローカル(Windows)からのgit push(tools/deploy/deploy_to_vm.ps1)を受けた後、
-# このスクリプトが git fetch + git reset --hard で稼働ディレクトリを決定論的に同期する
-# ことで、稼働ディレクトリの.git履歴を常に保持したままデプロイできる(Pull型)。
+# 【instructions/187での是正、instructions/299での再是正】instructions/187では、VM上に
+# 恒久的なBareリポジトリ(~/nazokake_apps.git)を稼働ディレクトリとは別に保持し、
+# ローカル(Windows)からのgit push --force(tools/deploy/deploy_to_vm.ps1)をそこで
+# 中継してから、このスクリプトがそのBareリポジトリをfetch元とすることで.git履歴を
+# 失わずにデプロイする設計にしていた。しかし実運用でIAPトンネル経由の大容量push
+# (帯域制約)がBroken pipeで失敗する事象が頻発したため、instructions/299でこの
+# 中継地点(Bareリポジトリ)自体を完全に廃止した。稼働ディレクトリ(~/nazokake_apps)は
+# GitHub(SSoT)を唯一のfetch元とし、直接 `git fetch origin` + `git reset --hard
+# origin/main` で決定論的に同期する。tools/deploy/deploy_to_vm.ps1側は「VM起動→
+# SSH開通確認→このスクリプトの非同期キック」のみに純化され、git push自体を一切
+# 行わなくなった(instructions/270のPRベース運用と合わせ、デプロイはGitHub main への
+# マージ後にこのスクリプトを呼ぶだけで完結する)。
 #
 # 使い方(検証サーバー上、通常はtools/deploy/deploy_to_vm.ps1からSSH経由で非同期に
 # キックされる。手動実行も可):
 #   bash infra/verification_env/deploy_pull.sh
-#
-# 【決定論的な同期対象】git push側(tools/deploy/deploy_to_vm.ps1)は常に固定のブランチ
-# 名 DEPLOY_BRANCH(既定"deploy")へforce pushする。ローカルの作業ブランチ名(例:
-# test/agent-benchmark)がなんであっても、デプロイ対象は常にこの1本のブランチに
-# 一意化されるため、「どのブランチを同期すべきか」という曖昧さを構造的に排除する。
 
 set -euo pipefail
 
 VERIFICATION_HOME="${VERIFICATION_HOME:-${HOME}}"
 REPO_DIR="${REPO_DIR:-${VERIFICATION_HOME}/nazokake_apps}"
-BARE_REPO_DIR="${BARE_REPO_DIR:-${VERIFICATION_HOME}/nazokake_apps.git}"
-DEPLOY_BRANCH="${DEPLOY_BRANCH:-deploy}"
+# 【instructions/299】VM内のBareリポジトリではなく、GitHub本体を唯一のfetch元とする。
+GITHUB_REPO_URL="${GITHUB_REPO_URL:-https://github.com/takeshimatsunobu/nazokake_apps.git}"
+DEPLOY_TARGET_BRANCH="${DEPLOY_TARGET_BRANCH:-main}"
 AUTO_SHUTDOWN_DEST="${AUTO_SHUTDOWN_DEST:-/home/takes/nazokake-evaluator/scripts/auto_shutdown.py}"
 
 # 【/tmp名前空間の共有検証(instructions/200)】本スクリプトはgcloud compute sshで
@@ -53,41 +57,35 @@ if ! flock -n "${DEPLOY_LOCK_FD}"; then
     exit 1
 fi
 
-echo "=== [1/4] Bareリポジトリからの稼働ディレクトリ同期(Pull) ==="
-
-if [[ ! -d "${BARE_REPO_DIR}" ]]; then
-    echo "🚨 [Fail-Closed] Bareリポジトリが見つかりません: ${BARE_REPO_DIR}" >&2
-    echo "   先にtools/deploy/deploy_to_vm.ps1でgit init --bareを実行してください。" >&2
-    exit 1
-fi
+echo "=== [1/5] GitHubからの稼働ディレクトリ同期(Pull、instructions/299) ==="
 
 if [[ ! -d "${REPO_DIR}/.git" ]]; then
-    echo "ℹ️  ${REPO_DIR} が未クローンのため、Bareリポジトリから初回クローンします。"
-    git clone "${BARE_REPO_DIR}" "${REPO_DIR}"
+    echo "ℹ️  ${REPO_DIR} が未クローンのため、GitHubから初回クローンします。"
+    git clone "${GITHUB_REPO_URL}" "${REPO_DIR}"
 fi
 
 cd "${REPO_DIR}"
 
-# 【決定論的なorigin固定】既存チェックアウトのorigin URLが何らかの理由でズレていても、
-# 常にこのVM自身のBareリポジトリを指すよう明示的に上書きする(暗黙のリモート設定への
-# 依存を排除する)。
+# 【決定論的なorigin固定】既存チェックアウトのorigin URLが何らかの理由でズレていても
+# (旧Bareリポジトリを指したまま等)、常にGitHub本体を指すよう明示的に上書きする
+# (暗黙のリモート設定への依存を排除する、instructions/187由来の設計方針を踏襲)。
 if git remote get-url origin >/dev/null 2>&1; then
-    git remote set-url origin "${BARE_REPO_DIR}"
+    git remote set-url origin "${GITHUB_REPO_URL}"
 else
-    git remote add origin "${BARE_REPO_DIR}"
+    git remote add origin "${GITHUB_REPO_URL}"
 fi
 
-echo "🔄 git fetch origin ${DEPLOY_BRANCH} ..."
-git fetch origin "${DEPLOY_BRANCH}"
+echo "🔄 git fetch origin ..."
+git fetch origin
 
 # 【絶対制約】git clean等の未追跡ファイル削除は一切行わない。data/・run/配下の
 # 永続層(SQLite DB)・揮発層(VRAMロック)は元々.gitignore対象(非追跡)のため、
 # reset --hardの対象外(reset --hardは追跡済みファイルの内容のみを書き換える)。
-echo "♻️  git reset --hard origin/${DEPLOY_BRANCH} ..."
-git reset --hard "origin/${DEPLOY_BRANCH}"
+echo "♻️  git reset --hard origin/${DEPLOY_TARGET_BRANCH} ..."
+git reset --hard "origin/${DEPLOY_TARGET_BRANCH}"
 echo "✅ 稼働ディレクトリを $(git rev-parse --short HEAD) へ同期しました。"
 
-echo "=== [2/4] auto_shutdown.pyをCron参照パスへ同期 ==="
+echo "=== [2/5] auto_shutdown.pyをCron参照パスへ同期 ==="
 # 【IaCとランタイムの構成同期(instructions/200)】instructions/199でauto_shutdown.py
 # をリポジトリ管理下に置きflockによる排他制御を実装したが、本スクリプトは
 # git reset --hardでREPO_DIR配下を更新するのみで、実際にtakesユーザーのcrontabが
@@ -100,7 +98,7 @@ mkdir -p "$(dirname "${AUTO_SHUTDOWN_DEST}")"
 install -m 755 "${REPO_DIR}/infra/verification_env/scripts/auto_shutdown.py" "${AUTO_SHUTDOWN_DEST}"
 echo "✅ ${AUTO_SHUTDOWN_DEST} を最新化しました。"
 
-echo "=== [3/4] setup_verification_env.sh(初回のみ、冪等性センチナル) ==="
+echo "=== [3/5] setup_verification_env.sh(初回のみ、冪等性センチナル) ==="
 # 【冪等性(instructions/165を継承)】OSレベルのプロビジョニング(cgroup委譲・NVIDIA
 # Container Toolkit登録)は1度で十分であり、繰り返しdockerdを再起動するリスクそのものを
 # 構造的に無くすため、センチナルファイルにより初回のみ実行する。
