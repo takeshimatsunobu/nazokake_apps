@@ -28,6 +28,7 @@ from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
 from typing import Any, TypeVar
 
+from opentelemetry import metrics
 from sqlalchemy import (
     JSON,
     Boolean,
@@ -63,11 +64,21 @@ def with_db_retry():
         retry=retry_if_exception_type(
             (sqlite3.OperationalError, SQLAlchemyOperationalError)
         ),
-        before_sleep=before_sleep_log(logger, logging.WARNING),
+        before_sleep=_on_db_retry,
     )
 
 
 logger = logging.getLogger(__name__)
+meter = metrics.get_meter("nazokake_core.database")
+db_retry_counter = meter.create_counter(
+    "db.retry.count", description="Number of database retries due to locks"
+)
+
+
+def _on_db_retry(retry_state):
+    db_retry_counter.add(1, {"attempt_number": retry_state.attempt_number})
+    before_sleep_log(logger, logging.WARNING)(retry_state)
+
 
 DEFAULT_DB_PATH = "nazokake_local.db"
 
