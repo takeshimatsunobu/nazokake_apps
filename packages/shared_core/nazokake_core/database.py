@@ -98,7 +98,7 @@ def _resolve_db_url() -> str:
 # NullPool: 実際の接続はすべてSerialized Writerの常駐ループ内から張られるため
 # プール自体を無効化しても事故らないが、念のため呼び出しごとに新規コネクションを
 # 張って確実にクローズすることで、接続の使い回しに起因する不具合の余地を無くす。
-_engine = create_async_engine(_resolve_db_url(), future=True, poolclass=NullPool)
+_engine = create_async_engine(_resolve_db_url(), future=True, poolclass=NullPool, connect_args={"timeout": 15})
 AsyncSessionLocal = async_sessionmaker(_engine, expire_on_commit=False)
 
 
