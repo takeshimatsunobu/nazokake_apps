@@ -85,7 +85,7 @@ def fetch_recent_jobs(limit: int = DEFAULT_LIMIT) -> list[dict[str, Any]]:
 
     query = (
         db.collection(collection)
-        .order_by("updated_at", direction=firestore.Query.DESCENDING)
+        .order_by("updated_at", direction=firestore.Query.DESCENDING)  # pyright: ignore[reportAttributeAccessIssue]
         .limit(limit)
     )
     jobs: list[dict[str, Any]] = []
