@@ -20,6 +20,7 @@ import asyncio
 import concurrent.futures
 import logging
 import os
+import sqlite3
 import threading
 import uuid
 from collections.abc import AsyncIterator, Callable, Coroutine
@@ -42,9 +43,16 @@ from sqlalchemy import (
     update,
 )
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
+from sqlalchemy.exc import OperationalError as SQLAlchemyOperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import NullPool
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential_jitter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -235,8 +243,12 @@ class TriggerStateORM(Base):
     pipeline_id: Mapped[str] = mapped_column(String, primary_key=True)
     # 他の日時系カラム(created_at/updated_at等)と同じ規約でISO8601文字列として
     # 保存する(このコードベース全体でdatetime型カラムは一切使用していない)。
-    last_triggered_at: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
-    last_completed_at: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    last_triggered_at: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
+    )
+    last_completed_at: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
+    )
     status: Mapped[str] = mapped_column(String)
 
 
@@ -684,7 +696,9 @@ _NAZOKAKE_ITEM_BULK_DEFAULTS: dict[str, Any] = {
 }
 
 
-async def async_bulk_restore_items_if_missing(rows: list[dict[str, Any]]) -> tuple[int, int]:
+async def async_bulk_restore_items_if_missing(
+    rows: list[dict[str, Any]],
+) -> tuple[int, int]:
     """instructions/240: Firestoreからの起動時リストア専用の一括挿入。
 
     1件ずつsession.get()で存在確認してから個別commitする方式は、実際の
@@ -709,7 +723,11 @@ async def async_bulk_restore_items_if_missing(rows: list[dict[str, Any]]) -> tup
         if not payload.get("doc_id") or not payload.get("odai"):
             continue
         row = {
-            col: (payload[col] if col in payload else _NAZOKAKE_ITEM_BULK_DEFAULTS.get(col))
+            col: (
+                payload[col]
+                if col in payload
+                else _NAZOKAKE_ITEM_BULK_DEFAULTS.get(col)
+            )
             for col in columns
         }
         filtered_rows.append(row)
@@ -1224,7 +1242,11 @@ async def async_record_evaluation_score_event(
 
 
 def sync_record_pipeline_outcome_event(
-    pipeline_id: str, *, error_signature: str | None, window_size: int, anomaly_threshold: int
+    pipeline_id: str,
+    *,
+    error_signature: str | None,
+    window_size: int,
+    anomaly_threshold: int,
 ) -> dict[str, Any]:
     """_record_pipeline_outcome_event()のSerialized Writer経由・同期版(apps/batch_factory向け)。"""
     return _serialized_writer.submit(
@@ -1238,7 +1260,11 @@ def sync_record_pipeline_outcome_event(
 
 
 async def async_record_pipeline_outcome_event(
-    pipeline_id: str, *, error_signature: str | None, window_size: int, anomaly_threshold: int
+    pipeline_id: str,
+    *,
+    error_signature: str | None,
+    window_size: int,
+    anomaly_threshold: int,
 ) -> dict[str, Any]:
     """_record_pipeline_outcome_event()のSerialized Writer経由・非ブロッキング版(apps/evaluator向け)。"""
     return await _serialized_writer.submit_async(
@@ -1248,4 +1274,14 @@ async def async_record_pipeline_outcome_event(
             window_size=window_size,
             anomaly_threshold=anomaly_threshold,
         )
+    )
+
+
+def with_db_retry():
+    return retry(
+        stop=stop_after_attempt(5),
+        wait=wait_exponential_jitter(initial=1, max=10, exp_base=2, jitter=1),
+        retry=retry_if_exception_type(
+            (sqlite3.OperationalError, SQLAlchemyOperationalError)
+        ),
     )
