@@ -1,0 +1,21 @@
+【ミッション: 共通コア train_unsloth_core.py への実学習ロジック（Unsloth）のAST注入】
+データフライホイールのコアとなるモデル学習を実稼働させるため、現在のモック処理をUnslothを用いたSFTTrainerの実装へ決定論的に置き換えてください。
+
+Step 1: run_training関数のAST書き換え
+tools/train_unsloth_core.py を解析し、run_training 関数内のモック処理（time.sleep等）を削除して、以下の要件を満たす実学習ロジックをAST等を用いて安全に注入してください。
+
+【学習ロジックの絶対制約（VRAM 8GB防弾仕様）】
+
+モデルロード: unsloth の FastLanguageModel.from_pretrained を使用。引数の model_name には渡された base_model を使用し、必ず max_seq_length=1024, load_in_4bit=True を指定すること（VRAM枯渇防止）。
+
+PEFT設定: FastLanguageModel.get_peft_model を呼び出し、r=16, target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"], lora_alpha=16 を設定すること。
+
+データセット: datasets.load_dataset("json", data_files=str(dataset_path), split="train") を使用してJSONLをロードすること。
+
+Trainer設定: trl の SFTTrainer を使用。TrainingArguments において、per_device_train_batch_size=2, gradient_accumulation_steps=4, optim="paged_adamw_8bit", max_steps=60（初期検証用として短めに設定）を強制し、OOMキラーを回避すること。
+
+保存処理: 学習完了後、trainer.model.save_pretrained(str(output_lora_path)) を呼び出し、LoRAアダプタを永続化すること。
+
+Step 2: 静的解析と厳密なコミット
+uv run ruff check tools/ による静的解析を通過させた後、変更した tools/train_unsloth_core.py を明示的に指定してGitコミットを行ってください。
+※絶対制約: git add . は厳禁です。

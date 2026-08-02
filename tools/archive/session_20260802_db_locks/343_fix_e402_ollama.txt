@@ -1,0 +1,5 @@
+【ミッション: E402インポート順序エラーの修正】
+packages/shared_core/nazokake_core/database.py において、Ruffの `E402 Module level import not at top of file` エラーが発生しています。
+fileの途中に挿入された `from opentelemetry import metrics` を、fileの先頭(他のモジュールレベルのインポート文が集まっている箇所)へ移動してください。
+修正後、Ruffのチェック(uv run ruff check packages/shared_core/nazokake_core/database.py)を通過することを確認し、変更をコミットしてください。
+commit message: fix(db): fix import order for opentelemetry

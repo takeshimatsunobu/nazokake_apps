@@ -1,0 +1,23 @@
+【ミッション: MLパイプラインの密結合解消と命名分離による物理的防弾化】
+「なぞかけ学習」と「Agent学習」が tools/train_unsloth.py を不適切に共有している密結合を解消し、両パイプラインの関心の分離（SoC）をコードベースで決定論的に強制してください。
+
+Step 1: 共通コアエンジンの抽出と明文化
+
+既存の tools/train_unsloth.py を tools/train_unsloth_core.py にリネーム（git mv）してください。
+
+そのファイル冒頭のdocstringに「【絶対制約】本モジュールは『なぞかけ学習』および『Agent学習』の両パイプラインで共用される学習コアエンジンである。個別のドメイン知識や特定のパスをハードコードしてはならない」と明記してください。このファイルはエントリーポイントとしての機能を持たないように整理すること。
+
+Step 2: 個別エントリーポイントの物理的作成
+以下の2つの独立した実行用スクリプトを tools/ 配下に新規作成し、それぞれ内部で tools/train_unsloth_core.py をインポートして呼び出す設計としてください。
+
+tools/train_nazo_model.py （なぞかけ学習用）: 入力データパス、ベースモデル（elyza:8b 等）、出力LoRAパスを内部で定数化すること。
+
+tools/train_agent_model.py （Agent学習用）: 入力データパス、ベースモデル（qwen2.5-coder:7b 等）、出力LoRAパスを内部で定数化すること。
+※ 現時点では実際の学習ロジックはモック（sleep）のままで構いません。目的は「配管の分離と名前空間の確定」です。
+
+Step 3: 上流パイプラインの配線修正
+tools/mlops_pipeline_nazo.py は tools/train_nazo_model.py を、tools/mlops_pipeline_agent.py は tools/train_agent_model.py を、それぞれサブプロセスとして呼び出すようにAST等を用いて安全に書き換えてください。
+
+Step 4: 静的解析とコミット
+uv run ruff check tools/ による静的解析を通過させた後、変更・追加したファイルを明示的に指定してGitコミットを行ってください。
+※絶対制約: git add . は厳禁です。

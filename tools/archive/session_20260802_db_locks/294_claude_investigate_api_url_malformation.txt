@@ -1,0 +1,12 @@
+【ミッション: 本番環境におけるELYZA生成時のFetch URL不整合の決定論的調査（Read-Only）】
+本番環境にて、ELYZA生成処理中にルートURL（https://nazokake-backend.../）に対する Failed to fetch が発生している。/api/health は成功していることから、生成リクエスト時のURL構築、またはリダイレクトに欠陥がある。以下のファクトを抽出し、原因を特定せよ。
+
+Step 1: フロントエンドのリクエスト構築の監査
+apps/evaluator/frontend/public/api.js および config.js を解析し、なぞかけ生成のキック（apiGenerate等）およびステータスポーリング（pollStatus等）を実行する際、fetch() に渡されるURL文字列が正確にどのように構築されているか抽出せよ。ベースURL（API_BASE）とエンドポイントの結合部にスラッシュの欠落や重複がないか確認すること。
+
+Step 2: バックエンドのリダイレクト（Trailing Slash）の監査
+apps/evaluator/backend/api/routers/generate.py 等を解析し、エンドポイントの定義（例: @router.post("/generate")）を確認せよ。フロントエンドが呼び出すパスと完全に一致しているか、あるいは FastAPI の仕様による 307 Temporary Redirect（末尾スラッシュの不一致）を引き起こす構造になっていないか確認せよ。
+
+Step 3: ファクトレポートの出力
+フロントエンドが実際に叩いているURLと、バックエンドが待ち受けているURLの差分、およびルートURLへリクエストが飛んでしまう真の根本原因を標準出力にレポートせよ。
+※絶対制約: 本タスクは調査専用である。ファイルへの書き込みやGitコミットは一切行わないこと。

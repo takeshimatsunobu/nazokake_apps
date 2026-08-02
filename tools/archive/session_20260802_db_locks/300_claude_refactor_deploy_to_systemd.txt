@@ -1,0 +1,17 @@
+【ミッション: Systemd User Unitへのデプロイ移行とエンコーディングの防弾化】
+
+SRE監査により、現在のデプロイスクリプト（deploy_pull.sh）における非対話シェルの環境変数解決アプローチに、アーキテクチャ上の脆さ（ハードコードによる秘伝のタレ化）が指摘された。以下の2点の要件（Must Fix）に基づき、インフラ定義を宣言的に改修せよ。
+
+Step 1: Systemd User Unitの定義（IaC化）
+infra/verification_env/ 配下に nazokake-deploy.service というSystemd User Unitファイルを作成せよ。
+このファイル内で、ExecStart に deploy_pull.sh を指定し、Environment ディレクティブを用いて Rootless Docker に必要な環境変数（DOCKER_HOST=unix:///run/user/%U/docker.sock や PATH の追加）を宣言的に注入せよ。
+これにより、スクリプト内部から環境変数設定のハードコードをパージせよ。
+
+Step 2: 呼び出し元スクリプトのエンコーディング防弾化
+デプロイをキックするローカルの呼び出し元スクリプト（PowerShell等）において、SSH通信の文字化けを防ぐため、出力エンコーディングをBOMなしUTF-8に強制する設定（例: $OutputEncoding = [System.Text.Encoding]::UTF8）を追加せよ。
+また、SSHからのキック処理を、スクリプトの直接実行から systemctl --user start nazokake-deploy.service の実行と journalctl によるログ追跡へ変更せよ。
+
+Step 3: 静的解析とコミット
+実装後、AST解析やRuff、bash -n を用いて構文エラーがないことを確認せよ。
+確認完了後、新設および変更したファイル群を明示的に指定してGitコミットを行え。
+※絶対制約: git add . は厳禁である。必ず対象ファイルパスを個別に指定すること。

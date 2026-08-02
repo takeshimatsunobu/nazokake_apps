@@ -1,0 +1,24 @@
+【ミッション: なぞかけ専用SFTパイプラインの実装とデータスキーマ適合】
+なぞかけ専用のSFTを安全に実行するため、抽出されたデータ構造（prompt/completion）に合わせた専用の学習ロジックと実行スクリプトを構築してください。
+
+Step 1: コアエンジンへの専用SFT関数追加 (tools/train_unsloth_core.py)
+既存の run_sft_training（ChatML用）とは別に、新たに run_nazo_sft_training を追加してください。
+
+データセットのロード後、各レコードに対して text = f"### お題:\n{example['prompt']}\n\n### なぞかけ:\n{example['completion']}" のように単一のテキストフィールドへマッピングする前処理（map）を行ってください。
+
+既存の非公開ヘルパー（_load_model_with_lora, _cleanup_vram）を利用し、VRAM 8GB制約（load_in_4bit=True等）を厳守すること。
+
+遅延インポートと # pyright: ignore の抑制コメントも既存関数と同様に付与すること。
+
+Step 2: 専用エントリーポイントの新規作成 (tools/train_nazo_sft_model.py)
+なぞかけSFT専用の実行スクリプトを物理的に新規作成してください。
+
+定数定義: BASE_MODEL = "elyza:8b"、DATASET_PATH = BASE_DIR / "data" / "sft_dataset.jsonl"、OUTPUT_LORA_PATH = BASE_DIR / "models" / "nazo_sft_lora"
+
+実行ロジック: 上記で作成した run_nazo_sft_training() を呼び出すこと。
+
+防弾設計: tools/train_nazo_model.py と完全に同様に、mlops_common.VRAM_LOCK_HELD_BY_PARENT_ENV の環境変数ガードと filelock によるVRAM排他制御を必ず組み込むこと。
+
+Step 3: 静的解析とコミット
+uv run ruff check tools/ による静的解析を通過させた後、変更・追加したファイルを明示的に指定してGitコミットを行ってください。
+※絶対制約: git add . は厳禁です。

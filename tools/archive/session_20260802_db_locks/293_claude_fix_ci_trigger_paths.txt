@@ -1,0 +1,10 @@
+【ミッション: CIワークフローのトリガーパス（paths）の修正】
+PRで pyrightconfig.json のみを変更した場合、GitHub Actionsのパスフィルタリングによってジョブがスキップされ、Required Checksが待機状態のままデッドロックするインフラ課題が発生している。
+
+Step 1: トリガーの修正
+.github/workflows/pyright_check.yml および .github/workflows/ci_pr_check.yml 等のPR時に発火するワークフローを解析し、on.pull_request.paths (または on.push.paths) のリストに pyrightconfig.json を明示的に追加せよ。
+
+Step 2: 静的解析と厳密なコミット
+実装後、YAMLの構文エラーがないことを確認せよ。
+検証完了後、現在の作業ブランチ（fix/pyright-venv-resolution）に対して、変更したYAMLファイルを明示的に指定してGitコミットを行え。
+※絶対制約: git add . は厳禁である。必ず対象ファイルパスを個別に指定すること。

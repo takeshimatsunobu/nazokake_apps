@@ -1,0 +1,16 @@
+【ミッション: DPO/SFTパイプラインの配管修復とVRAM排他制御の防弾化】
+データフライホイールの経路を接続し、VRAM枯渇によるハードクラッシュを防ぐため、以下の要件に従いコードを修正してください。
+
+Step 1: 死んだコードの物理削除
+apps/evaluator/scripts/extract_sft_data.py をGitから物理削除（git rm）してください。
+
+Step 2: 入出力パスの決定論的同期
+tools/evaluate_model.py や、関係する自動評価スクリプトが参照しているパスを走査し、存在しない旧パス（例: ../nazokake-evaluator）を、現在の正しいパス（data/dpo_dataset.jsonl, data/sft_dataset.jsonl, models/nazo_lora 等）へASTレベルで同期させてください。
+
+Step 3: VRAM排他制御の防弾化
+tools/train_nazo_model.py および tools/train_agent_model.py において、学習コアエンジン（run_training等）を呼び出す処理を、tools/config.py に定義されている VRAM_LOCK_PATH を用いたファイルロック（filelock.FileLock）で囲んでください。
+排他制御により、推論APIや他パイプラインとのVRAM（8GB）の競合を物理的に防ぎ、OOMキラーによるクラッシュを回避する防弾設計とすること。
+
+Step 4: 静的解析と厳密なコミット
+uv run ruff check tools/ apps/ による静的解析を通過させた後、削除・変更したファイルを明示的に指定してGitコミットを行ってください。
+※絶対制約: git add . は厳禁です。

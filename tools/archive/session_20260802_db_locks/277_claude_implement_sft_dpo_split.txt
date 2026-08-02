@@ -1,0 +1,29 @@
+【ミッション: SFT/DPOのTrainer分岐とデータフォーマットの適合】
+現在の学習コアエンジンがSFTTrainerに固定されており、DPOデータセット（prompt/chosen/rejected）でクラッシュする構成ドリフトを解消するため、関心の分離（SoC）に従ってTrainerを分岐させてください。
+
+Step 1: コアエンジンの関数分割とTrainer適用 (tools/train_unsloth_core.py)
+tools/train_unsloth_core.py 内の run_training 関数を廃止し、以下の2つの独立した関数を実装してください。
+前回実装したVRAM 8GB制約（load_in_4bit=True, max_seq_length=1024, paged_adamw_8bit, batch_size=2等）および、CI/CD崩壊を防ぐための「関数内部での遅延インポート（# pyright: ignore 併用）」は絶対に維持すること。
+
+run_sft_training(base_model, dataset_path, output_lora_path):
+
+trl.SFTTrainer を使用。
+
+Agentの学習データは {"messages": [...]} 形式のJSONLを想定するため、datasets.load_datasetでロード後、Hugging Faceの標準的なチャットテンプレート適用、または適切な formatting_func を用いてSFTTrainerにテキストを渡す処理を実装してください。
+
+run_dpo_training(base_model, dataset_path, output_lora_path):
+
+trl.DPOTrainer を遅延インポートして使用。
+
+なぞかけデータ（prompt, chosen, rejected の3カラム）をロードし、そのまま DPOTrainer へ渡す設計としてください。
+
+Step 2: エントリーポイントの再配線
+以下の実行スクリプトの呼び出し元を、新設した関数へ正しく再配線してください。
+
+tools/train_agent_model.py: run_sft_training() を呼び出す。
+
+tools/train_nazo_model.py: run_dpo_training() を呼び出す。
+
+Step 3: 静的解析と厳密なコミット
+uv run ruff check tools/ による静的解析を通過させた後、変更したファイル群を明示的に指定してGitコミットを行ってください。
+※絶対制約: git add . は厳禁です。

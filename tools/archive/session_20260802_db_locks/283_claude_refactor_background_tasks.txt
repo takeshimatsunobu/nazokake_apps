@@ -1,0 +1,15 @@
+【ミッション: Cloud Run環境におけるBackgroundTasks依存のパージとFirestore同期のAwait化】
+Cloud RunのCPUサスペンド仕様によるFirestore同期不全を根治するため、以下の要件に従いコードを修正してください。
+
+Step 1: BackgroundTasks利用箇所の特定とAST解析
+apps/evaluator/backend/api/routers/ 配下の各ルーター（generate.py, feedback.py, board.py, submit_human.py 等）および関連するバックエンドコードを走査し、BackgroundTasks を用いて sync_once_safe 等のFirestore同期処理を非同期に委譲している箇所を特定してください。
+
+Step 2: Await化によるFail-Fast同期の実装
+特定した各箇所において、BackgroundTasks へのタスク追加（例: background_tasks.add_task(sync_once_safe, ...)）を廃止してください。
+代わりに、HTTPレスポンスを返却する「前」に、必ず await を用いて同期的にFirestoreへの書き込み処理（例: await sync_once_safe(...)）を完了させる設計へ変更してください。
+※文字列置換は使用せず、ASTを介した安全な操作または手動での正確な修正を行うこと。
+
+Step 3: 静的解析と厳密なコミット
+実装後、Ruff等を用いて構文エラーがないことを確認してください。
+検証完了後、変更したファイル群を明示的に指定してGitコミットを行ってください。
+※絶対制約: git add . は厳禁です。作業ツリーの汚染を防ぐため、必ず対象ファイルパスを個別に指定すること。

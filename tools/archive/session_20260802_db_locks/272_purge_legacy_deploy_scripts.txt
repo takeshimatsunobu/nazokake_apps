@@ -1,0 +1,20 @@
+【ミッション: 旧来のデプロイスクリプトのTombstoning（完全パージ）】
+
+完全なGitOpsアーキテクチャ（CI/CD）への移行が完了したことに伴い、ローカルや特定のVMから直接デプロイ・環境構築を行うための旧来のスクリプト群は、インフラ的負債となりました。これらが誤って実行され、GitOpsの監査性をバイパスすること（スプリットブレイン状態）を防ぐため、物理的に無効化します。
+
+Step 1: 負債スクリプトの特定
+リポジトリ直下や scripts/ tools/ 等のディレクトリをスキャンし、VM依存やローカルからの直接デプロイを目的としたレガシーなスクリプト（例: deploy*.ps1, deploy*.sh, setup_vm*.sh, build_and_push*.sh など）を特定してください。
+※ tools/pyright_tool.py などの静的解析ツールや、ローカル検証用の単体スクリプトは対象外です。あくまで「本番/検証VM（Cloud Run含む）へのデプロイやインフラ構築」を直接担っていたスクリプトが対象です。
+
+Step 2: Tombstoning（墓石化）の実行
+特定した各スクリプトの中身を完全に消去し、代わりに以下の挙動をするスタブコード（PowerShellなら .ps1、Bashなら .sh の文法）に書き換えてください。
+
+実行された瞬間に、以下のメッセージを出力する。
+"ERROR: This deployment script is deprecated and has been permanently disabled."
+"All deployments are now managed exclusively via GitHub Actions (GitOps)."
+"Please merge your changes to the main branch to trigger the CD pipeline."
+
+即座に終了コード 1 (Exit 1) で異常終了する。
+
+Step 3: 確認とコミット
+git status および git diff を用いて、意図したスクリプトのみがTombstoning化されていることを確認してください。確認後、この変更を現在の作業ブランチ（fix/ast-tools-hardening 等）へ直接コミットしてください。

@@ -1,0 +1,17 @@
+【ミッション: Firestore公式調査ツールの確立とELYZAフリーズ原因の決定論的調査】
+これまでの調査において、AgentがFirestore接続スクリプトをその場で自作した結果、認証エラーによるクラッシュが多発した。これはAgentへの適切なツール提供が欠如していたためである。以下の要件（Must Fix）に従い、安全な経路を確立した上で調査を完遂せよ。
+
+Step 1: 公式調査用ツールの作成とルールのロックイン
+バックエンドの既存のFirebase初期化ロジック（環境変数や認証情報のロード機構）を再利用し、Firestoreの nazokake_items コレクションから直近のジョブ状態を安全に読み取る専用CLIツール tools/inspect_firestore_jobs.py を新設せよ。
+このファイルの冒頭（Docstring）に、以下のルールを明記してシステムに刻み込むこと。
+「【絶対制約】AgentがFirestoreのジョブ状態を調査する際は、必ず本ツールを経由すること。環境の壁によるクラッシュを防ぐため、Agentが動的にFirestore接続スクリプトを自作することは固く禁ずる。」
+
+Step 2: 決定論的ファクトの抽出（ツールの実地テスト）
+作成した tools/inspect_firestore_jobs.py を実行し、直近のなぞかけ生成リクエストが status="pending" または elyza_job_status="pending" のままFirestore上に滞留しているか、実際のデータを抽出して報告せよ。
+
+Step 3: ワーカー稼働状況の確認
+現在、このコマンドを実行している環境において、workers/ondemand_elyza_worker.py のプロセスが確実に稼働しているかOSレベルで確認せよ。
+
+Step 4: 厳密なコミット
+ツールの構文エラーがないことをRuff等で確認後、新設した tools/inspect_firestore_jobs.py を明示的に指定してGitコミットを行え。
+※絶対制約: git add . は厳禁である。

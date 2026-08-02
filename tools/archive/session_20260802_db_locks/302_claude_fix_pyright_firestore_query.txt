@@ -1,0 +1,12 @@
+【ミッション: Pyrightの偽陽性エラー解消とCIパイプラインの復旧】
+PR #20のCIにおいて、tools/inspect_firestore_jobs.py の firestore.Query.DESCENDING に対する型スタブ欠落起因の偽陽性エラーが発生し、マージがブロックされている。以下の要件で修正し、CIを通過させよ。
+
+Step 1: 型検査の局所的な例外化
+tools/inspect_firestore_jobs.py をAST等（または局所的な手動置換）で編集し、該当する .order_by() の行の末尾に # pyright: ignore などの型検査無視コメントを付与せよ。実行時のロジックや依存関係（import）は一切変更しないこと。
+
+Step 2: ローカルでのゲート検証
+修正後、ローカル環境で uv run python tools/pyright_tool.py --gate "origin/main" （または該当のラチェット検証コマンド）を実行し、エラーが0件に収束したことを確認せよ。
+
+Step 3: コミットとPush
+検証成功後、変更した tools/inspect_firestore_jobs.py を明示的に指定してコミットし、現在のブランチ (feature/firestore-job-inspector) へ Push せよ。
+※絶対制約: git add . は厳禁である。
