@@ -7,7 +7,6 @@
 
 import asyncio
 import json
-import os
 import re
 
 from google import genai
@@ -15,9 +14,11 @@ from google.genai.types import EmbedContentConfig
 from google.cloud.firestore_v1.vector import Vector
 from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
 
+from nazokake_core.env_config import get_gemini_api_key
+
 
 async def get_rag_context(db, odai: str) -> str:
-    api_key = os.environ.get("GEMINI_API_KEY")
+    api_key = get_gemini_api_key()
     if not api_key:
         return "※APIキー未設定"
     try:

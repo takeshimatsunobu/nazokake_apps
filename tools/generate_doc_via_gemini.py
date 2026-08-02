@@ -46,6 +46,8 @@ from dotenv import load_dotenv
 from google import genai
 from google.genai.types import GenerateContentConfig, HttpOptions
 
+from nazokake_core.env_config import get_gemini_api_key
+
 if sys.platform == "win32":
     # typeshedのsys.stdout/stderrはTextIOとして型付けされreconfigure()を
     # 宣言していないが、実行時は実際にTextIOWrapperであり存在する。
@@ -127,7 +129,7 @@ def load_facts() -> dict:
 
 
 def _require_api_key() -> str:
-    key = os.environ.get("GEMINI_API_KEY", "").strip()
+    key = get_gemini_api_key()
     if not key:
         raise EnvironmentError("GEMINI_API_KEYが未設定です。")
     return key
