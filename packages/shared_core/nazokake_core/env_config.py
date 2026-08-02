@@ -8,10 +8,10 @@ def _load_env():
     for parent in [current] + list(current.parents):
         env_file = parent / ".env"
         if env_file.exists():
-            load_dotenv(dotenv_path=env_file)
+            load_dotenv(dotenv_path=env_file, override=True)
             return
     # 見つからない場合のフォールバック
-    load_dotenv()
+    load_dotenv(override=True)
 
 # モジュール読み込み時に確実に実行
 _load_env()
