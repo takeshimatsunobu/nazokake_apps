@@ -48,6 +48,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.pool import NullPool
 from tenacity import (
+    before_sleep_log,
     retry,
     retry_if_exception_type,
     stop_after_attempt,
@@ -62,6 +63,7 @@ def with_db_retry():
         retry=retry_if_exception_type(
             (sqlite3.OperationalError, SQLAlchemyOperationalError)
         ),
+        before_sleep=before_sleep_log(logger, logging.WARNING),
     )
 
 
