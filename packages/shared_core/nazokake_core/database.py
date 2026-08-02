@@ -54,6 +54,17 @@ from tenacity import (
     wait_exponential_jitter,
 )
 
+
+def with_db_retry():
+    return retry(
+        stop=stop_after_attempt(5),
+        wait=wait_exponential_jitter(initial=1, max=10, exp_base=2, jitter=1),
+        retry=retry_if_exception_type(
+            (sqlite3.OperationalError, SQLAlchemyOperationalError)
+        ),
+    )
+
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_DB_PATH = "nazokake_local.db"
@@ -1274,14 +1285,4 @@ async def async_record_pipeline_outcome_event(
             window_size=window_size,
             anomaly_threshold=anomaly_threshold,
         )
-    )
-
-
-def with_db_retry():
-    return retry(
-        stop=stop_after_attempt(5),
-        wait=wait_exponential_jitter(initial=1, max=10, exp_base=2, jitter=1),
-        retry=retry_if_exception_type(
-            (sqlite3.OperationalError, SQLAlchemyOperationalError)
-        ),
     )
