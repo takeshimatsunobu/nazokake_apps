@@ -95,6 +95,7 @@ if not logger.handlers:
 if str(BASE_DIR) not in sys.path:
     sys.path.insert(0, str(BASE_DIR))
 
+from nazokake_core.env_config import get_gemini_api_key  # noqa: E402
 from tools import shadow_mode  # noqa: E402
 from tools import context_manager  # noqa: E402
 from tools.config import settings  # noqa: E402
@@ -1635,7 +1636,7 @@ async def phase3_aider_execution(
 
     clean_env = os.environ.copy()
     clean_env["ANTHROPIC_API_KEY"] = (os.getenv("ANTHROPIC_API_KEY") or "").strip()
-    clean_env["GEMINI_API_KEY"] = (os.getenv("GEMINI_API_KEY") or "").strip()
+    clean_env["GEMINI_API_KEY"] = get_gemini_api_key() or ""
     clean_env["PYTHONIOENCODING"] = "utf-8"
     clean_env["PYTHONUTF8"] = "1"
     clean_env["AIDER_VERBOSE"] = "1"

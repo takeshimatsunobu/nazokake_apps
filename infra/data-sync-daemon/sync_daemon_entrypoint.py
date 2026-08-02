@@ -36,6 +36,8 @@ from google import genai
 from google.genai.types import GenerateContentConfig
 from pydantic import BaseModel
 
+from nazokake_core.env_config import get_gemini_api_key
+
 DB_PATH = "/data/sqlite/flywheel.db"
 CREDENTIALS_DIR = "/data/credentials"
 FIRESTORE_COLLECTION = os.environ.get("AUFHEBEN_EVENTS_COLLECTION", "aufheben_events")
@@ -228,7 +230,7 @@ def _judge_with_gemini(context_text: str) -> AufhebenGateVerdict:
     呼び出し元(main()のリトライループ、instructions/003)の指数バックオフに委ね、
     一時的なAPI障害を「安全性が確認できなかった」として恒久的に破棄しないため。
     """
-    client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+    client = genai.Client(api_key=get_gemini_api_key())
     prompt = f"{_AUFHEBEN_GATE_SYSTEM_PROMPT}\n\n【評価対象テキスト】\n{context_text}"
     response = client.models.generate_content(
         model=AUFHEBEN_GATE_MODEL_NAME,

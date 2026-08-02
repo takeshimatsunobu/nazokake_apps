@@ -21,6 +21,8 @@ from google import genai
 from google.genai.types import GenerateContentConfig
 from loguru import logger
 
+from nazokake_core.env_config import get_gemini_api_key
+
 from .output_parser import _extract_json_dict, _valid_nazokake
 
 # MLOps(tools/mlops_pipeline_nazo.py / tools/mlops_pipeline_agent.py)とVRAM(8GB)を
@@ -396,7 +398,7 @@ def _is_gemini_auth_error(err: Exception | None) -> bool:
 
 async def generate_via_gemini(odai: str) -> dict:
     """【即時・主軸】Gemini 3.5 Flash で構造化生成（GEN_SCHEMA＋3回リトライ）。失敗時は例外送出。"""
-    api_key = (os.environ.get("GEMINI_API_KEY") or "").strip()
+    api_key = get_gemini_api_key() or ""
     if not api_key:
         # 【instructions/247】キー欠落時、Firestoreからのプロンプト構築やGemini SDKの
         # 生の認証エラーで3回リトライを浪費させず即座に失敗させ、フロントエンドに

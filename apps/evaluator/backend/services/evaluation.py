@@ -12,6 +12,7 @@ from firebase_admin import firestore
 from google import genai
 from google.genai.types import GenerateContentConfig
 
+from nazokake_core.env_config import get_gemini_api_key
 from nazokake_core.schemas import EvaluationOutput
 
 AXES = [
@@ -134,7 +135,7 @@ async def run_evaluation(odai: str, nazokake_text: str) -> dict:
         prompt += f"\n\n{_DYNAMIC_CORRECTION_PROMPT}"
 
     def _call():
-        client = genai.Client(api_key=os.environ.get("GEMINI_API_KEY"))
+        client = genai.Client(api_key=get_gemini_api_key())
         return client.models.generate_content(
             model=model_name,
             contents=prompt,
