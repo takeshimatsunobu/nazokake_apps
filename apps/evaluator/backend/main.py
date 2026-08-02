@@ -1,4 +1,5 @@
 from fastapi.staticfiles import StaticFiles
+
 # V8.9 Final Test
 import os
 import sys
@@ -18,7 +19,11 @@ from loguru import logger
 # 設定するため、それを優先し、未設定時(ローカル開発)のみ既存のparents[3]へ
 # フォールバックする。
 _env_project_root = os.environ.get("PROJECT_ROOT")
-_PROJECT_ROOT = Path(_env_project_root) if _env_project_root else Path(__file__).resolve().parents[3]
+_PROJECT_ROOT = (
+    Path(_env_project_root)
+    if _env_project_root
+    else Path(__file__).resolve().parents[3]
+)
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
@@ -74,7 +79,9 @@ app = FastAPI(title="なぞかけディスカバリー API")
 # uvicornの実行cwd(apps/evaluator/backend)基準で解決され、そこにはpublic/が存在
 # しないため StaticFiles初期化時に RuntimeError で起動即クラッシュする)。
 app.mount(
-    "/cic", StaticFiles(directory=str(_PROJECT_ROOT / "public"), html=True), name="cic_ui"
+    "/cic",
+    StaticFiles(directory=str(_PROJECT_ROOT / "public"), html=True),
+    name="cic_ui",
 )
 
 
@@ -134,7 +141,9 @@ async def _init_db_on_startup() -> None:
         # 【絶対制約】リストア失敗はアプリ全体の起動をクラッシュさせない
         # (Firestore側の一時的な障害等でCloud Runの起動自体が失敗するのは本末転倒)。
         # ログ出力のみに留め、ローカルDBは空のまま起動を継続する。
-        logger.warning(f"⚠️ Firestoreからのリストアに失敗しました(起動は継続します): {e}")
+        logger.warning(
+            f"⚠️ Firestoreからのリストアに失敗しました(起動は継続します): {e}"
+        )
 
 
 # 【instructions/204: フロントエンド一元配信】フロントエンドを別ポートで立ち上げる

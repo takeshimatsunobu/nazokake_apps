@@ -1,1 +1,0 @@
-backend/main.py の先頭に # V8.9 Final Test というコメントを追加して

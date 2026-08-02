@@ -39,7 +39,9 @@ async def get_user_feed(last_doc_id: Optional[str] = None, limit: int = 5):
         if cursor_item is not None:
             cursor_random_weight = cursor_item.get("random_weight")
 
-    items = await async_get_feed_items(limit=limit, cursor_random_weight=cursor_random_weight)
+    items = await async_get_feed_items(
+        limit=limit, cursor_random_weight=cursor_random_weight
+    )
     return {"items": items}
 
 
@@ -52,7 +54,9 @@ async def get_golden_feed(last_doc_id: Optional[str] = None, limit: int = 5):
         if cursor_item is not None:
             cursor_created_at = cursor_item.get("created_at")
 
-    items = await async_get_golden_feed_items(limit=limit, cursor_created_at=cursor_created_at)
+    items = await async_get_golden_feed_items(
+        limit=limit, cursor_created_at=cursor_created_at
+    )
     return {"items": items}
 
 
@@ -70,11 +74,19 @@ async def evaluate_user_item(doc_id: str, request: Request):
         user_slug = data.get("user_slug", "anonymous")
         found = await async_append_human_evaluation(
             doc_id,
-            evaluation_entry={"user_score": data.get("s_total", 0), "user_slug": user_slug},
-            comment_entry={"comment": data.get("human_comment", ""), "user_slug": user_slug},
+            evaluation_entry={
+                "user_score": data.get("s_total", 0),
+                "user_slug": user_slug,
+            },
+            comment_entry={
+                "comment": data.get("human_comment", ""),
+                "user_slug": user_slug,
+            },
         )
         if not found:
-            raise HTTPException(status_code=404, detail="対象のなぞかけが見つかりません")
+            raise HTTPException(
+                status_code=404, detail="対象のなぞかけが見つかりません"
+            )
         return {"status": "success"}
     except HTTPException:
         raise

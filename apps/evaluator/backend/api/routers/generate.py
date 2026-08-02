@@ -113,15 +113,17 @@ async def progressive_generate(db, doc_id: str, odai: str, pair_id: str):
                 if budget_exceeded
                 else "分析官が採点中..."
             )
-            await async_upsert_item({
-                "doc_id": doc_id,
-                "result_gemini": validated_result,
-                "result": validated_result,
-                "nazokake_text": text_g,
-                "status": "gemini_generated",
-                "message": gemini_message,
-                "dpo_pair_id": pair_id,
-            })
+            await async_upsert_item(
+                {
+                    "doc_id": doc_id,
+                    "result_gemini": validated_result,
+                    "result": validated_result,
+                    "nazokake_text": text_g,
+                    "status": "gemini_generated",
+                    "message": gemini_message,
+                    "dpo_pair_id": pair_id,
+                }
+            )
             ev = await run_evaluation(odai, text_g)
             # 【instructions/182: 品質のサーキットブレーカー】評価スコアがN回連続で
             # 極端値(スケール最高/最低)に偏っている場合、QualityCircuitBreakerErrorが
@@ -130,26 +132,30 @@ async def progressive_generate(db, doc_id: str, odai: str, pair_id: str):
             # apps/batch_factoryのような自律ループのプロセス強制終了はここでは行わない)。
             await async_record_evaluation_score("live_evaluation_gemini", ev["s_total"])
             validated_scores = _validate_scores_with_fallback(ev["scores"])
-            await async_upsert_item({
-                "doc_id": doc_id,
-                "scores": validated_scores,
-                "s_total": ev["s_total"],
-                "axis_comments": ev["axis_comments"],
-                "overall": ev["overall"],
-                "eval_status": "completed",
-                "feed_ready": True,
-                "status": "gemini_completed",
-                "message": "Gemini鑑定完了！",
-                "evaluated_at": datetime.now(timezone.utc).isoformat(),
-            })
+            await async_upsert_item(
+                {
+                    "doc_id": doc_id,
+                    "scores": validated_scores,
+                    "s_total": ev["s_total"],
+                    "axis_comments": ev["axis_comments"],
+                    "overall": ev["overall"],
+                    "eval_status": "completed",
+                    "feed_ready": True,
+                    "status": "gemini_completed",
+                    "message": "Gemini鑑定完了！",
+                    "evaluated_at": datetime.now(timezone.utc).isoformat(),
+                }
+            )
             return True
         except Exception as e:
-            await async_upsert_item({
-                "doc_id": doc_id,
-                "status": "error",
-                "eval_status": "error",
-                "message": f"即時生成に失敗: {e}",
-            })
+            await async_upsert_item(
+                {
+                    "doc_id": doc_id,
+                    "status": "error",
+                    "eval_status": "error",
+                    "message": f"即時生成に失敗: {e}",
+                }
+            )
             return False
 
     async def process_elyza() -> None:
@@ -177,39 +183,51 @@ async def progressive_generate(db, doc_id: str, odai: str, pair_id: str):
                 raw_result_l, "生成結果の検証に失敗しました"
             )
             text_l = _compose_text(odai, validated_result_l)
-            await async_upsert_item({
-                "doc_id": doc_id,
-                "result_llmjp": validated_result_l,
-                "nazokake_text_llmjp": text_l,
-                "llmjp_status": "generated",
-                "message": "ELYZA作品を採点中...",
-                "dpo_pair_id": pair_id,
-            })
+            await async_upsert_item(
+                {
+                    "doc_id": doc_id,
+                    "result_llmjp": validated_result_l,
+                    "nazokake_text_llmjp": text_l,
+                    "llmjp_status": "generated",
+                    "message": "ELYZA作品を採点中...",
+                    "dpo_pair_id": pair_id,
+                }
+            )
             ev_l = await run_evaluation(odai, text_l)
             # 【instructions/182】Gemini側(live_evaluation_gemini)とは別のpipeline_idで
             # 追跡する(ELYZA/おまけ側の不調がGemini側の健全なカウンタを汚さないため)。
-            await async_record_evaluation_score("live_evaluation_elyza", ev_l["s_total"])
+            await async_record_evaluation_score(
+                "live_evaluation_elyza", ev_l["s_total"]
+            )
             validated_scores_l = _validate_scores_with_fallback(ev_l["scores"])
-            await async_upsert_item({
-                "doc_id": doc_id,
-                "scores_llmjp": validated_scores_l,
-                "s_total_llmjp": ev_l["s_total"],
-                "axis_comments_llmjp": ev_l["axis_comments"],
-                "overall_llmjp": ev_l["overall"],
-                "llmjp_status": "completed",
-            })
+            await async_upsert_item(
+                {
+                    "doc_id": doc_id,
+                    "scores_llmjp": validated_scores_l,
+                    "s_total_llmjp": ev_l["s_total"],
+                    "axis_comments_llmjp": ev_l["axis_comments"],
+                    "overall_llmjp": ev_l["overall"],
+                    "llmjp_status": "completed",
+                }
+            )
         except Exception as e:
             logger.exception(f"⚠️ おまけ(ELYZA)生成/評価に失敗: {e}")
-            await async_upsert_item({
-                "doc_id": doc_id, "llmjp_status": "failed", "message": f"ELYZAお休み理由: {e}"
-            })
+            await async_upsert_item(
+                {
+                    "doc_id": doc_id,
+                    "llmjp_status": "failed",
+                    "message": f"ELYZAお休み理由: {e}",
+                }
+            )
 
     # 【真の並行】Gemini と ELYZA を同時に発火し、双方の完了を待ち合わせる（各々が自前で例外処理）。
     gemini_ok, _ = await asyncio.gather(process_gemini(), process_elyza())
 
     # 【最終】Gemini 成功時のみ全体完了へ。失敗時は status:error を保持し無限ロードを防ぐ。
     if gemini_ok:
-        await async_upsert_item({"doc_id": doc_id, "status": "all_completed", "message": "完成！"})
+        await async_upsert_item(
+            {"doc_id": doc_id, "status": "all_completed", "message": "完成！"}
+        )
 
 
 async def _guarded_progressive(db, doc_id: str, odai: str, pair_id: str):
@@ -220,7 +238,12 @@ async def _guarded_progressive(db, doc_id: str, odai: str, pair_id: str):
         logger.exception(f"[{doc_id}] 背景タスク(生成・評価)で致命的エラー発生: {e}")
         try:
             await async_upsert_item(
-                {"doc_id": doc_id, "status": "error", "eval_status": "error", "message": str(e)}
+                {
+                    "doc_id": doc_id,
+                    "status": "error",
+                    "eval_status": "error",
+                    "message": str(e),
+                }
             )
         except Exception as db_e:
             logger.error(f"[{doc_id}] エラーステータスのDB書き込みに失敗: {db_e}")
@@ -277,7 +300,9 @@ async def _fetch_terminal_elyza_job(doc_id: str) -> dict | None:
     try:
         return await asyncio.to_thread(_fetch_terminal_elyza_job_sync, doc_id)
     except Exception as e:
-        logger.warning(f"⚠️ [ELYZA Job] Firestoreからの結果マージに失敗(ローカルのみで続行): {e}")
+        logger.warning(
+            f"⚠️ [ELYZA Job] Firestoreからの結果マージに失敗(ローカルのみで続行): {e}"
+        )
         return None
 
 
@@ -407,22 +432,24 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
     # ローカルDB更新へ記録し、抽出スクリプトがバッチ由来・アプリ由来を同一ロジックで
     # ペア回収できるようにする。
     pair_id = f"dpo-{uuid.uuid4().hex[:12]}"
-    await async_upsert_item({
-        "doc_id": doc_id,
-        "odai": req.odai,
-        "status": "processing",
-        "eval_status": "processing",
-        "llmjp_status": "pending",
-        # 【instructions/250】オンデマンドELYZAワーカー用のジョブキュー合図。ここで
-        # Firestoreへ直接書き込むことは絶対にしない(SSoT §8.2の一方向同期原則)。
-        # この値は他フィールドと同様にローカルSQLiteへ書くだけであり、直後の
-        # sync_once_safe(既存の一方向Push)が自動的にFirestoreへ伝播させる。
-        "elyza_job_status": "pending",
-        "message": "AIが生成中...",
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "random_weight": random.random(),  # noqa: S311 (無限スクロール用シーク乱数。暗号用途ではない)
-        "dpo_pair_id": pair_id,
-    })
+    await async_upsert_item(
+        {
+            "doc_id": doc_id,
+            "odai": req.odai,
+            "status": "processing",
+            "eval_status": "processing",
+            "llmjp_status": "pending",
+            # 【instructions/250】オンデマンドELYZAワーカー用のジョブキュー合図。ここで
+            # Firestoreへ直接書き込むことは絶対にしない(SSoT §8.2の一方向同期原則)。
+            # この値は他フィールドと同様にローカルSQLiteへ書くだけであり、直後の
+            # sync_once_safe(既存の一方向Push)が自動的にFirestoreへ伝播させる。
+            "elyza_job_status": "pending",
+            "message": "AIが生成中...",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "random_weight": random.random(),  # noqa: S311 (無限スクロール用シーク乱数。暗号用途ではない)
+            "dpo_pair_id": pair_id,
+        }
+    )
     # 【instructions/283】Cloud RunはCPUをリクエスト処理中のみ割り当てる仕様のため、
     # レスポンス送出後に実行されるBackgroundTasksはスケジュールされる保証が無く、
     # 同期が発火しないまま次のリクエストまでインスタンスがサスペンドされ得た

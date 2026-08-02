@@ -109,7 +109,9 @@ async def apply_human_action(
     await sync_once_safe()
     updated = await async_get_item(req.target_slug)
     # 【絶対制約】sync_status(クラウド同期状態)はUI向けレスポンスに含めない。
-    ui_updated = {k: v for k, v in updated.items() if k not in ("sync_status", "last_sync_error")}
+    ui_updated = {
+        k: v for k, v in updated.items() if k not in ("sync_status", "last_sync_error")
+    }
     # APIの処理結果("success")とドキュメント自身の"status"フィールド(なぞかけの
     # 生成ステータス、例:"pending")はキー名が衝突するため、"data"キーの下へ
     # ネストして明確に分離する(旧実装は {"status": "success", **doc} のスプレッドで
@@ -141,9 +143,13 @@ async def apply_dlq_action(
     """
     reason_dict = {"requested_action": req.action}
     if req.action == "retry":
-        found = await async_retry_dlq_item(req.doc_id, actor="admin", reason_dict=reason_dict)
+        found = await async_retry_dlq_item(
+            req.doc_id, actor="admin", reason_dict=reason_dict
+        )
     else:
-        found = await async_discard_dlq_item(req.doc_id, actor="admin", reason_dict=reason_dict)
+        found = await async_discard_dlq_item(
+            req.doc_id, actor="admin", reason_dict=reason_dict
+        )
 
     if not found:
         raise HTTPException(status_code=404, detail="対象のDLQアイテムが見つかりません")
