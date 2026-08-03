@@ -231,54 +231,81 @@ async def _mark_job_outcome(
     await asyncio.to_thread(
         _write_scoped_fields_sync, db, collection, doc_id, scoped_fields
     )
-
-
 async def _process_job(db, collection: str, job: dict[str, Any]) -> None:
-    doc_id = job["doc_id"]
-    odai = job["odai"]
-    retry_count = job["retry_count"]
-    dpo_pair_id = job.get("dpo_pair_id")
+    import asyncio
+    import json
+    import sys
+    import traceback
+    from pathlib import Path
+
+    doc_id = job['doc_id']
+    odai = job['odai']
+    retry_count = job['retry_count']
+    dpo_pair_id = job.get('dpo_pair_id')
 
     if not odai:
-        _log(f"⚠️ [{doc_id}] odaiが空のため生成をスキップし、失敗として扱います。")
-        await _mark_failure(
-            db, collection, doc_id, odai, dpo_pair_id, retry_count, "odai is empty"
-        )
+        _log(f'⚠️ [{doc_id}] odaiが空のため生成をスキップし、失敗として扱います。')
+        await _mark_failure(db, collection, doc_id, odai, dpo_pair_id, retry_count, 'odai is empty')
         return
 
+    N = 3
+    sem = asyncio.Semaphore(3)
+
+    async def _bounded_gen_and_eval(idx):
+        async with sem:
+            raw_result = await generate_via_llmjp(odai)
+            text = _compose_text(odai, raw_result)
+            evaluation = await run_evaluation(odai, text)
+            return {
+                'idx': idx,
+                'raw_result': raw_result,
+                'text': text,
+                'evaluation': evaluation,
+                's_total': evaluation.get('s_total', 0)
+            }
+
     try:
-        raw_result = await generate_via_llmjp(odai)
-        text = _compose_text(odai, raw_result)
-        evaluation = await run_evaluation(odai, text)
+        evaluated_candidates = await asyncio.gather(*[_bounded_gen_and_eval(i) for i in range(N)])
     except Exception as e:
-        _log(f"⚠️ [{doc_id}] ELYZA生成/評価に失敗: {e}")
+        _log(f'⚠️ [{doc_id}] ELYZA生成/評価に失敗: {e}')
         traceback.print_exc(file=sys.stderr)
         await _mark_failure(db, collection, doc_id, odai, dpo_pair_id, retry_count, str(e))
         return
 
+    best_candidate = max(evaluated_candidates, key=lambda x: x['s_total'])
+
+    try:
+        log_dir = Path('run/audit_reports')
+        log_dir.mkdir(parents=True, exist_ok=True)
+        log_file = log_dir / 'dpo_preference_log.jsonl'
+        with open(log_file, 'a', encoding='utf-8') as f:
+            for cand in evaluated_candidates:
+                cand_dict = cand.copy()
+                cand_dict['is_chosen'] = (cand['idx'] == best_candidate['idx'])
+                cand_dict['doc_id'] = doc_id
+                cand_dict['dpo_pair_id'] = dpo_pair_id
+                f.write(json.dumps(cand_dict, ensure_ascii=False) + chr(10))
+    except Exception as e:
+        _log(f'⚠️ [{doc_id}] DPOログ書き出しに失敗: {e}')
+
+    raw_result = best_candidate['raw_result']
+    text = best_candidate['text']
+    evaluation = best_candidate['evaluation']
+
     fields = {
-        "result_llmjp": raw_result,
-        "nazokake_text_llmjp": text,
-        "scores_llmjp": evaluation["scores"],
-        "s_total_llmjp": evaluation["s_total"],
-        "overall_llmjp": evaluation["overall"],
-        "axis_comments_llmjp": evaluation["axis_comments"],
-        "llmjp_status": "completed",
-        "elyza_job_status": "completed",
-        "elyza_job_locked_at": None,
-        "elyza_job_retry_count": 0,
+        'result_llmjp': raw_result,
+        'nazokake_text_llmjp': text,
+        'scores_llmjp': evaluation['scores'],
+        's_total_llmjp': evaluation['s_total'],
+        'overall_llmjp': evaluation['overall'],
+        'axis_comments_llmjp': evaluation['axis_comments'],
+        'llmjp_status': 'completed',
+        'elyza_job_status': 'completed',
+        'elyza_job_locked_at': None,
+        'elyza_job_retry_count': 0
     }
-    # 【instructions/251】dpo_pair_idはローカルSQLite側にのみ書く(Firestore側は
-    # Cloud Run自身の元のPushで既に正しく、スコープ外フィールドのため書けない)。
-    await _mark_job_outcome(
-        db,
-        collection,
-        doc_id,
-        odai,
-        local_fields={**fields, "dpo_pair_id": dpo_pair_id},
-        scoped_fields=fields,
-    )
-    _log(f"✅ [{doc_id}] ELYZA生成・評価・Firestore書き戻しが完了しました。")
+    await _mark_job_outcome(db, collection, doc_id, odai, local_fields={**fields, 'dpo_pair_id': dpo_pair_id}, scoped_fields=fields)
+    _log(f'✅ [{doc_id}] ELYZA生成・評価・Firestore書き戻しが完了しました。')
 
 
 async def _mark_failure(
