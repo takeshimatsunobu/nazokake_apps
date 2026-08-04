@@ -26,40 +26,46 @@ router = APIRouter()
 @handle_exceptions
 async def submit_human(req: HumanSubmitRequest):
     doc_id = uuid.uuid4().hex
-    await async_upsert_item({
-        "doc_id": doc_id,
-        "odai": req.odai,
-        "nazokake_text": req.nazokake_text,
-        "author": "Human",
-        "parent_id": req.parent_id,
-        "is_sft_data": bool(req.parent_id),
-        "created_at": datetime.now(timezone.utc).isoformat(),
-        "status": "processing",
-        "eval_status": "processing",
-        "s_total": 0.0,
-        "random_weight": random.random(),  # noqa: S311 (無限スクロール用シーク乱数。暗号用途ではない)
-    })
+    await async_upsert_item(
+        {
+            "doc_id": doc_id,
+            "odai": req.odai,
+            "nazokake_text": req.nazokake_text,
+            "author": "Human",
+            "parent_id": req.parent_id,
+            "is_sft_data": bool(req.parent_id),
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "status": "processing",
+            "eval_status": "processing",
+            "s_total": 0.0,
+            "random_weight": random.random(),  # noqa: S311 (無限スクロール用シーク乱数。暗号用途ではない)
+        }
+    )
     # run_evaluation は評価のみを返す(旧evaluate_and_update_taskと異なりDB更新は行わない)ため、
     # generate.py の process_gemini と同じパターンでここに書き込み責務を持たせる。
     try:
         ev = await run_evaluation(req.odai, req.nazokake_text)
-        await async_upsert_item({
-            "doc_id": doc_id,
-            "scores": ev["scores"],
-            "s_total": ev["s_total"],
-            "axis_comments": ev["axis_comments"],
-            "overall": ev["overall"],
-            "eval_status": "completed",
-            "feed_ready": True,
-            "status": "all_completed",
-        })
+        await async_upsert_item(
+            {
+                "doc_id": doc_id,
+                "scores": ev["scores"],
+                "s_total": ev["s_total"],
+                "axis_comments": ev["axis_comments"],
+                "overall": ev["overall"],
+                "eval_status": "completed",
+                "feed_ready": True,
+                "status": "all_completed",
+            }
+        )
     except Exception as e:
-        await async_upsert_item({
-            "doc_id": doc_id,
-            "status": "error",
-            "eval_status": "error",
-            "message": f"評価に失敗しました: {e}",
-        })
+        await async_upsert_item(
+            {
+                "doc_id": doc_id,
+                "status": "error",
+                "eval_status": "error",
+                "message": f"評価に失敗しました: {e}",
+            }
+        )
     # 【instructions/283】Cloud RunはCPUをリクエスト処理中のみ割り当てる仕様のため、
     # レスポンス送出後に実行されるBackgroundTasksはスケジュールされる保証が無く、
     # 同期が発火しないまま次のリクエストまでインスタンスがサスペンドされ得た

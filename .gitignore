@@ -107,3 +107,12 @@ all_source_code.txt
 source.zip
 all_source_code.txt
 **/all_source_code.txt
+
+# 使い捨ての調査・修復スクリプトおよびログ（機械学習リファレンス用）
+tools/apply_*.py
+tools/diagnose_*.py
+tools/dump_*.py
+tools/investigate_*.py
+tools/verify_*.py
+tools/audit_reports/
+tools/instructions/

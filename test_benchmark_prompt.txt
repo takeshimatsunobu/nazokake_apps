@@ -1,1 +1,0 @@
-apps/evaluator/backend/dummy_benchmark.py の静的解析エラー（Ruffおよびpyright）を完全に修正してください。

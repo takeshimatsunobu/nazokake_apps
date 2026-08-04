@@ -11,7 +11,11 @@ from typing import Union
 from fastapi import APIRouter, HTTPException
 
 from api.deps import handle_exceptions
-from models.schemas import ErrorEnvelope, ResearchArticleDetail, ResearchArticleListResponse
+from models.schemas import (
+    ErrorEnvelope,
+    ResearchArticleDetail,
+    ResearchArticleListResponse,
+)
 from nazokake_core.database import (
     async_get_published_research_articles,
     async_get_research_article,
@@ -21,7 +25,8 @@ router = APIRouter()
 
 
 @router.get(
-    "/research/articles", response_model=Union[ResearchArticleListResponse, ErrorEnvelope]
+    "/research/articles",
+    response_model=Union[ResearchArticleListResponse, ErrorEnvelope],
 )
 @handle_exceptions
 async def list_research_articles():
