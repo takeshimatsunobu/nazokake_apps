@@ -108,6 +108,8 @@ async def apply_human_action(
     # 確実に割り当てられているリクエスト処理中に同期を完結させる。
     await sync_once_safe()
     updated = await async_get_item(req.target_slug)
+    if updated is None:
+        raise HTTPException(status_code=404, detail="Item not found or already deleted.")
     # 【絶対制約】sync_status(クラウド同期状態)はUI向けレスポンスに含めない。
     ui_updated = {
         k: v for k, v in updated.items() if k not in ("sync_status", "last_sync_error")
