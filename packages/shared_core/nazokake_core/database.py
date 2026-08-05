@@ -1305,3 +1305,4 @@ async def async_record_pipeline_outcome_event(
             anomaly_threshold=anomaly_threshold,
         )
     )
+
