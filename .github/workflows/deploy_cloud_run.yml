@@ -28,6 +28,7 @@
 name: Deploy to Cloud Run (WIF)
 
 on:
+  workflow_dispatch:
   push:
     branches: [main]
     paths:
