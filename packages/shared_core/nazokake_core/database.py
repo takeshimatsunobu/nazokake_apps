@@ -98,7 +98,9 @@ def _resolve_db_url() -> str:
 # NullPool: 実際の接続はすべてSerialized Writerの常駐ループ内から張られるため
 # プール自体を無効化しても事故らないが、念のため呼び出しごとに新規コネクションを
 # 張って確実にクローズすることで、接続の使い回しに起因する不具合の余地を無くす。
-_engine = create_async_engine(_resolve_db_url(), future=True, poolclass=NullPool, connect_args={"timeout": 15})
+_engine = create_async_engine(
+    _resolve_db_url(), future=True, poolclass=NullPool, connect_args={"timeout": 15}
+)
 AsyncSessionLocal = async_sessionmaker(_engine, expire_on_commit=False)
 
 
@@ -764,7 +766,11 @@ async def async_bulk_restore_items_if_missing(
             stmt = sqlite_insert(NazokakeItemORM).values(filtered_rows)
             stmt = stmt.on_conflict_do_nothing(index_elements=["doc_id"])
             result = await session.execute(stmt)
-            inserted = result.rowcount if result.rowcount and result.rowcount > 0 else 0
+            inserted = (
+                getattr(result, "rowcount", 0)
+                if getattr(result, "rowcount", 0) and getattr(result, "rowcount", 0) > 0
+                else 0
+            )
 
     return inserted, len(filtered_rows) - inserted
 
@@ -1085,7 +1091,7 @@ async def async_try_claim_trigger_slot(
                     "(クラッシュ)を検知しました。強制リカバリを実行します。"
                 )
             result = await session.execute(stmt)
-            return result.rowcount == 1
+            return getattr(result, "rowcount", 0) == 1
 
 
 async def async_release_trigger_slot(pipeline_id: str, *, success: bool) -> None:
@@ -1165,7 +1171,7 @@ async def _record_evaluation_score_event(
             if is_extreme:
                 existing.last_extreme_direction = direction
 
-            anomaly_count = sum(existing.extreme_window)
+            anomaly_count = sum(existing.extreme_window or [])
             tripped = anomaly_count >= anomaly_threshold
             if tripped:
                 existing.tripped_at = datetime.now(timezone.utc).isoformat()
@@ -1173,7 +1179,7 @@ async def _record_evaluation_score_event(
             return {
                 "tripped": tripped,
                 "anomaly_count": anomaly_count,
-                "window_size": len(existing.extreme_window),
+                "window_size": len(existing.extreme_window or []),
             }
 
 
@@ -1203,7 +1209,7 @@ async def _record_pipeline_outcome_event(
             )
             existing.last_error_signature = error_signature
 
-            anomaly_count = sum(existing.error_window)
+            anomaly_count = sum(existing.error_window or [])
             tripped = anomaly_count >= anomaly_threshold
             if tripped:
                 existing.tripped_at = datetime.now(timezone.utc).isoformat()
@@ -1211,7 +1217,7 @@ async def _record_pipeline_outcome_event(
             return {
                 "tripped": tripped,
                 "anomaly_count": anomaly_count,
-                "window_size": len(existing.error_window),
+                "window_size": len(existing.error_window or []),
             }
 
 
