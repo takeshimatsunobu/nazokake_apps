@@ -16,6 +16,7 @@ dependencies = [
     "nazokake-core",
     "filelock",
     "mcp",
+    "opentelemetry-api>=1.44.0",
 ]
 
 # 【instructions/218: 決定論的ビルドの確立】以前はrequirements.txtへ全パッケージを
