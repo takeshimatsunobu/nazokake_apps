@@ -8,3 +8,5 @@ httpx
 python-dotenv
 
 loguru
+
+opentelemetry-api

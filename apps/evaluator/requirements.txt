@@ -9,3 +9,5 @@ python-dotenv
 
 loguru
 -e ../../packages/shared_core
+
+opentelemetry-api
