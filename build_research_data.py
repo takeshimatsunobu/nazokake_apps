@@ -653,9 +653,9 @@ def compile_data():
         elif target_id == "culture_japan":
             content = build_culture_japan()
         elif target_id == "culture_world_academic":
-            content = build_culture_world_academic()
+            content = build_culture_world_academic_v3()
         elif target_id == "culture_world_survey":
-            content = build_culture_world_survey()
+            content = build_culture_world_survey_v3()
 
         # 2. HTMLから抽出するもの
         elif target_id in ["basic-form", "academic-definition", "dictionary-comparison"]:
