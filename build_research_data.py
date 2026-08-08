@@ -55,19 +55,31 @@ def build_research_physiology():
     for row in rows:
         if len(row) < 9:
             continue
-        _, cat, chap, title, exp, rel, b_title, b_year, b_res = [r.strip() for r in row]
+        item_id, cat, chap, title, exp, rel, b_title, b_year, b_res = [r.strip() for r in row]
         if not title:
             continue
 
+        item = {
+            "id": item_id, "title": title, "exp": exp, "rel": rel,
+            "b_title": b_title, "b_year": b_year, "b_res": b_res,
+        }
         article = f'''
-        <article class='bg-white rounded-xl p-5 shadow-sm border border-slate-200'>
-            <h4 class='text-lg font-bold text-emerald-800 mb-3'>🧠 {html.escape(title)}</h4>
-            <div class='mb-4'><h5 class='text-xs font-bold text-slate-400 mb-1'>実験・結果</h5><p class='text-sm text-slate-700'>{html.escape(exp)}</p></div>
-            <div class='mb-4'><h5 class='text-xs font-bold text-slate-400 mb-1'>なぞかけとの関係</h5><p class='text-sm text-slate-700'>{html.escape(rel)}</p></div>
-            <div class='bg-slate-50 p-2 rounded text-xs text-slate-500'>
-                📚 {html.escape(b_title)} ({html.escape(b_year)}) - {html.escape(b_res)}
+        <details class="group/item bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <summary class="cursor-pointer p-4 flex justify-between items-center hover:bg-slate-50 transition">
+                <h4 class="text-[15px] md:text-base font-bold text-emerald-800 flex items-center gap-2 m-0">
+                    <span class="text-xs font-mono text-emerald-700 bg-emerald-100 px-2 py-1 rounded">{html.escape(item["id"])}</span>
+                    🧠 {html.escape(item["title"])}
+                </h4>
+                <span class="text-emerald-400 group-open/item:rotate-180 transition-transform duration-300">▼</span>
+            </summary>
+            <div class="p-4 pt-0 border-t border-slate-100 bg-white">
+                <div class="mb-4 mt-3"><h5 class="text-xs font-bold text-slate-400 mb-1">実験・結果</h5><p class="text-sm text-slate-700 leading-relaxed">{html.escape(item["exp"])}</p></div>
+                <div class="mb-4"><h5 class="text-xs font-bold text-slate-400 mb-1">なぞかけとの関係</h5><p class="text-sm text-slate-700 leading-relaxed">{html.escape(item["rel"])}</p></div>
+                <div class="bg-slate-100 p-3 rounded-lg text-xs text-slate-500 border border-slate-200">
+                    📚 <strong>{html.escape(item["b_title"])}</strong> ({html.escape(item["b_year"])})<br>👤 {html.escape(item["b_res"])}
+                </div>
             </div>
-        </article>
+        </details>
         '''
         grouped.setdefault(cat, {}).setdefault(chap, []).append(article)
 
