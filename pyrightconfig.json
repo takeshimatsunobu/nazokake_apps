@@ -1,25 +1,37 @@
 {
-  "venvPath": ".",
-  "venv": ".venv",
-  "executionEnvironments": [
-    {
-      "root": "apps/tactical_cic",
-      "extraPaths": ["apps/evaluator/backend"]
-    },
-    {
-      "root": "workers",
-      "extraPaths": ["apps/evaluator/backend"]
-    },
-    {
-      "root": "tests",
-      "extraPaths": ["tools", "apps/evaluator/backend"]
-    },
-    {
-      "root": "apps/evaluator/backend",
-      "extraPaths": ["apps/evaluator/backend"]
-    },
-    {
-      "root": "."
-    }
-  ]
+    "venvPath": ".",
+    "venv": ".venv",
+    "executionEnvironments": [
+        {
+            "root": "apps/tactical_cic",
+            "extraPaths": [
+                "apps/evaluator/backend"
+            ]
+        },
+        {
+            "root": "workers",
+            "extraPaths": [
+                "apps/evaluator/backend"
+            ]
+        },
+        {
+            "root": "tests",
+            "extraPaths": [
+                "tools",
+                "apps/evaluator/backend"
+            ]
+        },
+        {
+            "root": "apps/evaluator/backend",
+            "extraPaths": [
+                "apps/evaluator/backend"
+            ]
+        },
+        {
+            "root": "."
+        }
+    ],
+    "extraPaths": [
+        "packages/shared_core"
+    ]
 }

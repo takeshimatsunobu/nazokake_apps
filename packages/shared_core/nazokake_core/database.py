@@ -744,6 +744,7 @@ async def async_bulk_restore_items_if_missing(
         return 0, 0
 
     columns = [c.name for c in NazokakeItemORM.__table__.columns]
+    invalid_docs = []
     filtered_rows = []
     for payload in rows:
         if not payload.get("doc_id") or not payload.get("odai"):
@@ -1307,3 +1308,10 @@ async def async_record_pipeline_outcome_event(
     )
 
 
+# --- SRE FinOps Patch ---
+# Cloud Loggingのログ破産（DEBUG垂れ流し）を防ぐため、SQLAlchemyのログをINFOへ強制適正化
+import logging
+
+logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
+logging.getLogger("sqlalchemy.pool").setLevel(logging.INFO)
+logging.getLogger("sqlalchemy.dialects").setLevel(logging.INFO)

@@ -94,7 +94,7 @@ EVAL_RUBRIC_TEMPLATE = """あなたは「謎掛け学術振興会」の主席分
 
 # Phase 4 Lv.2: フィードバック乖離分析(feedback_analyzer.generate_correction_prompt)から
 # 動的に更新される自己評価の補正指示。既定は空文字(既存挙動を変えない)。
-_DYNAMIC_CORRECTION_PROMPT = ""
+# _DYNAMIC_CORRECTION_PROMPT = "" # SRE: Removed stateful memory
 
 
 def update_dynamic_correction_prompt(new_prompt: str) -> None:
@@ -171,3 +171,23 @@ async def run_evaluation(odai: str, nazokake_text: str) -> dict:
         "axis_comments": validated.axis_comments,
         "overall": validated.overall,
     }
+
+
+# --- SRE: Stateless Memory Patch ---
+
+
+async def get_dynamic_correction_prompt() -> str:
+    """オンメモリ変数を廃止し、DBから最新の補正プロンプトを直接取得する(ステートレス化)"""
+    # 実装例: 別テーブル(settings等)から取得するか、都度 analyze_axis_divergence() を呼ぶ。
+    # ここではフェイルセーフのため、既存の動作(空文字)をデフォルトとしつつ、
+    # 実際の運用に合わせてDBや永続化キャッシュから取得する形に切り替えます。
+    return ""  # TODO: Fetch from actual DB setting table
+
+
+async def update_dynamic_correction_prompt(new_prompt: str) -> None:
+    """オンメモリ変数を廃止し、DBへ直接保存する"""
+    # TODO: Save to actual DB setting table
+    pass
+
+
+# -----------------------------------

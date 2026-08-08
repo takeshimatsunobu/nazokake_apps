@@ -4,7 +4,6 @@
 
 # Embedded repos with their own .git (not true submodules, no .gitmodules) -
 # tracked independently on disk, deliberately excluded from this superproject's index.
-/apps/batch_factory/
 
 # apps/evaluator/ の物理統合(instructions/006)に伴うローカル退避先。旧.git履歴(749MB)・
 # serviceAccountKey.json等を含むため、親リポジトリのトラッキング対象には絶対に含めない。

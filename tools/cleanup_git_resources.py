@@ -64,7 +64,6 @@ from __future__ import annotations
 
 import argparse
 import logging
-import os
 import subprocess
 import sys
 from pathlib import Path
@@ -72,8 +71,14 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
+    import io
+
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8")
+    import io
+
+    if isinstance(sys.stderr, io.TextIOWrapper):
+        sys.stderr.reconfigure(encoding="utf-8")
 
 # 削除対象とみなすブランチ名のプレフィックス。これに合致しないブランチ
 # (main/master、開発者の作業ブランチ等)はマージ済みと判定されても一切操作しない。
@@ -122,15 +127,13 @@ def _run_git(args: list[str], repo_root: Path) -> subprocess.CompletedProcess:
 
 
 def _is_dry_run(explicit: bool | None) -> bool:
-    """dry-runの有効判定。呼び出し元がdry_runを明示指定した場合はそれを優先し、
-    未指定(None)の場合のみ環境変数 DRY_RUN=true(大文字小文字は無視)にフォール
-    バックする(instructions/176)。これにより、tools/mlops_trigger.py側の既存の
-    呼び出し `cleanup_merged_git_resources()`(引数なし)を変更しなくても、
-    スケジューラ環境でDRY_RUN=trueを設定するだけで安全に検証運用できる。
+    """dry-runの有効判定。
+    【Fail-Closed】環境変数 DRY_RUN への依存を廃止し、
+    未指定時は常に True (Dry Run) とすることで暗黙の本番発火事故を防ぐ。
     """
     if explicit is not None:
         return explicit
-    return os.environ.get("DRY_RUN", "").strip().lower() == "true"
+    return True
 
 
 def _resolve_main_branch(repo_root: Path) -> str:
@@ -156,7 +159,9 @@ def _list_target_branches(repo_root: Path) -> list[str]:
         ["branch", "--list", *[f"{prefix}*" for prefix in TARGET_PREFIXES]], repo_root
     )
     if result.returncode != 0:
-        raise RuntimeError(f"git branch --listの実行に失敗しました: {result.stderr.strip()}")
+        raise RuntimeError(
+            f"git branch --listの実行に失敗しました: {result.stderr.strip()}"
+        )
 
     branches = []
     for line in result.stdout.splitlines():
@@ -187,29 +192,27 @@ def _list_merged_branch_names(repo_root: Path, main_branch: str) -> set[str]:
 
 
 def _is_squash_merged(repo_root: Path, main_branch: str, branch_name: str) -> bool:
-    """`git branch --merged`で捕捉できないSquash Merge済みブランチを、`git cherry`の
-    等価パッチ判定で検出する(instructions/176)。
-
-    Squash Mergeはブランチの複数コミットを1個の新規コミットとして本流へ適用するため、
-    ブランチのコミット自体は本流の祖先にならず`git branch --merged`は検知できない。
-    `git cherry <main_branch> <branch_name>`は、ブランチの各コミットについて「パッチ
-    内容が本流側の履歴に等価な変更として既に存在するか」を判定し、既に存在するコミット
-    には"-"、存在しない(本流へ未反映の独自変更)コミットには"+"を付けて一覧する。
-    1件でも"+"が付くコミットがあれば、そのブランチにはまだ本流へ取り込まれていない
-    独自の変更が残っているとみなし、安全側に倒してFalse(削除禁止)を返す。
+    """`git branch --merged`で捕捉できないSquash Merge済みブランチ判定。
+    【Fail-Closed】脆い `git cherry` ハックを廃止。
+    gh CLI を用いてGitHub APIから決定論的にPRのMERGEDステータスを取得する。
+    通信エラーやPR不在時はすべてFalse(保護)とする。
     """
-    result = _run_git(["cherry", main_branch, branch_name], repo_root)
-    if result.returncode != 0:
-        # cherry自体が失敗した場合(共通祖先が無い等)は判定不能とみなし、安全側に
-        # 倒して「マージ済みとは断定できない」= 削除禁止とする。
-        return False
+    import subprocess
+    import logging
 
-    lines = [line for line in result.stdout.splitlines() if line.strip()]
-    if not lines:
-        # 本流との差分コミットが無い(=既に本流の祖先。--mergedで捕捉されるはずだが、
-        # 念のためここでも「差分なし=マージ済み」として扱う)。
-        return True
-    return all(line.startswith("-") for line in lines)
+    try:
+        res = subprocess.run(
+            ["gh", "pr", "view", branch_name, "--json", "state", "--jq", ".state"],
+            cwd=str(repo_root),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if res.returncode == 0 and res.stdout.strip() == "MERGED":
+            return True
+    except Exception as e:
+        logging.getLogger(__name__).warning(f"[Fail-Closed] gh CLI error: {e}")
+    return False
 
 
 def _find_worktree_path_for_branch(repo_root: Path, branch_name: str) -> Path | None:
@@ -227,7 +230,9 @@ def _find_worktree_path_for_branch(repo_root: Path, branch_name: str) -> Path | 
     for line in result.stdout.splitlines():
         if line.startswith("worktree "):
             current_path = line[len("worktree ") :].strip()
-        elif line.startswith("branch ") and line[len("branch ") :].strip() == branch_ref:
+        elif (
+            line.startswith("branch ") and line[len("branch ") :].strip() == branch_ref
+        ):
             if current_path is not None:
                 return Path(current_path)
     return None
@@ -302,7 +307,9 @@ def cleanup_merged_git_resources(
     for branch_name in candidates:
         is_ancestry_merged = branch_name in merged_by_ancestry
         if is_ancestry_merged:
-            reason = "git branch --merged: 祖先関係(Fast-forward/Merge commit)でマージ済み"
+            reason = (
+                "git branch --merged: 祖先関係(Fast-forward/Merge commit)でマージ済み"
+            )
         elif _is_squash_merged(root, main_branch, branch_name):
             reason = "git cherry: 全コミットが等価パッチとして本流へ取り込み済み(Squash Merge検出)"
         else:
@@ -364,7 +371,9 @@ def cleanup_merged_git_resources(
             result["errors"].append(error_message)
             continue
         result["removed"].append(branch_name)
-        logger.info(f"🗑️  [cleanup] マージ済みブランチを削除しました: {branch_name} ({reason})")
+        logger.info(
+            f"🗑️  [cleanup] マージ済みブランチを削除しました: {branch_name} ({reason})"
+        )
 
     return result
 
@@ -384,7 +393,11 @@ def main() -> int:
 
     result = cleanup_merged_git_resources(dry_run=args.dry_run)
 
-    if not result["errors"] and not result["removed"] and not result["worktrees_removed"]:
+    if (
+        not result["errors"]
+        and not result["removed"]
+        and not result["worktrees_removed"]
+    ):
         logger.info("ℹ️  [cleanup] マージ済みの削除対象ブランチはありませんでした。")
 
     return 1 if result["errors"] else 0

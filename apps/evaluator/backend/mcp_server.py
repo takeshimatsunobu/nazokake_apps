@@ -148,7 +148,7 @@ def dpo_stats() -> str:
 # Prompts(コンテキスト共有)
 # ============================================================
 @mcp.prompt()
-def evaluation_correction_prompt() -> str:
+async def evaluation_correction_prompt() -> str:
     """Phase4 Lv.2で動的生成される、なぞかけ評価の自己補正指示プロンプト。
 
     services.evaluation.update_dynamic_correction_prompt() により実行時に更新される
@@ -156,7 +156,7 @@ def evaluation_correction_prompt() -> str:
     """
     import services.evaluation as evaluation
 
-    return evaluation._DYNAMIC_CORRECTION_PROMPT or (
+    return await evaluation.get_dynamic_correction_prompt() or (
         "(現在、自己評価の補正指示はありません。過信している軸は検出されていません。)"
     )
 

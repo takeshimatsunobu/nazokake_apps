@@ -1718,7 +1718,9 @@ async def phase3_aider_execution(
                 )
                 continue
 
-            ast_instruction_path = BASE_DIR / "run" / "audit_reports" / f"_ast_task_{idx}.json"
+            ast_instruction_path = (
+                BASE_DIR / "run" / "audit_reports" / f"_ast_task_{idx}.json"
+            )
             ast_instruction_path.parent.mkdir(parents=True, exist_ok=True)
             with open(ast_instruction_path, "w", encoding="utf-8") as f:
                 json.dump(
@@ -1928,9 +1930,15 @@ def _commit_or_shadow(target_dir: Path, files: list[str], commit_message: str) -
         shadow_mode.log_shadow_event(
             "nazo_agent",
             "git_commit_suppressed",
-            {"target_dir": str(target_dir), "files": files, "commit_message": commit_message},
+            {
+                "target_dir": str(target_dir),
+                "files": files,
+                "commit_message": commit_message,
+            },
         )
-        print(f"🌑 [Shadow Mode] {len(files)}件のコミットを抑止しました(commit_message={commit_message!r})。")
+        print(
+            f"🌑 [Shadow Mode] {len(files)}件のコミットを抑止しました(commit_message={commit_message!r})。"
+        )
         return False
 
     subprocess.run(["git", "add", "--"] + files, cwd=str(target_dir), check=True)
@@ -1938,7 +1946,11 @@ def _commit_or_shadow(target_dir: Path, files: list[str], commit_message: str) -
         print("✅ 変更がなかったため一括コミットをスキップしました")
         return False
 
-    subprocess.run(["git", "commit", "-m", commit_message, "--"] + files, cwd=str(target_dir), check=True)
+    subprocess.run(
+        ["git", "commit", "-m", commit_message, "--"] + files,
+        cwd=str(target_dir),
+        check=True,
+    )
     print("✅ 一括コミット完了。")
     return True
 
@@ -1977,10 +1989,10 @@ def _create_and_open_pr(
         check=True,
     ).stdout.strip()
 
-    branch_name = (
-        f"{branch_prefix}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    branch_name = f"{branch_prefix}-{datetime.datetime.now().strftime('%Y%m%d%H%M%S')}-{uuid.uuid4().hex[:8]}"
+    subprocess.run(
+        ["git", "checkout", "-b", branch_name], cwd=str(target_dir), check=True
     )
-    subprocess.run(["git", "checkout", "-b", branch_name], cwd=str(target_dir), check=True)
 
     try:
         committed = _commit_or_shadow(target_dir, files, commit_message)
@@ -2005,7 +2017,9 @@ def _create_and_open_pr(
                 f"🚨 [PR Workflow] ブランチ '{branch_name}' のPushに失敗しました: "
                 f"{push_result.stderr.strip()}"
             )
-            print(f"   ローカルには残っています。手動でのPushは以下で可能です: git push -u origin {branch_name}")
+            print(
+                f"   ローカルには残っています。手動でのPushは以下で可能です: git push -u origin {branch_name}"
+            )
             return False, gate_passed
 
         gate_note = (
@@ -2037,7 +2051,9 @@ def _create_and_open_pr(
             errors="strict",
         )
         if pr_result.returncode != 0:
-            print(f"🚨 [PR Workflow] PRドラフトの作成に失敗しました: {pr_result.stderr.strip()}")
+            print(
+                f"🚨 [PR Workflow] PRドラフトの作成に失敗しました: {pr_result.stderr.strip()}"
+            )
             print(
                 f"   ブランチ '{branch_name}' はPush済みです。手動でのPR作成は以下で可能です: "
                 f"gh pr create --draft --base main --head {branch_name}"
@@ -2047,7 +2063,9 @@ def _create_and_open_pr(
         print(f"✅ [PR Workflow] PRドラフトを作成しました:\n{pr_result.stdout.strip()}")
         return True, gate_passed
     finally:
-        subprocess.run(["git", "checkout", original_branch], cwd=str(target_dir), check=True)
+        subprocess.run(
+            ["git", "checkout", original_branch], cwd=str(target_dir), check=True
+        )
 
 
 def _autonomous_rollback(target_dir: Path, commit_hash: str = "HEAD") -> None:
@@ -2071,7 +2089,9 @@ def _autonomous_rollback(target_dir: Path, commit_hash: str = "HEAD") -> None:
         errors="replace",
     )
     if revert_result.returncode == 0:
-        print(f"✅ [Fail-Safe] 自律ロールバックが完了しました(git revert {commit_hash})。")
+        print(
+            f"✅ [Fail-Safe] 自律ロールバックが完了しました(git revert {commit_hash})。"
+        )
         return
 
     print(
@@ -2117,18 +2137,10 @@ def _run_post_commit_quality_gate(target_dir: Path, rollback: bool = True) -> bo
     (Fail)を検知した場合は直前のコミットを_autonomous_rollback()で自律的に取り消す
     (instructions/188)。
 
-    【インフラエラーと品質退行を混同しない】tools/benchmark/run_benchmark.pyの終了コード
-    契約(instructions/136)では、exit code 125はDocker CLI不在等の「インフラエラー」
-    専用であり、この場合そもそもベンチマーク自体が1件も実行されずreport["quality_gate_6d"]
-    は生成されない。これを「退行を検知した」と混同してロールバックしてしまうと、Docker
-    未導入の開発機(このリポジトリの現状のNazo-Agentライブ自己修復loop実行環境)では、
-    正常に成功したコミットが理由なく毎回ロールバックされ、自己修復能力そのものが構造的に
-    機能停止する。したがって、ゲートを実際に評価できなかった場合(exit code 125等の
-    インフラエラー・レポート未生成・JSON破損)は「非退行を確認できない」だけであり
-    「退行を検知した」わけではないため、ロールバックせず警告のみに留める(Fail-Closedは
-    instructions/188が明示するgit revert自体の失敗時にのみ適用する。_autonomous_rollback
-    参照)。ロールバックするのはreport["quality_gate_6d"]["passed"]が明示的にFalseの
-    場合のみ。
+    【Fail-Closedの徹底】
+    ゲートを実際に評価できなかった場合(exit code 125等のインフラエラー・レポート未生成・JSON破損)は、
+    「非退行」を確認できない状態であるため、未検証コードの通過を防ぐべく例外(RuntimeError)を
+    送出し、処理を安全に停止(Fail-Closed)する。
 
     rollback=False(instructions/245: PRドラフト運用)の場合、退行を検知しても
     git revertは行わない。専用の作業ブランチ上のコミットはまだ共有ブランチへ
@@ -2136,11 +2148,9 @@ def _run_post_commit_quality_gate(target_dir: Path, rollback: bool = True) -> bo
     レビュー対象のPRを汚すだけで意味がないため、判定結果のみを呼び出し元
     (_create_and_open_pr)へ返し、PR本文への記載を通じて人間の判断に委ねる。
 
-    戻り値: ゲートに合格した、またはゲート自体を評価できなかった場合はTrue(いずれも
-    ロールバック不要)。退行を明示的に検知した場合はFalse
+    戻り値: ゲートに合格した場合はTrue(ロールバック不要)。退行を明示的に検知した場合はFalse
     (rollback=Trueの場合はさらに_autonomous_rollback()を実行してから返す)。
-    ロールバック自体が失敗した場合は_autonomous_rollback内でsys.exit(1)しこの関数から
-    戻らない。
+    ゲート評価不能時はRuntimeErrorによりフェイルクローズする。
     """
     print("\n🧪 [Fail-Safe] コミット後の退行を6次元定量評価ゲートで検証します...")
     result = subprocess.run(
@@ -2158,7 +2168,9 @@ def _run_post_commit_quality_gate(target_dir: Path, rollback: bool = True) -> bo
 
     report = None
     if result.returncode == 0:
-        reports = sorted((BASE_DIR / "tools" / "benchmark" / "reports").glob("benchmark_*.json"))
+        reports = sorted(
+            (BASE_DIR / "tools" / "benchmark" / "reports").glob("benchmark_*.json")
+        )
         if reports:
             try:
                 report = json.loads(reports[-1].read_text(encoding="utf-8"))
@@ -2167,15 +2179,15 @@ def _run_post_commit_quality_gate(target_dir: Path, rollback: bool = True) -> bo
 
     gate = (report or {}).get("quality_gate_6d")
     if gate is None:
-        print(
-            f"⚠️  [Fail-Safe] 6次元定量評価ゲートを評価できませんでした"
-            f"(exit code={result.returncode}、インフラエラーの可能性)。退行を検知した"
-            "わけではないため、ロールバックせず処理を継続します。"
+        raise RuntimeError(
+            f"[Fail-Closed] 6次元定量評価ゲートを評価できませんでした(exit code={result.returncode})。\n"
+            "インフラエラーによる未検証コードの通過(Fail-Open)を防ぐため、処理を安全に停止します。"
         )
-        return True
 
     if gate.get("passed"):
-        print("✅ [Fail-Safe] 6次元定量評価ゲートに合格しました。ロールバックは不要です。")
+        print(
+            "✅ [Fail-Safe] 6次元定量評価ゲートに合格しました。ロールバックは不要です。"
+        )
         return True
 
     if not rollback:
@@ -2299,15 +2311,12 @@ _CODE_FENCE_END_RE = re.compile(r"\n```$")
 
 
 def _strip_code_fences(text: str) -> str:
-    """ローカルCoderの応答からMarkdownのコードフェンス(```python ... ```)を除去する。
-
-    プロンプトでフェンスを付けないよう指示しても、小型モデルは癖でフェンスを
-    付けてくることがあるため、防御的に取り除く(付いていなければ何もしない)。
+    """【Fail-Closed】Markdownフェンスの正規表現サルベージハックを廃止。
+    LLM APIレベルでのStructured Output(JSONモード)強制を前提とし、
+    不正な出力はテキスト操作で握り潰さず、後続のJSONDecodeErrorとして
+    フェイルクローズ(自律リトライ)させる純粋な設計とする。
     """
-    stripped = text.strip()
-    stripped = _CODE_FENCE_START_RE.sub("", stripped)
-    stripped = _CODE_FENCE_END_RE.sub("", stripped)
-    return stripped.strip()
+    return text.strip()
 
 
 def _get_original_code(file_path: str, target_name: str) -> str:
@@ -2382,7 +2391,9 @@ async def _delegate_code_generation_to_local_coder(tasks: list[dict]) -> None:
             task["new_code"] = ""
             continue
         print(f"   🧑‍💻 [Local Coder] {file_path} :: {target_name}() の実装を生成中...")
-        task["new_code"] = await generate_code_with_local_coder(original_code, instruction)
+        task["new_code"] = await generate_code_with_local_coder(
+            original_code, instruction
+        )
 
 
 async def _run_claude_pipeline_and_commit(
@@ -2427,7 +2438,10 @@ async def _run_claude_pipeline_and_commit(
         )
         try:
             _create_and_open_pr(
-                TARGET_APP_DIR, successful_files, commit_message, "fix/agent-auto-repair"
+                TARGET_APP_DIR,
+                successful_files,
+                commit_message,
+                "fix/agent-auto-repair",
             )
         except Exception as e:
             print(f"⚠️ PRドラフトの作成に失敗しました: {e}")

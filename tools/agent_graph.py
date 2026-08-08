@@ -160,14 +160,11 @@ def _extract_text(response) -> str:
 
 
 def _strip_code_fence(text: str) -> str:
-    """LLMがMarkdownのコードフェンス(```json ... ```)を付けてきた場合の安全策として除去する。"""
-    text = text.strip()
-    if text.startswith("```"):
-        lines = text.split("\n")
-        lines = lines[1:] if lines and lines[0].startswith("```") else lines
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        text = "\n".join(lines)
+    """【Fail-Closed】Markdownフェンスの正規表現サルベージハックを廃止。
+    LLM APIレベルでのStructured Output(JSONモード)強制を前提とし、
+    不正な出力はテキスト操作で握り潰さず、後続のJSONDecodeErrorとして
+    フェイルクローズ(自律リトライ)させる純粋な設計とする。
+    """
     return text.strip()
 
 
@@ -350,7 +347,9 @@ def typecheck_node(state: AuditState) -> dict:
         PYRIGHT_LOG_DIR
         / f"hotloop_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.json"
     )
-    check = check_types_for_gate(state["file_path"], cwd=str(BASE_DIR), log_path=log_path)
+    check = check_types_for_gate(
+        state["file_path"], cwd=str(BASE_DIR), log_path=log_path
+    )
 
     if check["passed"]:
         return {
@@ -408,7 +407,9 @@ def _build_experience_replay_block(state: "AuditState") -> str:
     try:
         experiences = retrieve_experiences(query, top_k=3)
     except Exception as e:  # noqa: BLE001 - RAGの失敗でCTOエスカレーションを止めない
-        print(f"⚠️ [Experience Replay] 過去の教訓の検索に失敗しました(無視して続行): {e}")
+        print(
+            f"⚠️ [Experience Replay] 過去の教訓の検索に失敗しました(無視して続行): {e}"
+        )
         experiences = []
 
     if not experiences:
@@ -599,9 +600,9 @@ def managed_git_worktree(repo_root: Path):
     (レビュー用に残すのはブランチのみで、worktree自体は使い捨てとする)。
     """
     branch_name = f"escalation/issue-{int(time.time())}-{uuid.uuid4().hex}"
-    worktree_path = Path(tempfile.mkdtemp(prefix="nazo_escalation_")) / branch_name.replace(
-        "/", "_"
-    )
+    worktree_path = Path(
+        tempfile.mkdtemp(prefix="nazo_escalation_")
+    ) / branch_name.replace("/", "_")
     result_add = subprocess.run(
         ["git", "worktree", "add", "-b", branch_name, str(worktree_path), "HEAD"],
         cwd=str(repo_root),
@@ -810,7 +811,11 @@ def sandbox_verify_node(state: AuditState) -> dict:
             instruction_in_worktree["file_path"] = str(worktree_path / relative_path)
 
             with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".json", delete=False, encoding="utf-8", errors="strict"
+                mode="w",
+                suffix=".json",
+                delete=False,
+                encoding="utf-8",
+                errors="strict",
             ) as f:
                 json.dump(instruction_in_worktree, f, ensure_ascii=False, indent=2)
                 instruction_json_path = f.name
@@ -853,10 +858,13 @@ def sandbox_verify_node(state: AuditState) -> dict:
             type_check = check_types_for_gate(
                 str(worktree_path / relative_path),
                 cwd=str(BASE_DIR),
-                log_path=PYRIGHT_LOG_DIR / f"sandbox_{branch_name.replace('/', '_')}.json",
+                log_path=PYRIGHT_LOG_DIR
+                / f"sandbox_{branch_name.replace('/', '_')}.json",
             )
             if not type_check["passed"]:
-                error_summary = type_check["raw_error"] or "\n".join(type_check["errors"])
+                error_summary = type_check["raw_error"] or "\n".join(
+                    type_check["errors"]
+                )
                 message = (
                     "🚨 [型保証ゲート] CTOの修正案にPyright型推論エラーが検出されたため、"
                     f"コミットをブロックしました(Fail-Closed): {error_summary}"
@@ -885,7 +893,9 @@ def sandbox_verify_node(state: AuditState) -> dict:
                 )
             else:
                 subprocess.run(
-                    ["git", "add", "--", str(relative_path)], cwd=str(worktree_path), check=True
+                    ["git", "add", "--", str(relative_path)],
+                    cwd=str(worktree_path),
+                    check=True,
                 )
                 subprocess.run(
                     ["git", "commit", "-m", commit_message],
@@ -947,7 +957,9 @@ def _unload_qwen() -> None:
     try:
         ollama.generate(model=OLLAMA_MODEL, prompt="", keep_alive=0)
     except Exception as e:
-        print(f"⚠️ [Gemmaフォールバック] Qwenのアンロードに失敗しました(続行します): {e}")
+        print(
+            f"⚠️ [Gemmaフォールバック] Qwenのアンロードに失敗しました(続行します): {e}"
+        )
 
 
 def _write_gemma_dead_letter(
@@ -972,7 +984,8 @@ def _write_gemma_dead_letter(
     DEAD_LETTER_DIR.mkdir(parents=True, exist_ok=True)
     now = datetime.datetime.now()
     dead_letter_path = (
-        DEAD_LETTER_DIR / f"dead_letter_{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.json"
+        DEAD_LETTER_DIR
+        / f"dead_letter_{now.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}.json"
     )
     payload = {
         "timestamp": now.isoformat(),
@@ -1058,7 +1071,9 @@ def reporter_node(state: AuditState) -> dict:
         summary_lines.append("⚠️ Gemmaへの最終エスカレーションが発生しました。")
         summary_lines.append(f"デッドレター: {state.get('dead_letter_path', '')}")
     if state.get("cto_escalated"):
-        summary_lines.append("🧑‍💼 CTO(Claude)への内容面エスカレーションが発生しました。")
+        summary_lines.append(
+            "🧑‍💼 CTO(Claude)への内容面エスカレーションが発生しました。"
+        )
         if state.get("escalation_branch"):
             summary_lines.append(f"隔離ブランチ: {state.get('escalation_branch', '')}")
         if state.get("pr_draft_path"):

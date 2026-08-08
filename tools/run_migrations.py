@@ -35,8 +35,14 @@ from alembic import command
 from alembic.config import Config
 
 if sys.platform == "win32":
-    sys.stdout.reconfigure(encoding="utf-8")
-    sys.stderr.reconfigure(encoding="utf-8")
+    import io
+
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8")
+    import io
+
+    if isinstance(sys.stderr, io.TextIOWrapper):
+        sys.stderr.reconfigure(encoding="utf-8")
 
 from nazokake_core.database import DEFAULT_DB_PATH  # noqa: E402
 
@@ -46,22 +52,32 @@ MIGRATION_LOCK_TIMEOUT_SEC = 30
 
 
 def _load_alembic_config_utf8(ini_path: Path) -> Config:
-    """alembic.config.Config を、alembic.iniをUTF-8で明示的に読み込んだ状態で構築する。
-
-    Config.file_config は util.memoized_property(__set__を持たないため、インスタンス
-    属性への代入が優先される非データディスクリプタ)である。alembic本体のfile_config
-    実装(config.py)がやっていること(%(here)s補間変数の設定・ConfigParserの構築)を
-    ここで再現し、ファイル読み込みの一箇所だけをencoding="utf-8"に差し替えて、
-    初回アクセス前に明示的に代入することで、バグのある既定の読み込みパス
-    (encoding="locale")を構造的にバイパスする。
+    """alembic.config.Config を構築する。
+    【Fail-Closed】Alembic内部プロパティのオーバーライド(黒魔術)を廃止。
+    Python標準のconfigparserでUTF-8読み込み後、Alembic公式のProgrammatic API
+    (set_main_option / set_section_option)を用いてクリーンに設定を適用する。
     """
-    cfg = Config(str(ini_path))
 
-    here = ini_path.resolve().parent
-    cfg.config_args["here"] = here.as_posix()
-    file_config = ConfigParser(cfg.config_args)
-    file_config.read(str(ini_path), encoding="utf-8")
-    cfg.file_config = file_config
+    here = ini_path.resolve().parent.as_posix()
+    parser = ConfigParser(defaults={"here": here})
+
+    if not parser.read(str(ini_path), encoding="utf-8"):
+        raise FileNotFoundError(
+            f"[Fatal] Alembic設定ファイルが見つかりません: {ini_path}"
+        )
+
+    cfg = Config()
+    cfg.config_file_name = str(ini_path)
+
+    for section in parser.sections():
+        for key, value in parser.items(section):
+            if key == "here":
+                continue  # defaultsで混入した変数はスキップ
+            if section == "alembic":
+                cfg.set_main_option(key, value)
+            else:
+                cfg.set_section_option(section, key, value)
+
     return cfg
 
 
