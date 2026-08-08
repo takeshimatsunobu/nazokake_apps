@@ -313,11 +313,30 @@ function initWorldMapForSection(sectionRoot) {
     if (mapContainer.hasAttribute('data-map-initialized')) return;
     mapContainer.setAttribute('data-map-initialized', 'true');
 
+    function showCountryData(countryName) {
+        if (!countryName) {
+            displayArea.innerHTML = '<p class="text-slate-400">🌏 この国のデータは登録されていません。</p>';
+            return;
+        }
+        // id="country-data-{国名}" の非表示ブロックを属性セレクタで検索（記号を含む国名でも安全）
+        const dataBlock = sectionRoot.querySelector('[id="country-data-' + countryName + '"]');
+        if (dataBlock) {
+            displayArea.innerHTML = dataBlock.innerHTML;
+        } else {
+            displayArea.innerHTML = `<p class="text-slate-400">🌏 ${countryName} のデータは準備中です。</p>`;
+        }
+    }
+
+    // 大陸別アコーディオンの国名ボタン（地図クリックと全く同じ処理を実行）
+    sectionRoot.querySelectorAll('.country-selector-btn').forEach((btn) => {
+        btn.addEventListener('click', () => showCountryData(btn.getAttribute('data-country')));
+    });
+
     new jsVectorMap({
         selector: mapContainer,
         map: 'world',
         zoomButtons: true,
-        zoomOnScroll: false,
+        zoomOnScroll: true,
         regionStyle: {
             initial: { fill: '#7dd3fc', stroke: '#0369a1', strokeWidth: 0.5 },
             hover: { fill: '#0ea5e9', cursor: 'pointer' },
@@ -325,17 +344,7 @@ function initWorldMapForSection(sectionRoot) {
         },
         onRegionClick(event, code) {
             const countryName = COUNTRY_CODE_TO_NAME[String(code).toUpperCase()];
-            if (!countryName) {
-                displayArea.innerHTML = '<p class="text-slate-400">🌏 この国のデータは登録されていません。</p>';
-                return;
-            }
-            // id="country-data-{国名}" の非表示ブロックを属性セレクタで検索（記号を含む国名でも安全）
-            const dataBlock = sectionRoot.querySelector('[id="country-data-' + countryName + '"]');
-            if (dataBlock) {
-                displayArea.innerHTML = dataBlock.innerHTML;
-            } else {
-                displayArea.innerHTML = `<p class="text-slate-400">🌏 ${countryName} のデータは準備中です。</p>`;
-            }
+            showCountryData(countryName);
         }
     });
 }

@@ -441,6 +441,95 @@ def _parse_embedded_culture_json(row):
     return items
 
 
+# 国名(CSV記載の日本語表記) -> 大陸・地域バケットのマッピング。未知の国は "その他" に分類される。
+CONTINENT_MAP = {
+    "日本": "アジア", "中国": "アジア", "韓国": "アジア", "北朝鮮": "アジア", "モンゴル": "アジア",
+    "台湾": "アジア", "インドネシア": "アジア", "カンボジア": "アジア", "シンガポール": "アジア", "タイ": "アジア",
+    "フィリピン": "アジア", "ブルネイ": "アジア", "ベトナム": "アジア", "マレーシア": "アジア", "ミャンマー": "アジア",
+    "ラオス": "アジア", "東ティモール": "アジア", "インド": "アジア", "パキスタン": "アジア", "バングラデシュ": "アジア",
+    "スリランカ": "アジア", "ネパール": "アジア", "ブータン": "アジア", "モルディブ": "アジア", "アフガニスタン": "アジア",
+    "ウズベキスタン": "アジア", "カザフスタン": "アジア", "キルギス": "アジア", "タジキスタン": "アジア", "トルクメニスタン": "アジア",
+    "アラブ首長国連邦": "中東・アフリカ", "イエメン": "中東・アフリカ", "イスラエル": "中東・アフリカ", "イラク": "中東・アフリカ", "イラン": "中東・アフリカ",
+    "オマーン": "中東・アフリカ", "カタール": "中東・アフリカ", "クウェート": "中東・アフリカ", "サウジアラビア": "中東・アフリカ", "シリア": "中東・アフリカ",
+    "トルコ": "中東・アフリカ", "バーレーン": "中東・アフリカ", "ヨルダン": "中東・アフリカ", "レバノン": "中東・アフリカ", "パレスチナ": "中東・アフリカ",
+    "アイルランド": "ヨーロッパ", "イギリス": "ヨーロッパ", "オランダ": "ヨーロッパ", "フランス": "ヨーロッパ", "ベルギー": "ヨーロッパ",
+    "ルクセンブルク": "ヨーロッパ", "モナコ": "ヨーロッパ", "ドイツ": "ヨーロッパ", "オーストリア": "ヨーロッパ", "スイス": "ヨーロッパ",
+    "リヒテンシュタイン": "ヨーロッパ", "イタリア": "ヨーロッパ", "サンマリノ": "ヨーロッパ", "バチカン": "ヨーロッパ", "スペイン": "ヨーロッパ",
+    "ポルトガル": "ヨーロッパ", "アンドラ": "ヨーロッパ", "ギリシャ": "ヨーロッパ", "キプロス": "ヨーロッパ", "マルタ": "ヨーロッパ",
+    "コソボ": "ヨーロッパ", "アイスランド": "ヨーロッパ", "スウェーデン": "ヨーロッパ", "デンマーク": "ヨーロッパ", "ノルウェー": "ヨーロッパ",
+    "フィンランド": "ヨーロッパ", "エストニア": "ヨーロッパ", "ラトビア": "ヨーロッパ", "リトアニア": "ヨーロッパ", "ウクライナ": "ヨーロッパ",
+    "ベラルーシ": "ヨーロッパ", "ロシア": "ヨーロッパ", "ポーランド": "ヨーロッパ", "チェコ": "ヨーロッパ", "スロバキア": "ヨーロッパ",
+    "ハンガリー": "ヨーロッパ", "ルーマニア": "ヨーロッパ", "ブルガリア": "ヨーロッパ", "モルドバ": "ヨーロッパ", "ジョージア": "ヨーロッパ",
+    "アルバニア": "ヨーロッパ", "北マケドニア": "ヨーロッパ", "セルビア": "ヨーロッパ", "モンテネグロ": "ヨーロッパ", "ボスニア・ヘルツェゴビナ": "ヨーロッパ",
+    "クロアチア": "ヨーロッパ", "スロベニア": "ヨーロッパ", "アゼルバイジャン": "ヨーロッパ", "アルメニア": "ヨーロッパ",
+    "エジプト": "中東・アフリカ", "リビア": "中東・アフリカ", "チュニジア": "中東・アフリカ", "アルジェリア": "中東・アフリカ", "モロッコ": "中東・アフリカ",
+    "セネガル": "中東・アフリカ", "ガンビア": "中東・アフリカ", "ギニアビサウ": "中東・アフリカ", "ギニア": "中東・アフリカ", "シエラレオネ": "中東・アフリカ",
+    "リベリア": "中東・アフリカ", "コートジボワール": "中東・アフリカ", "ガーナ": "中東・アフリカ", "トーゴ": "中東・アフリカ", "ベナン": "中東・アフリカ",
+    "ナイジェリア": "中東・アフリカ", "カーボベルデ": "中東・アフリカ", "マリ": "中東・アフリカ", "ブルキナファソ": "中東・アフリカ", "ニジェール": "中東・アフリカ",
+    "モーリタニア": "中東・アフリカ", "カメルーン": "中東・アフリカ", "チャド": "中東・アフリカ", "サントメ・プリンシペ": "中東・アフリカ", "アンゴラ": "中東・アフリカ",
+    "スーダン": "中東・アフリカ", "南スーダン": "中東・アフリカ", "エリトリア": "中東・アフリカ", "中央アフリカ": "中東・アフリカ", "赤道ギニア": "中東・アフリカ",
+    "ガボン": "中東・アフリカ", "コンゴ共和国": "中東・アフリカ", "コンゴ民主共和国": "中東・アフリカ", "ジブチ": "中東・アフリカ", "ソマリア": "中東・アフリカ",
+    "エチオピア": "中東・アフリカ", "ケニア": "中東・アフリカ", "ウガンダ": "中東・アフリカ", "タンザニア": "中東・アフリカ", "ルワンダ": "中東・アフリカ",
+    "ブルンジ": "中東・アフリカ", "セーシェル": "中東・アフリカ", "コモロ": "中東・アフリカ", "マダガスカル": "中東・アフリカ", "モーリシャス": "中東・アフリカ",
+    "モザンビーク": "中東・アフリカ", "ザンビア": "中東・アフリカ", "マラウイ": "中東・アフリカ", "ジンバブエ": "中東・アフリカ", "ナミビア": "中東・アフリカ",
+    "ボツワナ": "中東・アフリカ", "南アフリカ": "中東・アフリカ", "レソト": "中東・アフリカ", "エスワティニ": "中東・アフリカ",
+    "アメリカ": "北米・南米", "カナダ": "北米・南米", "メキシコ": "北米・南米", "グアテマラ": "北米・南米", "ベリーズ": "北米・南米",
+    "エルサルバドル": "北米・南米", "ホンジュラス": "北米・南米", "ニカラグア": "北米・南米", "コスタリカ": "北米・南米", "パナマ": "北米・南米",
+    "ドミニカ共和国": "北米・南米", "アンティグア・バーブーダ": "北米・南米", "セントクリストファー・ネイビス": "北米・南米", "ドミニカ国": "北米・南米", "セントルシア": "北米・南米",
+    "セントビンセント・グレナディーン": "北米・南米", "バルバドス": "北米・南米", "グレナダ": "北米・南米", "トリニダード・トバゴ": "北米・南米", "キューバ": "北米・南米",
+    "バハマ": "北米・南米", "ジャマイカ": "北米・南米", "ハイチ": "北米・南米",
+    "コロンビア": "北米・南米", "ベネズエラ": "北米・南米", "ガイアナ": "北米・南米", "スリナム": "北米・南米", "エクアドル": "北米・南米",
+    "ペルー": "北米・南米", "ボリビア": "北米・南米", "ブラジル": "北米・南米", "パラグアイ": "北米・南米", "チリ": "北米・南米",
+    "アルゼンチン": "北米・南米", "ウルグアイ": "北米・南米",
+    "オーストラリア": "オセアニア", "ニュージーランド": "オセアニア", "パプアニューギニア": "オセアニア", "ソロモン諸島": "オセアニア", "バヌアツ": "オセアニア",
+    "フィジー": "オセアニア", "ミクロネシア連邦": "オセアニア", "マーシャル諸島": "オセアニア", "パラオ": "オセアニア", "ナウル": "オセアニア",
+    "キリバス": "オセアニア", "ツバル": "オセアニア", "サモア": "オセアニア", "トンガ": "オセアニア", "クック諸島": "オセアニア", "ニウエ": "オセアニア",
+}
+CONTINENT_ORDER = ["アジア", "ヨーロッパ", "中東・アフリカ", "北米・南米", "オセアニア", "その他"]
+
+
+def _build_continent_accordion(countries):
+    # grouped.keys() を大陸別に振り分け、「🌍 大陸・地域から国を選択」アコーディオンのHTMLを組み立てる
+    buckets = {label: [] for label in CONTINENT_ORDER}
+    for country in countries:
+        buckets[CONTINENT_MAP.get(country, "その他")].append(country)
+
+    continent_html = ""
+    for label in CONTINENT_ORDER:
+        countries_in_bucket = buckets[label]
+        if not countries_in_bucket:
+            continue
+        buttons_html = "".join(
+            f'<button class="country-selector-btn m-1 px-3 py-1.5 bg-white border border-slate-300 rounded '
+            f'hover:bg-indigo-50 hover:border-indigo-300 transition text-sm text-slate-700 shadow-sm" '
+            f'data-country="{html.escape(country)}">{html.escape(country)}</button>'
+            for country in countries_in_bucket
+        )
+        continent_html += f'''
+        <details class="group/continent bg-white rounded-lg border border-slate-200 overflow-hidden">
+            <summary class="cursor-pointer p-3 bg-indigo-50 font-bold text-indigo-900 flex justify-between items-center hover:bg-indigo-100 transition">
+                <span>{html.escape(label)}（{len(countries_in_bucket)}）</span>
+                <span class="text-indigo-400 group-open/continent:rotate-180 transition-transform duration-300">▼</span>
+            </summary>
+            <div class="p-3 flex flex-wrap bg-white">
+                {buttons_html}
+            </div>
+        </details>
+        '''
+
+    return f'''
+    <details class="group bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden mb-6">
+        <summary class="cursor-pointer p-4 bg-slate-50 font-bold text-slate-800 flex justify-between items-center hover:bg-slate-100 transition">
+            <span class="flex items-center gap-2"><span class="text-xl">🌍</span> 大陸・地域から国を選択</span>
+            <span class="text-slate-500 group-open:rotate-180 transition-transform duration-300">▼</span>
+        </summary>
+        <div class="p-4 space-y-3 bg-slate-50/30">
+            {continent_html}
+        </div>
+    </details>
+    '''
+
+
 def build_culture_world_academic_v3():
     rows = read_csv_skip("041世界の言語活動調査.(学術的).csv", skip_lines=1)
     if not rows: return "<div class='p-4 text-slate-500'>データがありません。</div>"
@@ -535,17 +624,6 @@ def build_culture_world_academic_v3():
     </div>
     '''
 
-    # マップ・国選択表示エリア（理論体系の直下に出力）
-    map_and_display_html = '''
-    <div class="mb-8 p-4 bg-white rounded-xl shadow-sm border border-slate-200">
-        <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">🗺️ 地図から国を選択</h3>
-        <div id="world-map-container" class="w-full h-[400px] bg-sky-50 rounded-lg overflow-hidden border border-slate-200"></div>
-    </div>
-    <div id="country-display-area" class="min-h-[200px] p-6 bg-slate-50 border border-slate-200 rounded-xl shadow-inner text-center text-slate-500">
-        🌍 地図上の国をタップすると、その国の言語文化が表示されます。
-    </div>
-    '''
-
     # 国別にグループ化
     grouped = {}
     for row in rows:
@@ -554,6 +632,20 @@ def build_culture_world_academic_v3():
         country = row[1].strip()
         if country not in grouped: grouped[country] = []
         grouped[country].append(row)
+
+    # 地図コンテナ（1. イントロ ➔ 2. 地図 ➔ 3. 大陸別アコーディオン ➔ 4. 選択エリア ➔ 5. 隠しデータ の順）
+    map_html = '''
+    <div class="mb-8 p-4 bg-white rounded-xl shadow-sm border border-slate-200">
+        <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">🗺️ 地図から国を選択</h3>
+        <div id="world-map-container" class="w-full aspect-[4/3] md:aspect-video min-h-[400px] max-h-[700px] bg-sky-50 rounded-lg overflow-hidden border border-slate-200"></div>
+    </div>
+    '''
+    continent_accordion_html = _build_continent_accordion(grouped.keys())
+    display_area_html = '''
+    <div id="country-display-area" class="min-h-[200px] p-6 bg-slate-50 border border-slate-200 rounded-xl shadow-inner text-center text-slate-500">
+        🌍 地図上の国をタップすると、その国の言語文化が表示されます。
+    </div>
+    '''
 
     # 対象国アコーディオン（地図クリックで表示するため、通常は非表示のブロックとして出力）
     country_blocks = []
@@ -624,23 +716,12 @@ def build_culture_world_academic_v3():
         country_parts.append("</div></details>")
         country_blocks.append(f'<div id="country-data-{html.escape(country)}" style="display:none;">' + "".join(country_parts) + '</div>')
 
-    html_parts = [intro_html, map_and_display_html] + country_blocks
+    html_parts = [intro_html, map_html, continent_accordion_html, display_area_html] + country_blocks
     return "".join(html_parts)
 
 def build_culture_world_survey_v3():
     rows = read_csv_skip("042 世界の言語活動調査(実態調査).csv", skip_lines=1)
     if not rows: return "<div class='p-4 text-slate-500'>データがありません。</div>"
-
-    # マップ・国選択表示エリア（一番上に出力）
-    map_and_display_html = '''
-    <div class="mb-8 p-4 bg-white rounded-xl shadow-sm border border-slate-200">
-        <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">🗺️ 地図から国を選択</h3>
-        <div id="world-map-container" class="w-full h-[400px] bg-sky-50 rounded-lg overflow-hidden border border-slate-200"></div>
-    </div>
-    <div id="country-display-area" class="min-h-[200px] p-6 bg-slate-50 border border-slate-200 rounded-xl shadow-inner text-center text-slate-500">
-        🌍 地図上の国をタップすると、その国の言語文化が表示されます。
-    </div>
-    '''
 
     grouped = {}
     for row in rows:
@@ -649,6 +730,20 @@ def build_culture_world_survey_v3():
         country = row[1].strip()
         if country not in grouped: grouped[country] = []
         grouped[country].append(row)
+
+    # 地図コンテナ（1. 地図 ➔ 2. 大陸別アコーディオン ➔ 3. 選択エリア ➔ 4. 隠しデータ の順。イントロは無し）
+    map_html = '''
+    <div class="mb-8 p-4 bg-white rounded-xl shadow-sm border border-slate-200">
+        <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">🗺️ 地図から国を選択</h3>
+        <div id="world-map-container" class="w-full aspect-[4/3] md:aspect-video min-h-[400px] max-h-[700px] bg-sky-50 rounded-lg overflow-hidden border border-slate-200"></div>
+    </div>
+    '''
+    continent_accordion_html = _build_continent_accordion(grouped.keys())
+    display_area_html = '''
+    <div id="country-display-area" class="min-h-[200px] p-6 bg-slate-50 border border-slate-200 rounded-xl shadow-inner text-center text-slate-500">
+        🌍 地図上の国をタップすると、その国の言語文化が表示されます。
+    </div>
+    '''
 
     # 対象国アコーディオン（地図クリックで表示するため、通常は非表示のブロックとして出力）
     country_blocks = []
@@ -724,7 +819,7 @@ def build_culture_world_survey_v3():
         country_parts.append("</div></details>")
         country_blocks.append(f'<div id="country-data-{html.escape(country)}" style="display:none;">' + "".join(country_parts) + '</div>')
 
-    html_parts = [map_and_display_html] + country_blocks
+    html_parts = [map_html, continent_accordion_html, display_area_html] + country_blocks
     return "".join(html_parts)
 
 def compile_data():
