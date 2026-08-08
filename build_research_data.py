@@ -126,10 +126,144 @@ def extract_html_block(filename, target_id):
         
         if target_id == "evolution-academic" and len(blocks) > 0:
             return blocks[0]
-        # evolution-comic は tab-culture にないのでスキップ
+        if target_id == "evolution-comic" and len(blocks) > 1:
+            return blocks[1]
     except Exception:
         pass
     return None
+
+def parse_pipe_table_rows(md_relpath, row_pattern=r'^\| 第[0-9]象限'):
+    path = REPO_ROOT / "data" / "research" / "なぞかけ研究所" / "世界言語文化" / md_relpath
+    if not path.exists():
+        return []
+    rows = []
+    with open(path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if re.match(row_pattern, line):
+                cols = [c.strip() for c in line.strip().split('|')]
+                rows.append(cols[1:-1])  # 先頭・末尾のパイプ外側の空要素を除去
+    return rows
+
+QUADRANTS = ["第1象限", "第2象限", "第3象限", "第4象限"]
+
+def _quadrant_key(quad_value):
+    return next((q for q in QUADRANTS if quad_value.startswith(q)), None)
+
+def build_culture_world_academic():
+    rows = parse_pipe_table_rows("学術的な研究_1.md")
+    if not rows:
+        return "<div class='p-4 text-slate-500'>データがありません。</div>"
+
+    grouped = {q: [] for q in QUADRANTS}
+    for row in rows:
+        if len(row) < 17:
+            continue
+        quad, country, name, definition, structure, context, function, effect = row[:8]
+        examples = [row[8:11], row[11:14], row[14:17]]
+        key = _quadrant_key(quad)
+        if key is None or not name:
+            continue
+        grouped[key].append({
+            'quad_label': quad, 'country': country, 'name': name,
+            'definition': definition, 'structure': structure,
+            'context': context, 'function': function, 'effect': effect,
+            'examples': examples,
+        })
+
+    html_parts = ["<div class='space-y-12'>"]
+    for q in QUADRANTS:
+        items = grouped[q]
+        if not items:
+            continue
+        label = items[0]['quad_label']
+        html_parts.append(f"<section class='category-block'><h2 class='text-2xl font-extrabold text-slate-800 border-b-4 border-indigo-600 pb-3 mb-6'>🌐 {html.escape(label)}</h2>")
+        html_parts.append("<div class='grid grid-cols-1 md:grid-cols-2 gap-6'>")
+        for item in items:
+            ex_html = "".join(
+                f'''<div class='bg-slate-50 p-3 rounded-lg mb-2 text-xs border border-slate-100'>
+                    <div class='font-bold text-slate-500 mb-1'>{html.escape(ex[0])}</div>
+                    <div class='text-slate-800 mb-1'>{html.escape(ex[1])}</div>
+                    <div class='text-slate-600'>{html.escape(ex[2])}</div>
+                </div>'''
+                for ex in item['examples'] if any(c.strip() for c in ex)
+            )
+            html_parts.append(f'''
+            <article class='bg-white rounded-xl p-5 shadow-sm border border-indigo-100'>
+                <h4 class='text-base font-bold text-indigo-800 mb-2'>{html.escape(item['country'])}｜{html.escape(item['name'])}</h4>
+                <p class='text-sm text-slate-700 mb-3'>{html.escape(item['definition'])}</p>
+                <div class='grid grid-cols-1 gap-1.5 text-xs mb-3 bg-indigo-50/50 p-3 rounded-lg'>
+                    <div><span class='font-bold text-indigo-700'>言語構造：</span>{html.escape(item['structure'])}</div>
+                    <div><span class='font-bold text-indigo-700'>社会背景：</span>{html.escape(item['context'])}</div>
+                    <div><span class='font-bold text-indigo-700'>社会的機能：</span>{html.escape(item['function'])}</div>
+                    <div><span class='font-bold text-indigo-700'>心理的効果：</span>{html.escape(item['effect'])}</div>
+                </div>
+                {ex_html}
+            </article>
+            ''')
+        html_parts.append("</div></section>")
+    html_parts.append("</div>")
+    return "".join(html_parts)
+
+def build_culture_world_survey():
+    rows = read_csv_safe("041+042 世界の言語活動調査.csv")
+    if not rows:
+        return "<div class='p-4 text-slate-500'>データがありません。</div>"
+
+    TYPE_STYLE = {
+        '【事実】': 'bg-emerald-100 text-emerald-700',
+        '【都市伝説】': 'bg-amber-100 text-amber-700',
+    }
+    grouped = {q: [] for q in QUADRANTS}
+    for row in rows:
+        if len(row) < 17:
+            continue
+        quad, country, typ, name, practice, function, effect, fact_check = row[:8]
+        examples = [row[8:11], row[11:14], row[14:17]]
+        key = _quadrant_key(quad)
+        if key is None or not name:
+            continue
+        grouped[key].append({
+            'quad_label': quad, 'country': country, 'type': typ, 'name': name,
+            'practice': practice, 'function': function, 'effect': effect,
+            'fact_check': fact_check, 'examples': examples,
+        })
+
+    html_parts = ["<div class='space-y-12'>"]
+    for q in QUADRANTS:
+        items = grouped[q]
+        if not items:
+            continue
+        label = items[0]['quad_label']
+        html_parts.append(f"<section class='category-block'><h2 class='text-2xl font-extrabold text-slate-800 border-b-4 border-rose-600 pb-3 mb-6'>🗺️ {html.escape(label)}</h2>")
+        html_parts.append("<div class='grid grid-cols-1 md:grid-cols-2 gap-6'>")
+        for item in items:
+            badge_cls = TYPE_STYLE.get(item['type'], 'bg-slate-100 text-slate-600')
+            ex_html = "".join(
+                f'''<div class='bg-slate-50 p-3 rounded-lg mb-2 text-xs border border-slate-100'>
+                    <div class='font-bold text-slate-500 mb-1'>{html.escape(ex[0])}</div>
+                    <div class='text-slate-800 mb-1'>{html.escape(ex[1])}</div>
+                    <div class='text-slate-600'>{html.escape(ex[2])}</div>
+                </div>'''
+                for ex in item['examples'] if any(c.strip() for c in ex)
+            )
+            html_parts.append(f'''
+            <article class='bg-white rounded-xl p-5 shadow-sm border border-rose-100'>
+                <h4 class='text-base font-bold text-rose-800 mb-2 flex items-center gap-2 flex-wrap'>
+                    <span>{html.escape(item['country'])}｜{html.escape(item['name'])}</span>
+                    <span class='text-xs font-bold px-2 py-0.5 rounded {badge_cls}'>{html.escape(item['type'])}</span>
+                </h4>
+                <p class='text-sm text-slate-700 mb-3'>{html.escape(item['practice'])}</p>
+                <div class='grid grid-cols-1 gap-1.5 text-xs mb-3 bg-rose-50/50 p-3 rounded-lg'>
+                    <div><span class='font-bold text-rose-700'>社会的機能：</span>{html.escape(item['function'])}</div>
+                    <div><span class='font-bold text-rose-700'>心理的効果：</span>{html.escape(item['effect'])}</div>
+                    <div><span class='font-bold text-rose-700'>事実確認：</span>{html.escape(item['fact_check'])}</div>
+                </div>
+                {ex_html}
+            </article>
+            ''')
+        html_parts.append("</div></section>")
+    html_parts.append("</div>")
+    return "".join(html_parts)
 
 def build_research_others():
     rows = read_csv_safe("022 なぞかけその他の研究の現状.csv")
@@ -212,13 +346,17 @@ def compile_data():
             content = build_research_physiology()
         elif target_id == "culture_japan":
             content = build_culture_japan()
-        
+        elif target_id == "culture_world_academic":
+            content = build_culture_world_academic()
+        elif target_id == "culture_world_survey":
+            content = build_culture_world_survey()
+
         # 2. HTMLから抽出するもの
         elif target_id in ["basic-form", "academic-definition", "dictionary-comparison"]:
             extracted = extract_html_block("tab-definition.html", target_id)
             if extracted:
                 content = extracted
-        elif target_id == "evolution-academic":
+        elif target_id in ["evolution-academic", "evolution-comic"]:
             extracted = extract_html_block("tab-culture.html", target_id)
             if extracted:
                 content = extracted
