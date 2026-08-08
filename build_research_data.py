@@ -535,6 +535,17 @@ def build_culture_world_academic_v3():
     </div>
     '''
 
+    # マップ・国選択表示エリア（理論体系の直下に出力）
+    map_and_display_html = '''
+    <div class="mb-8 p-4 bg-white rounded-xl shadow-sm border border-slate-200">
+        <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">🗺️ 地図から国を選択</h3>
+        <div id="world-map-container" class="w-full h-[400px] bg-sky-50 rounded-lg overflow-hidden border border-slate-200"></div>
+    </div>
+    <div id="country-display-area" class="min-h-[200px] p-6 bg-slate-50 border border-slate-200 rounded-xl shadow-inner text-center text-slate-500">
+        🌍 地図上の国をタップすると、その国の言語文化が表示されます。
+    </div>
+    '''
+
     # 国別にグループ化
     grouped = {}
     for row in rows:
@@ -543,20 +554,19 @@ def build_culture_world_academic_v3():
         country = row[1].strip()
         if country not in grouped: grouped[country] = []
         grouped[country].append(row)
-        
-    html_parts = [intro_html, "<div class='space-y-6'>"]
-    
-    # 対象国アコーディオン
+
+    # 対象国アコーディオン（地図クリックで表示するため、通常は非表示のブロックとして出力）
+    country_blocks = []
     for country, items in grouped.items():
-        html_parts.append(f'''
+        country_parts = [f'''
         <details class="group bg-white rounded-xl border border-indigo-200 shadow-sm overflow-hidden mb-6">
             <summary class="cursor-pointer p-4 bg-indigo-50 font-bold text-indigo-900 flex justify-between items-center hover:bg-indigo-100 transition">
                 <span class="flex items-center gap-2"><span class="text-2xl">🌍</span> {html.escape(country)}</span>
                 <span class="text-indigo-500 group-open:rotate-180 transition-transform duration-300">▼</span>
             </summary>
             <div class="p-4 space-y-4 bg-indigo-50/30">
-        ''')
-        
+        ''']
+
         # 象限＋事象名アコーディオン
         for row in items:
             parsed = _parse_embedded_culture_json(row)
@@ -581,7 +591,7 @@ def build_culture_world_academic_v3():
                         </div>
                         '''
 
-                html_parts.append(f'''
+                country_parts.append(f'''
                 <details class="group/item bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                     <summary class="cursor-pointer p-3 bg-slate-100 font-bold text-slate-800 flex justify-between items-center hover:bg-slate-200 transition">
                         <span class="flex items-center gap-2">
@@ -611,14 +621,27 @@ def build_culture_world_academic_v3():
                 </details>
                 ''')
 
-        html_parts.append("</div></details>")
-    html_parts.append("</div>")
+        country_parts.append("</div></details>")
+        country_blocks.append(f'<div id="country-data-{html.escape(country)}" style="display:none;">' + "".join(country_parts) + '</div>')
+
+    html_parts = [intro_html, map_and_display_html] + country_blocks
     return "".join(html_parts)
 
 def build_culture_world_survey_v3():
     rows = read_csv_skip("042 世界の言語活動調査(実態調査).csv", skip_lines=1)
     if not rows: return "<div class='p-4 text-slate-500'>データがありません。</div>"
-    
+
+    # マップ・国選択表示エリア（一番上に出力）
+    map_and_display_html = '''
+    <div class="mb-8 p-4 bg-white rounded-xl shadow-sm border border-slate-200">
+        <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">🗺️ 地図から国を選択</h3>
+        <div id="world-map-container" class="w-full h-[400px] bg-sky-50 rounded-lg overflow-hidden border border-slate-200"></div>
+    </div>
+    <div id="country-display-area" class="min-h-[200px] p-6 bg-slate-50 border border-slate-200 rounded-xl shadow-inner text-center text-slate-500">
+        🌍 地図上の国をタップすると、その国の言語文化が表示されます。
+    </div>
+    '''
+
     grouped = {}
     for row in rows:
         if len(row) < 17: continue
@@ -626,17 +649,18 @@ def build_culture_world_survey_v3():
         country = row[1].strip()
         if country not in grouped: grouped[country] = []
         grouped[country].append(row)
-        
-    html_parts = ["<div class='space-y-6'>"]
+
+    # 対象国アコーディオン（地図クリックで表示するため、通常は非表示のブロックとして出力）
+    country_blocks = []
     for country, items in grouped.items():
-        html_parts.append(f'''
+        country_parts = [f'''
         <details class="group bg-white rounded-xl border border-teal-200 shadow-sm overflow-hidden mb-6">
             <summary class="cursor-pointer p-4 bg-teal-50 font-bold text-teal-900 flex justify-between items-center hover:bg-teal-100 transition">
                 <span class="flex items-center gap-2"><span class="text-2xl">🌍</span> {html.escape(country)}</span>
                 <span class="text-teal-500 group-open:rotate-180 transition-transform duration-300">▼</span>
             </summary>
             <div class="p-4 space-y-4 bg-teal-50/30">
-        ''')
+        ''']
         for row in items:
             parsed = _parse_embedded_culture_json(row)
             if parsed is None:
@@ -670,7 +694,7 @@ def build_culture_world_survey_v3():
                         </div>
                         '''
 
-                html_parts.append(f'''
+                country_parts.append(f'''
                 <details class="group/item bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
                     <summary class="cursor-pointer p-3 bg-slate-100 font-bold text-slate-800 flex justify-between items-center hover:bg-slate-200 transition">
                         <span class="flex items-center gap-2">
@@ -697,8 +721,10 @@ def build_culture_world_survey_v3():
                     </div>
                 </details>
                 ''')
-        html_parts.append("</div></details>")
-    html_parts.append("</div>")
+        country_parts.append("</div></details>")
+        country_blocks.append(f'<div id="country-data-{html.escape(country)}" style="display:none;">' + "".join(country_parts) + '</div>')
+
+    html_parts = [map_and_display_html] + country_blocks
     return "".join(html_parts)
 
 def compile_data():

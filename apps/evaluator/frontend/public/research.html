@@ -6,8 +6,11 @@
   <title>なぞかけ研究所 - Research Lab</title>
   
     <script src="https://cdn.tailwindcss.com"></script>
-        
-    
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/jsvectormap/dist/css/jsvectormap.min.css" />
+    <script src="https://cdn.jsdelivr.net/npm/jsvectormap"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jsvectormap/dist/maps/world.js"></script>
+
+
   <style>
     @keyframes fadeIn {
       from { opacity: 0; transform: translateY(6px); }
@@ -232,6 +235,11 @@ async function _fetchAndApplyData(detailsElement, targetId) {
             
             // ロード済みフラグを付与
             detailsElement.setAttribute('data-loaded', 'true');
+
+            // 世界地図ナビゲーションが必要なセクションはマップを初期化
+            if (targetId === 'culture_world_academic' || targetId === 'culture_world_survey') {
+                initWorldMapForSection(detailsElement);
+            }
         } else {
             console.warn(`[Data Loader] ID: ${targetId} のデータがJSONに見つかりません。`);
         }
@@ -246,6 +254,90 @@ function loadDefinitionData(element, containerId, dataId) {
     // element が event オブジェクトの場合も考慮して安全に呼び出し元を特定
     const targetEl = (element instanceof Event) ? element.target : element;
     _fetchAndApplyData(targetEl, dataId);
+}
+</script>
+
+<script>
+// --- 世界地図ナビゲーション（jsVectorMap） ---
+const COUNTRY_CODE_TO_NAME = {
+  "JP": "日本", "CN": "中国", "KR": "韓国", "KP": "北朝鮮", "MN": "モンゴル",
+  "TW": "台湾", "ID": "インドネシア", "KH": "カンボジア", "SG": "シンガポール", "TH": "タイ",
+  "PH": "フィリピン", "BN": "ブルネイ", "VN": "ベトナム", "MY": "マレーシア", "MM": "ミャンマー",
+  "LA": "ラオス", "TL": "東ティモール", "IN": "インド", "PK": "パキスタン", "BD": "バングラデシュ",
+  "LK": "スリランカ", "NP": "ネパール", "BT": "ブータン", "MV": "モルディブ", "AF": "アフガニスタン",
+  "UZ": "ウズベキスタン", "KZ": "カザフスタン", "KG": "キルギス", "TJ": "タジキスタン", "TM": "トルクメニスタン",
+  "AE": "アラブ首長国連邦", "YE": "イエメン", "IL": "イスラエル", "IQ": "イラク", "IR": "イラン",
+  "OM": "オマーン", "QA": "カタール", "KW": "クウェート", "SA": "サウジアラビア", "SY": "シリア",
+  "TR": "トルコ", "BH": "バーレーン", "JO": "ヨルダン", "LB": "レバノン", "PS": "パレスチナ",
+  "IE": "アイルランド", "GB": "イギリス", "NL": "オランダ", "FR": "フランス", "BE": "ベルギー",
+  "LU": "ルクセンブルク", "MC": "モナコ", "DE": "ドイツ", "AT": "オーストリア", "CH": "スイス",
+  "LI": "リヒテンシュタイン", "IT": "イタリア", "SM": "サンマリノ", "VA": "バチカン", "ES": "スペイン",
+  "PT": "ポルトガル", "AD": "アンドラ", "GR": "ギリシャ", "CY": "キプロス", "MT": "マルタ",
+  "XK": "コソボ", "IS": "アイスランド", "SE": "スウェーデン", "DK": "デンマーク", "NO": "ノルウェー",
+  "FI": "フィンランド", "EE": "エストニア", "LV": "ラトビア", "LT": "リトアニア", "UA": "ウクライナ",
+  "BY": "ベラルーシ", "RU": "ロシア", "PL": "ポーランド", "CZ": "チェコ", "SK": "スロバキア",
+  "HU": "ハンガリー", "RO": "ルーマニア", "BG": "ブルガリア", "MD": "モルドバ", "GE": "ジョージア",
+  "AL": "アルバニア", "MK": "北マケドニア", "RS": "セルビア", "ME": "モンテネグロ", "BA": "ボスニア・ヘルツェゴビナ",
+  "HR": "クロアチア", "SI": "スロベニア", "EG": "エジプト", "LY": "リビア", "TN": "チュニジア",
+  "DZ": "アルジェリア", "MA": "モロッコ", "SN": "セネガル", "GM": "ガンビア", "GW": "ギニアビサウ",
+  "GN": "ギニア", "SL": "シエラレオネ", "LR": "リベリア", "CI": "コートジボワール", "GH": "ガーナ",
+  "TG": "トーゴ", "BJ": "ベナン", "NG": "ナイジェリア", "CV": "カーボベルデ", "ML": "マリ",
+  "BF": "ブルキナファソ", "NE": "ニジェール", "MR": "モーリタニア", "CM": "カメルーン", "TD": "チャド",
+  "ST": "サントメ・プリンシペ", "AO": "アンゴラ", "SD": "スーダン", "SS": "南スーダン", "ER": "エリトリア",
+  "CF": "中央アフリカ", "GQ": "赤道ギニア", "GA": "ガボン", "CG": "コンゴ共和国", "CD": "コンゴ民主共和国",
+  "DJ": "ジブチ", "SO": "ソマリア", "ET": "エチオピア", "KE": "ケニア", "UG": "ウガンダ",
+  "TZ": "タンザニア", "RW": "ルワンダ", "BI": "ブルンジ", "SC": "セーシェル", "KM": "コモロ",
+  "MG": "マダガスカル", "MU": "モーリシャス", "MZ": "モザンビーク", "ZM": "ザンビア", "MW": "マラウイ",
+  "ZW": "ジンバブエ", "NA": "ナミビア", "BW": "ボツワナ", "ZA": "南アフリカ", "LS": "レソト",
+  "SZ": "エスワティニ", "US": "アメリカ", "CA": "カナダ", "MX": "メキシコ", "GT": "グアテマラ",
+  "BZ": "ベリーズ", "SV": "エルサルバドル", "HN": "ホンジュラス", "NI": "ニカラグア", "CR": "コスタリカ",
+  "DO": "ドミニカ共和国", "AG": "アンティグア・バーブーダ", "KN": "セントクリストファー・ネイビス", "DM": "ドミニカ国", "LC": "セントルシア",
+  "VC": "セントビンセント・グレナディーン", "BB": "バルバドス", "GD": "グレナダ", "TT": "トリニダード・トバゴ", "CO": "コロンビア",
+  "VE": "ベネズエラ", "GY": "ガイアナ", "SR": "スリナム", "EC": "エクアドル", "PE": "ペルー",
+  "BO": "ボリビア", "BR": "ブラジル", "PY": "パラグアイ", "CL": "チリ", "AR": "アルゼンチン",
+  "UY": "ウルグアイ", "AU": "オーストラリア", "NZ": "ニュージーランド", "PG": "パプアニューギニア", "SB": "ソロモン諸島",
+  "VU": "バヌアツ", "FJ": "フィジー", "FM": "ミクロネシア連邦", "MH": "マーシャル諸島", "PW": "パラオ",
+  "PA": "パナマ", "CU": "キューバ", "BS": "バハマ", "JM": "ジャマイカ", "HT": "ハイチ",
+  "NR": "ナウル", "KI": "キリバス", "TV": "ツバル", "WS": "サモア", "TO": "トンガ",
+  "AZ": "アゼルバイジャン", "AM": "アルメニア", "CK": "クック諸島", "NU": "ニウエ"
+};
+
+function initWorldMapForSection(sectionRoot) {
+    // sectionRoot（学術的 or 実態調査のdetails要素）の中だけを対象に検索し、
+    // 2セクション同時展開時にID重複があっても互いに干渉しないようにする
+    const mapContainer = sectionRoot.querySelector('#world-map-container');
+    const displayArea = sectionRoot.querySelector('#country-display-area');
+    if (!mapContainer || !displayArea) return;
+
+    // 二重初期化防止
+    if (mapContainer.hasAttribute('data-map-initialized')) return;
+    mapContainer.setAttribute('data-map-initialized', 'true');
+
+    new jsVectorMap({
+        selector: mapContainer,
+        map: 'world',
+        zoomButtons: true,
+        zoomOnScroll: false,
+        regionStyle: {
+            initial: { fill: '#7dd3fc', stroke: '#0369a1', strokeWidth: 0.5 },
+            hover: { fill: '#0ea5e9', cursor: 'pointer' },
+            selected: { fill: '#0369a1' }
+        },
+        onRegionClick(event, code) {
+            const countryName = COUNTRY_CODE_TO_NAME[String(code).toUpperCase()];
+            if (!countryName) {
+                displayArea.innerHTML = '<p class="text-slate-400">🌏 この国のデータは登録されていません。</p>';
+                return;
+            }
+            // id="country-data-{国名}" の非表示ブロックを属性セレクタで検索（記号を含む国名でも安全）
+            const dataBlock = sectionRoot.querySelector('[id="country-data-' + countryName + '"]');
+            if (dataBlock) {
+                displayArea.innerHTML = dataBlock.innerHTML;
+            } else {
+                displayArea.innerHTML = `<p class="text-slate-400">🌏 ${countryName} のデータは準備中です。</p>`;
+            }
+        }
+    });
 }
 </script>
 </body>
