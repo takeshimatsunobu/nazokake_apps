@@ -205,7 +205,7 @@ async function _fetchAndApplyData(detailsElement, targetId) {
         // モジュールレベルキャッシュの実装（1度のfetchで使い回す）
         if (!_researchDataCache) {
             if (!_researchDataPromise) {
-                _researchDataPromise = fetch('./data/research_data.json').then(res => res.json());
+                _researchDataPromise = fetch('./data/research_data.json?t=' + new Date().getTime()).then(res => res.json());
             }
             _researchDataCache = await _researchDataPromise;
         }
