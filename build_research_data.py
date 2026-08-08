@@ -132,25 +132,13 @@ def extract_html_block(filename, target_id):
         pass
     return None
 
-def parse_pipe_table_rows(md_relpath, row_pattern=r'^\| 第[0-9]象限'):
-    path = REPO_ROOT / "data" / "research" / "なぞかけ研究所" / "世界言語文化" / md_relpath
-    if not path.exists():
-        return []
-    rows = []
-    with open(path, 'r', encoding='utf-8') as f:
-        for line in f:
-            if re.match(row_pattern, line):
-                cols = [c.strip() for c in line.strip().split('|')]
-                rows.append(cols[1:-1])  # 先頭・末尾のパイプ外側の空要素を除去
-    return rows
-
 QUADRANTS = ["第1象限", "第2象限", "第3象限", "第4象限"]
 
 def _quadrant_key(quad_value):
     return next((q for q in QUADRANTS if quad_value.startswith(q)), None)
 
 def build_culture_world_academic():
-    rows = parse_pipe_table_rows("学術的な研究_1.md")
+    rows = read_csv_skip("041世界の言語活動調査.(学術的).csv", skip_lines=1)
     if not rows:
         return "<div class='p-4 text-slate-500'>データがありません。</div>"
 
@@ -205,7 +193,7 @@ def build_culture_world_academic():
     return "".join(html_parts)
 
 def build_culture_world_survey():
-    rows = read_csv_safe("041+042 世界の言語活動調査.csv")
+    rows = read_csv_skip("042 世界の言語活動調査(実態調査).csv", skip_lines=1)
     if not rows:
         return "<div class='p-4 text-slate-500'>データがありません。</div>"
 
