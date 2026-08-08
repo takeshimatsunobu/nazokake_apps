@@ -316,46 +316,51 @@ def build_research_others():
             'b_title': b_title, 'b_year': b_year, 'b_res': b_res
         })
         
-    # 2. Tailwind HTMLの生成
-    html_parts = ["<div class='research-others-container space-y-16'>"]
+    # 2. Tailwind HTMLの生成（3階層アコーディオン: Category -> Chapter -> Item）
+    html_parts = ["<div class='research-others-container space-y-6'>"]
     for cat, cat_data in grouped.items():
-        html_parts.append("<section class='category-block'>")
-        html_parts.append(f"<h2 class='text-2xl md:text-3xl font-extrabold text-slate-800 border-b-4 border-emerald-600 pb-3 mb-4'>{html.escape(cat)}</h2>")
+        html_parts.append(f'''
+        <details class="group bg-white rounded-xl border border-emerald-200 shadow-sm overflow-hidden mb-6">
+            <summary class="cursor-pointer p-4 bg-emerald-50 font-bold text-emerald-900 flex justify-between items-center hover:bg-emerald-100 transition">
+                <span class="flex items-center gap-2"><span class="text-xl">🏛️</span> {html.escape(cat)}</span>
+                <span class="text-emerald-500 group-open:rotate-180 transition-transform duration-300">▼</span>
+            </summary>
+            <div class="p-4 space-y-4 bg-emerald-50/30">
+        ''')
         if cat_data['desc']:
-            html_parts.append(f"<p class='text-slate-600 mb-8 leading-relaxed bg-emerald-50/50 p-4 rounded-lg text-sm md:text-base border border-emerald-100'>{html.escape(cat_data['desc']).replace(chr(10), '<br>')}</p>")
-        
+            html_parts.append(f"<p class=\"text-sm text-emerald-800/80 mb-4 px-2\">{html.escape(cat_data['desc']).replace(chr(10), '<br>')}</p>")
+
         for chap, items in cat_data['chapters'].items():
-            html_parts.append("<div class='chapter-block mt-10 ml-0 md:ml-4'>")
-            html_parts.append(f"<h3 class='text-xl font-bold text-slate-700 mb-6 flex items-center gap-2'><span class='text-emerald-500'>■</span> {html.escape(chap)}</h3>")
-            html_parts.append("<div class='grid grid-cols-1 gap-6'>")
-            
+            html_parts.append(f'''
+            <details class="group/chap bg-white rounded-lg border border-slate-200 shadow-sm overflow-hidden">
+                <summary class="cursor-pointer p-3 bg-slate-100 font-bold text-slate-800 flex justify-between items-center hover:bg-slate-200 transition">
+                    <span class="flex items-center gap-2"><span class="text-lg">📖</span> {html.escape(chap)}</span>
+                    <span class="text-slate-400 group-open/chap:rotate-180 transition-transform duration-300">▼</span>
+                </summary>
+                <div class="p-4 grid grid-cols-1 gap-4 bg-slate-50">
+            ''')
+
             for item in items:
                 html_parts.append(f"""
-                <article class='bg-white rounded-xl p-5 md:p-6 shadow-sm border border-slate-200 hover:shadow-md transition-shadow'>
-                    <h4 class='text-lg font-bold text-slate-800 border-b pb-3 mb-4 flex items-center gap-3'>
-                        <span class='text-xs font-mono text-emerald-700 bg-emerald-100 px-2 py-1 rounded'>{html.escape(item['id'])}</span>
-                        <span>{html.escape(item['title'])}</span>
-                    </h4>
-                    <div class='mb-5'>
-                        <h5 class='text-xs font-bold text-slate-400 tracking-wider mb-2 uppercase flex items-center gap-1'>🔬 分析・実験</h5>
-                        <p class='text-slate-700 leading-relaxed text-sm'>{html.escape(item['analysis']).replace(chr(10), '<br>')}</p>
-                    </div>
-                    <div class='mb-5 p-4 bg-amber-50/70 rounded-lg border border-amber-100'>
-                        <h5 class='text-xs font-bold text-amber-700 tracking-wider mb-2 uppercase flex items-center gap-1'>🧩 なぞかけとの関係</h5>
-                        <p class='text-slate-800 leading-relaxed text-sm'>{html.escape(item['relation']).replace(chr(10), '<br>')}</p>
-                    </div>
-                    <div class='bg-slate-50 p-3 rounded-lg text-xs text-slate-500 border border-slate-200 flex flex-col gap-1'>
-                        <div class='font-bold text-slate-600 flex items-center gap-1'>📚 論拠・出典研究</div>
-                        <div class='italic'>『{html.escape(item['b_title'])}』</div>
-                        <div class='flex flex-wrap gap-4 mt-1'>
-                            <span class='bg-white px-2 py-0.5 rounded border border-slate-200'>🗓 {html.escape(item['b_year'])}</span>
-                            <span class='bg-white px-2 py-0.5 rounded border border-slate-200'>👤 {html.escape(item['b_res'])}</span>
+                <details class="group/item bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                    <summary class="cursor-pointer p-4 flex justify-between items-center hover:bg-slate-50 transition">
+                        <h4 class="text-[15px] md:text-base font-bold text-emerald-800 flex items-center gap-2 m-0">
+                            <span class="text-xs font-mono text-emerald-700 bg-emerald-100 px-2 py-1 rounded">{html.escape(item['id'])}</span>
+                            🔬 {html.escape(item['title'])}
+                        </h4>
+                        <span class="text-emerald-400 group-open/item:rotate-180 transition-transform duration-300">▼</span>
+                    </summary>
+                    <div class="p-4 pt-0 border-t border-slate-100 bg-white">
+                        <div class="mb-4 mt-3"><h5 class="text-xs font-bold text-slate-400 mb-1">分析・実験</h5><p class="text-sm text-slate-700 leading-relaxed">{html.escape(item['analysis']).replace(chr(10), '<br>')}</p></div>
+                        <div class="mb-4 p-3 bg-amber-50/70 rounded border border-amber-100"><h5 class="text-xs font-bold text-amber-700 mb-1">なぞかけとの関係</h5><p class="text-sm text-slate-800 leading-relaxed">{html.escape(item['relation']).replace(chr(10), '<br>')}</p></div>
+                        <div class="bg-slate-100 p-3 rounded-lg text-xs text-slate-500 border border-slate-200">
+                            📚 <strong>{html.escape(item['b_title'])}</strong> ({html.escape(item['b_year'])})<br>👤 {html.escape(item['b_res'])}
                         </div>
                     </div>
-                </article>
+                </details>
                 """)
-            html_parts.append("</div></div>")
-        html_parts.append("</section>")
+            html_parts.append("</div></details>")
+        html_parts.append("</div></details>")
     html_parts.append("</div>")
     return "".join(html_parts)
 
