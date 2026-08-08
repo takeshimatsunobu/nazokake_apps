@@ -106,34 +106,70 @@ def build_culture_japan():
     rows = read_csv_skip("031 日本の言葉遊び文化（完成）.csv", skip_lines=1)
     if not rows:
         return "<div class='p-4 text-slate-500'>データがありません。</div>"
-    
-    html_parts = ["<div class='space-y-8'>"]
+
+    # 1. name(文化名)でグループ化。era/descはグループの代表値として最初の行を採用
+    grouped = {}
     for row in rows:
         if len(row) < 11:
             continue
         name, era, desc, actors, bg, atk, def_reply, point, terms, ref, _ = [r.strip() for r in row]
         if not name:
             continue
-        
+
+        if name not in grouped:
+            grouped[name] = {'era': era, 'desc': desc, 'episodes': []}
+        grouped[name]['episodes'].append({
+            'actors': actors, 'bg': bg, 'atk': atk, 'def_reply': def_reply,
+            'point': point, 'terms': terms, 'ref': ref,
+        })
+
+    # 2. Tailwind HTMLの生成（2階層アコーディオン: 文化名 -> 当事者エピソード）
+    html_parts = ["<div class='space-y-6'>"]
+    for name, data in grouped.items():
+        era, desc = data['era'], data['desc']
         html_parts.append(f'''
-        <div class='bg-white rounded-xl p-6 shadow-sm border border-rose-200'>
-            <h3 class='text-xl font-bold text-rose-800 mb-2'>🎌 {html.escape(name)} <span class='text-sm font-normal text-slate-500'>({html.escape(era)})</span></h3>
-            <p class='text-sm text-slate-700 mb-4'>{html.escape(desc)}</p>
-            <div class='grid grid-cols-1 md:grid-cols-2 gap-4 mb-4'>
-                <div class='bg-rose-50 p-3 rounded'>
-                    <h5 class='text-xs font-bold text-rose-700 mb-1'>🗡️ 攻撃 (状況)</h5>
-                    <p class='text-sm'>{html.escape(atk)}</p>
-                </div>
-                <div class='bg-blue-50 p-3 rounded'>
-                    <h5 class='text-xs font-bold text-blue-700 mb-1'>🛡️ 切り返し</h5>
-                    <p class='text-sm'>{html.escape(def_reply)}</p>
-                </div>
-            </div>
-            <div class='bg-amber-50 p-3 rounded text-sm text-slate-800 border border-amber-200'>
-                <span class='font-bold text-amber-700'>評価ポイント:</span> {html.escape(point)}
-            </div>
-        </div>
+        <details class="group bg-white rounded-xl border border-rose-200 shadow-sm overflow-hidden mb-6">
+            <summary class="cursor-pointer p-4 bg-rose-50 font-bold text-rose-900 flex justify-between items-center hover:bg-rose-100 transition">
+                <span class="flex items-center gap-2"><span class="text-xl">🎌</span> {html.escape(name)} <span class="text-sm font-normal text-slate-500">({html.escape(era)})</span></span>
+                <span class="text-rose-500 group-open:rotate-180 transition-transform duration-300">▼</span>
+            </summary>
+            <div class="p-4 space-y-4 bg-rose-50/30">
+                <p class="text-sm text-slate-700 leading-relaxed mb-2">{html.escape(desc)}</p>
+                <div class="space-y-4">
         ''')
+        for ep in data['episodes']:
+            html_parts.append(f'''
+                <details class="group/item bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                    <summary class="cursor-pointer p-3 bg-slate-100 font-bold text-slate-800 flex justify-between items-center hover:bg-slate-200 transition">
+                        <span class="flex items-center gap-2"><span class="text-lg">🎭</span> {html.escape(ep['actors'])}</span>
+                        <span class="text-slate-400 group-open/item:rotate-180 transition-transform duration-300">▼</span>
+                    </summary>
+                    <div class="p-4 pt-0 border-t border-slate-100 bg-white">
+                        <div class="mb-4 mt-3">
+                            <h5 class="text-xs font-bold text-slate-400 mb-1">背景</h5>
+                            <p class="text-sm text-slate-700 leading-relaxed">{html.escape(ep['bg'])}</p>
+                        </div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                            <div class="bg-rose-50 p-3 rounded border border-rose-100">
+                                <h5 class="text-xs font-bold text-rose-700 mb-1">🗡️ 攻撃 (状況)</h5>
+                                <p class="text-sm text-slate-800">{html.escape(ep['atk'])}</p>
+                            </div>
+                            <div class="bg-blue-50 p-3 rounded border border-blue-100">
+                                <h5 class="text-xs font-bold text-blue-700 mb-1">🛡️ 切り返し</h5>
+                                <p class="text-sm text-slate-800">{html.escape(ep['def_reply'])}</p>
+                            </div>
+                        </div>
+                        <div class="bg-amber-50 p-3 rounded text-sm text-slate-800 border border-amber-200 mb-4">
+                            <span class="font-bold text-amber-700">評価ポイント:</span> {html.escape(ep['point'])}
+                        </div>
+                        <div class="bg-slate-100 p-3 rounded-lg text-xs text-slate-500 border border-slate-200">
+                            <span class="font-bold">用語解説:</span> {html.escape(ep['terms'])}<br>
+                            <span class="font-bold">引用元:</span> {html.escape(ep['ref'])}
+                        </div>
+                    </div>
+                </details>
+            ''')
+        html_parts.append("</div></div></details>")
     html_parts.append("</div>")
     return "".join(html_parts)
 
