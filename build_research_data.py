@@ -49,16 +49,17 @@ def build_research_physiology():
     rows = read_csv_skip("021 なぞかけの生理学的な研究(JSON).csv", skip_lines=2)
     if not rows:
         return "<div class='p-4 text-slate-500'>データがありません。</div>"
-    
-    html_parts = ["<div class='space-y-6'>"]
+
+    # cat -> chap -> [article_html, ...] の順序を保ったまま2階層にグループ化
+    grouped = {}
     for row in rows:
         if len(row) < 9:
             continue
         _, cat, chap, title, exp, rel, b_title, b_year, b_res = [r.strip() for r in row]
         if not title:
             continue
-        
-        html_parts.append(f'''
+
+        article = f'''
         <article class='bg-white rounded-xl p-5 shadow-sm border border-slate-200'>
             <h4 class='text-lg font-bold text-emerald-800 mb-3'>🧠 {html.escape(title)}</h4>
             <div class='mb-4'><h5 class='text-xs font-bold text-slate-400 mb-1'>実験・結果</h5><p class='text-sm text-slate-700'>{html.escape(exp)}</p></div>
@@ -67,7 +68,25 @@ def build_research_physiology():
                 📚 {html.escape(b_title)} ({html.escape(b_year)}) - {html.escape(b_res)}
             </div>
         </article>
+        '''
+        grouped.setdefault(cat, {}).setdefault(chap, []).append(article)
+
+    html_parts = ["<div class='space-y-6'>"]
+    for cat, chapters in grouped.items():
+        html_parts.append(f'''
+        <details class="group bg-white rounded-xl border border-emerald-200 shadow-sm overflow-hidden mb-6">
+            <summary class="cursor-pointer p-4 bg-emerald-50 font-bold text-emerald-900 flex justify-between items-center hover:bg-emerald-100 transition">{html.escape(cat)} <span class="group-open:rotate-180 transition-transform">▼</span></summary>
+            <div class="p-4 space-y-4">
         ''')
+        for chap, articles in chapters.items():
+            html_parts.append(f'''
+            <details class="group/chap bg-slate-50 rounded-lg border border-slate-200 overflow-hidden">
+                <summary class="cursor-pointer p-3 bg-slate-100 font-bold text-slate-800 flex justify-between items-center hover:bg-slate-200 transition">{html.escape(chap)} <span class="group-open/chap:rotate-180 transition-transform">▼</span></summary>
+                <div class="p-4 grid grid-cols-1 gap-4">
+            ''')
+            html_parts.extend(articles)
+            html_parts.append("</div></details>")
+        html_parts.append("</div></details>")
     html_parts.append("</div>")
     return "".join(html_parts)
 
@@ -106,6 +125,14 @@ def build_culture_japan():
     html_parts.append("</div>")
     return "".join(html_parts)
 
+def _unwrap_details(block):
+    # フロント側でも <details> によるアコーディオンを描画するため、
+    # 抽出ブロックに残った <details>/<summary> を取り除き二重ネストを防ぐ
+    block = re.sub(r'<summary>.*?</summary>', '', block, flags=re.DOTALL)
+    block = re.sub(r'<details[^>]*>', '', block)
+    block = re.sub(r'</details>', '', block)
+    return block.strip()
+
 def extract_html_block(filename, target_id):
     path = REPO_ROOT / "apps" / "evaluator" / "frontend" / "public" / "research_data" / filename
     if not path.exists():
@@ -116,18 +143,18 @@ def extract_html_block(filename, target_id):
         # <details ...> ... </details> を大雑把に抽出し、中身に target_id の文字列（日本語タイトルなど）が含まれるものを探す
         # 今回は簡易的に、抽出先のマッピングを決め打ちします
         blocks = re.findall(r'(<details.*?</details>)', content, re.DOTALL)
-        
+
         if target_id == "basic-form" and len(blocks) > 0:
-            return blocks[0]
+            return _unwrap_details(blocks[0])
         if target_id == "academic-definition" and len(blocks) > 1:
-            return blocks[1]
+            return _unwrap_details(blocks[1])
         if target_id == "dictionary-comparison" and len(blocks) > 2:
-            return blocks[2]
-        
+            return _unwrap_details(blocks[2])
+
         if target_id == "evolution-academic" and len(blocks) > 0:
-            return blocks[0]
+            return _unwrap_details(blocks[0])
         if target_id == "evolution-comic" and len(blocks) > 1:
-            return blocks[1]
+            return _unwrap_details(blocks[1])
     except Exception:
         pass
     return None
