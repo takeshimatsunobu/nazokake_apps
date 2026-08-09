@@ -15,12 +15,14 @@ from models.schemas import (
     DlqListResponse,
     ErrorEnvelope,
     HumanActionRequest,
+    PendingListResponse,
 )
 from nazokake_core.database import (
     async_discard_dlq_item,
     async_get_audit_logs,
     async_get_dlq_items,
     async_get_item,
+    async_get_pending_items,
     async_retry_dlq_item,
     async_upsert_item,
 )
@@ -157,6 +159,16 @@ async def apply_dlq_action(
         raise HTTPException(status_code=404, detail="対象のDLQアイテムが見つかりません")
 
     return {"status": "success", "doc_id": req.doc_id, "action": req.action}
+
+
+@router.get("/pending", response_model=Union[PendingListResponse, ErrorEnvelope])
+@handle_exceptions
+async def get_pending_items(admin_token: dict = Depends(verify_admin_token)):
+    """レビュー待ち(gemini_status/elyza_statusのいずれかが"pending")のなぞかけを
+    作成日時降順で最大50件返す(フルスキャン防止のための上限はDB層でハードコード済み)。
+    """
+    items = await async_get_pending_items()
+    return {"items": items}
 
 
 @router.get("/audit_logs", response_model=Union[AuditLogListResponse, ErrorEnvelope])

@@ -548,34 +548,145 @@ export async function deployToProduction() {
     }
 }
 
-// 「アプリ利用状況」「承認待ちデータ」は、対応するバックエンドAPI(旧
-// /admin/pending, /admin/config, /admin/metrics)がDDD再編で091にてフロント
-// ロジックごと一括パージされたまま再実装されていない(main.pyへ復旧・登録した
-// 現行ルーター群(admin/admin_costs/admin_feedbacks/board/generate/metrics等)にも
-// 「一覧を返す」同等のエンドポイントは存在しない)。データが無いままfetchを
-// 試み続けて「読み込んでいます...」に恒久的に固まるよりは、未対応であることを
-// 明示するフォールバック表示に倒す(バックエンド側でAPIが新設され次第、
-// showUnavailable()の呼び出しをfetchベースのload関数へ置き換える)。
+// アプリ利用状況(テレメトリ)。バックエンド(metrics.py get_metrics_summary)は
+// GET /metrics/summary で、直近_SUMMARY_SAMPLE_LIMIT件のtelemetry_logsから
+// インメモリ集計したPV/UU/平均滞在時間/イベント別件数を返す({pv, uu,
+// avg_duration_sec, events: [{event_name, count}], sampled_events, note})。
+// 全期間の厳密な値ではなく直近サンプルからの近似値のため、noteをそのまま表示する。
 /**
- * @param {string} containerId
- * @param {string} label
+ * @param {HTMLElement} container
+ * @param {Array<{event_name: string, count: number}>} events
  */
-function showUnavailable(containerId, label) {
-    const container = document.getElementById(containerId);
-    if (!container) return;
-    container.innerHTML = `<div class="text-center py-10 text-gray-400 text-sm">⚠️ ${label}: 対応するバックエンドAPIが未実装のため表示できません</div>`;
+function _renderAppUsageEvents(container, events) {
+    while (container.firstChild) container.removeChild(container.firstChild);
+    if (!events.length) {
+        const p = document.createElement('p');
+        p.className = 'text-gray-400 text-center py-2';
+        p.textContent = 'イベントはまだありません';
+        container.appendChild(p);
+        return;
+    }
+    for (const ev of events) {
+        const row = document.createElement('div');
+        row.className = 'flex justify-between items-center border-b border-gray-100 pb-1.5';
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'text-gray-600';
+        // 【絶対制約】event_nameはPOST /metrics/logへ未認証で送信可能なため
+        // (app.js等からのテレメトリ計測は匿名ユーザーからも呼ばれる)、信頼できない
+        // 入力として扱いtextContentのみで注入する(innerHTML等によるXSSの経路を
+        // 構造的に排除する)。
+        nameSpan.textContent = ev.event_name;
+        const countSpan = document.createElement('span');
+        countSpan.className = 'font-bold text-gray-800';
+        countSpan.textContent = String(ev.count);
+        row.appendChild(nameSpan);
+        row.appendChild(countSpan);
+        container.appendChild(row);
+    }
 }
 
-// 管理画面初期化フック。RLHFレビュー(/admin/feedbacks)は main.py への復旧登録に
-// 伴い読込を再実装した。「アプリ利用状況」「承認待ちデータ」は対応APIが
-// 依然として存在しないため showUnavailable() でフォールバックする(上記コメント参照)。
+async function loadAppUsage() {
+    const pvEl = document.getElementById('adm-pv');
+    const uuEl = document.getElementById('adm-uu');
+    const durEl = document.getElementById('adm-dur');
+    const eventsContainer = document.getElementById('adm-events-container');
+    try {
+        const data = await authFetch(`${API_BASE}/metrics/summary`);
+        if (pvEl) pvEl.textContent = String(data.pv ?? 0);
+        if (uuEl) uuEl.textContent = String(data.uu ?? 0);
+        if (durEl) {
+            while (durEl.firstChild) durEl.removeChild(durEl.firstChild);
+            durEl.appendChild(document.createTextNode(String(Math.round(data.avg_duration_sec || 0))));
+            const unit = document.createElement('span');
+            unit.className = 'text-xs font-normal text-gray-500';
+            unit.textContent = '秒';
+            durEl.appendChild(unit);
+        }
+        if (eventsContainer) {
+            _renderAppUsageEvents(eventsContainer, data.events || []);
+            if (data.note) {
+                const note = document.createElement('p');
+                note.className = 'text-[10px] text-gray-400 text-right pt-1';
+                note.textContent = data.note;
+                eventsContainer.appendChild(note);
+            }
+        }
+    } catch (e) {
+        if (pvEl) pvEl.textContent = '—';
+        if (uuEl) uuEl.textContent = '—';
+        if (durEl) durEl.textContent = '—';
+        if (eventsContainer) eventsContainer.innerHTML = '<p class="text-red-500 text-center py-2 text-sm">データ取得失敗</p>';
+        showToast("アプリ利用状況の取得に失敗しました", "warning");
+    }
+}
+
+// 承認待ちデータ。バックエンド(admin.py get_pending_items)は GET /admin/pending で
+// gemini_status/elyza_statusのいずれかが"pending"のなぞかけを作成日時降順で
+// 最大50件返す({items: [...]})。
+// 【既知の制約】承認/棄却/殿堂入り等の操作(modelAction、data-action="modelAction")
+// は、main_admin.jsのクリック委譲ディスパッチ(CLICK_ACTIONS)に未登録のため現状
+// クリックしても発火しない(DLQのretry/discardボタンと同じ既存の制約であり、この
+// パネルに起因するものではない)。本対応はまず一覧の可視化のみを復旧範囲とし、
+// 操作ボタンは意図的に含めない。
+/**
+ * @returns {Promise<{items: Array<Record<string, any>>}>}
+ */
+async function fetchPendingItems() {
+    return authFetch(`${API_BASE}/admin/pending`);
+}
+
+/**
+ * @param {Record<string, any>} item
+ * @returns {string}
+ */
+function renderPendingItem(item) {
+    const odai = (item.odai || '').replace(/</g, '&lt;');
+    const geminiText = (item.nazokake_text || '(未生成)').replace(/</g, '&lt;');
+    const elyzaText = (item.nazokake_text_llmjp || '(未生成)').replace(/</g, '&lt;');
+    const gScore = item.s_total != null ? ` / ${item.s_total}点` : '';
+    const eScore = item.s_total_llmjp != null ? ` / ${item.s_total_llmjp}点` : '';
+    const createdAt = item.created_at ? _formatMlopsTimestamp(item.created_at) : '';
+    return `
+        <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
+            <p class="font-bold text-gray-800">${odai}</p>
+            <p class="text-xs text-gray-400 mt-1">doc_id: ${item.doc_id}${createdAt ? ` / ${createdAt}` : ''}</p>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
+                <div class="bg-blue-50/40 border border-blue-100 rounded p-3">
+                    <p class="text-xs font-bold text-blue-700 mb-1">Gemini (${item.gemini_status || 'n/a'}${gScore})</p>
+                    <p class="text-sm text-gray-700 whitespace-pre-wrap break-all">${geminiText}</p>
+                </div>
+                <div class="bg-emerald-50/40 border border-emerald-100 rounded p-3">
+                    <p class="text-xs font-bold text-emerald-700 mb-1">ELYZA (${item.elyza_status || 'n/a'}${eScore})</p>
+                    <p class="text-sm text-gray-700 whitespace-pre-wrap break-all">${elyzaText}</p>
+                </div>
+            </div>
+        </div>`;
+}
+
+async function loadPendingItems() {
+    const container = document.getElementById('pending-container');
+    if (!container) return;
+    try {
+        const res = await fetchPendingItems();
+        const items = res.items || [];
+        container.innerHTML = items.length
+            ? items.map(renderPendingItem).join('')
+            : '<div class="text-center py-10 text-gray-400 text-sm">承認待ちのデータはありません</div>';
+    } catch (e) {
+        container.innerHTML = '<div class="text-center py-10 text-red-500 text-sm">データ取得失敗</div>';
+        showToast("承認待ちデータの取得に失敗しました", "warning");
+    }
+}
+
+// 管理画面初期化フック。091のDDD再編でパージされた「アプリ利用状況」
+// 「承認待ちデータ」は、対応するバックエンドAPI(/api/metrics/summary,
+// /api/admin/pending)をmain.py/metrics.py/admin.pyへ新設した上で読込を再実装した。
 async function initAdmin() {
     document.getElementById('dlq-reload-btn')?.addEventListener('click', () => loadDlqItems());
     document.getElementById('audit-log-reload-btn')?.addEventListener('click', () => loadAuditLogs());
     document.getElementById('model-feedback-reload-btn')?.addEventListener('click', () => loadModelFeedback());
-
-    showUnavailable('adm-events-container', 'アプリ利用状況');
-    showUnavailable('pending-container', '承認待ちデータ');
+    document.getElementById('app-usage-reload-btn')?.addEventListener('click', () => loadAppUsage());
+    document.getElementById('pending-reload-btn')?.addEventListener('click', () => loadPendingItems());
 
     // 各読込は独立した非同期処理のため Promise.allSettled で実行する。
     // load*()内部は個別にtry/catchしフォールバック表示するため通常rejectしないが、
@@ -588,5 +699,7 @@ async function initAdmin() {
         loadMlopsMetrics(),
         loadAuditLogs(),
         loadModelFeedback(),
+        loadAppUsage(),
+        loadPendingItems(),
     ]);
 }

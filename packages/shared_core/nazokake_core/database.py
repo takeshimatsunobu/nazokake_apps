@@ -744,7 +744,6 @@ async def async_bulk_restore_items_if_missing(
         return 0, 0
 
     columns = [c.name for c in NazokakeItemORM.__table__.columns]
-    invalid_docs = []
     filtered_rows = []
     for payload in rows:
         if not payload.get("doc_id") or not payload.get("odai"):
@@ -809,6 +808,35 @@ async def async_get_audit_logs(limit: int = 100) -> list[dict[str, Any]]:
             {c.name: getattr(row, c.name) for c in AuditLogORM.__table__.columns}
             for row in rows
         ]
+
+
+# 管理コックピット「承認待ちデータ」パネル向けの一覧取得件数上限。フルスキャン
+# 防止のためハードコードする(呼び出し元からの上書きは許可しない)。
+_PENDING_ITEMS_LIMIT = 50
+
+
+async def async_get_pending_items() -> list[dict[str, Any]]:
+    """レビュー待ち(gemini_status/elyza_statusのいずれかが"pending")の行を
+    created_at降順で最大_PENDING_ITEMS_LIMIT件取得する。
+
+    新規生成されたなぞかけはmodels.NazokakeItemのデフォルト値によりgemini_status
+    が必ず実際の"pending"文字列を持つ(admin.py._resolve_statuses()のような、
+    NULL値からの推定を要する旧データ向けフォールバックはここでは行わない。
+    レビューキューは直近の生成物を対象とすれば十分なため)。
+    """
+    async with get_session() as session:
+        pending_filter = or_(
+            NazokakeItemORM.gemini_status == "pending",
+            NazokakeItemORM.elyza_status == "pending",
+        )
+        stmt = (
+            select(NazokakeItemORM)
+            .where(pending_filter)
+            .order_by(NazokakeItemORM.created_at.desc())
+            .limit(_PENDING_ITEMS_LIMIT)
+        )
+        rows = (await session.execute(stmt)).scalars().all()
+        return [_row_to_ui_dict(row) for row in rows]
 
 
 async def async_retry_dlq_item(

@@ -173,6 +173,26 @@ class DlqActionResponse(BaseModel):
     action: Literal["retry", "discard"]
 
 
+# --- 承認待ちデータ(管理コックピット「承認待ちデータ」パネル): gemini_status/
+# elyza_statusのいずれかが"pending"のなぞかけを、キュレーション対象として一覧表示
+# するための契約。result/scores等の重いJSON列はレスポンスサイズ抑制のため含めず、
+# レビュー判断に必要な最小限のフィールドのみを公開する。
+class PendingItem(BaseModel):
+    doc_id: str
+    odai: str
+    gemini_status: Optional[str] = None
+    elyza_status: Optional[str] = None
+    nazokake_text: Optional[str] = None
+    nazokake_text_llmjp: Optional[str] = None
+    s_total: Optional[float] = None
+    s_total_llmjp: Optional[float] = None
+    created_at: Optional[str] = None
+
+
+class PendingListResponse(BaseModel):
+    items: List[PendingItem]
+
+
 # --- 監査証跡(Audit Trail): DLQ操作等の破壊的操作をappend-onlyで記録したログの
 # 読み取り専用ビュー。DlqActionと同一トランザクションで書き込まれる(database.py側)。
 class AuditLogItem(BaseModel):
