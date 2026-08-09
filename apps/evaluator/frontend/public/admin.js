@@ -433,6 +433,60 @@ async function loadAuditLogs() {
     }
 }
 
+// RLHFレビュー(モデル別 人間評価＋コメント)。
+// バックエンド(admin_feedbacks.py get_admin_feedbacks)は GET /admin/feedbacks で
+// user_feedbacks コレクションを created_at 降順で返す(配列を直接返す。
+// {items: [...]}のようなラップは無い点がDLQ/監査証跡と異なる)。
+/**
+ * @returns {Promise<Array<{doc_id: string, user_uid: string, overall_score: number, comment: string, model_target: 'gemini'|'elyza', created_at: string}>>}
+ */
+async function fetchModelFeedbacks() {
+    return authFetch(`${API_BASE}/admin/feedbacks`);
+}
+
+/**
+ * @param {{doc_id?: string, overall_score?: number, comment?: string, model_target?: string, created_at?: string}} item
+ * @returns {string}
+ */
+function renderModelFeedbackItem(item) {
+    const isGemini = item.model_target === 'gemini';
+    const modelLabel = isGemini ? 'Gemini' : 'ELYZA';
+    const modelBadgeClass = isGemini
+        ? 'bg-blue-50 text-blue-700 border-blue-200'
+        : 'bg-emerald-50 text-emerald-700 border-emerald-200';
+    const score = item.overall_score != null ? `★${item.overall_score}/5` : '(評価なし)';
+    const comment = (item.comment || '(コメントなし)').replace(/</g, '&lt;');
+    const createdAt = item.created_at ? _formatMlopsTimestamp(item.created_at) : '';
+    return `
+        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <div class="flex justify-between items-start gap-4">
+                <div class="min-w-0">
+                    <div class="flex items-center gap-2 mb-1">
+                        <span class="text-xs font-bold px-2 py-0.5 rounded border ${modelBadgeClass}">${modelLabel}</span>
+                        <span class="text-xs font-bold text-[#C5B358]">${score}</span>
+                    </div>
+                    <p class="text-xs text-gray-500">doc_id: ${item.doc_id || '(不明)'}</p>
+                    <p class="text-sm text-gray-800 mt-2 whitespace-pre-wrap break-all">${comment}</p>
+                </div>
+                <p class="text-xs text-gray-400 shrink-0">${createdAt}</p>
+            </div>
+        </div>`;
+}
+
+async function loadModelFeedback() {
+    const container = document.getElementById('model-feedback-container');
+    if (!container) return;
+    try {
+        const items = await fetchModelFeedbacks();
+        container.innerHTML = Array.isArray(items) && items.length
+            ? items.map(renderModelFeedbackItem).join('')
+            : '<div class="text-center py-10 text-gray-400 text-sm">フィードバックはまだありません</div>';
+    } catch (e) {
+        container.innerHTML = '<div class="text-center py-10 text-red-500 text-sm">読み込みに失敗しました</div>';
+        showToast("RLHFレビューの取得に失敗しました", "warning");
+    }
+}
+
 // 【instructions/172: 1-Click Deploy】POST /api/admin/deploy がtools/deploy/
 // run_verification_server.ps1をバックグラウンドで起動する。ボタン押下後、
 // deploy.log(バックエンドが標準出力/標準エラー出力を追記するプレーンテキスト)を
@@ -494,16 +548,45 @@ export async function deployToProduction() {
     }
 }
 
-// 管理画面初期化フック。承認待ちリスト/設定/メトリクス/RLHFレビュー表の各読込は、
-// 対応するバックエンドAPI(/admin/pending, /admin/config, /admin/metrics,
-// /admin/model_feedback)がDDD再編でLocal-First化された際に廃止されたため、
-// 該当のフロントエンドロジックと合わせて一括パージ済み(091)。
-// 該当APIが将来的にローカルDB仕様で再実装された場合はここに読込呼び出しを追加する。
+// 「アプリ利用状況」「承認待ちデータ」は、対応するバックエンドAPI(旧
+// /admin/pending, /admin/config, /admin/metrics)がDDD再編で091にてフロント
+// ロジックごと一括パージされたまま再実装されていない(main.pyへ復旧・登録した
+// 現行ルーター群(admin/admin_costs/admin_feedbacks/board/generate/metrics等)にも
+// 「一覧を返す」同等のエンドポイントは存在しない)。データが無いままfetchを
+// 試み続けて「読み込んでいます...」に恒久的に固まるよりは、未対応であることを
+// 明示するフォールバック表示に倒す(バックエンド側でAPIが新設され次第、
+// showUnavailable()の呼び出しをfetchベースのload関数へ置き換える)。
+/**
+ * @param {string} containerId
+ * @param {string} label
+ */
+function showUnavailable(containerId, label) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = `<div class="text-center py-10 text-gray-400 text-sm">⚠️ ${label}: 対応するバックエンドAPIが未実装のため表示できません</div>`;
+}
+
+// 管理画面初期化フック。RLHFレビュー(/admin/feedbacks)は main.py への復旧登録に
+// 伴い読込を再実装した。「アプリ利用状況」「承認待ちデータ」は対応APIが
+// 依然として存在しないため showUnavailable() でフォールバックする(上記コメント参照)。
 async function initAdmin() {
     document.getElementById('dlq-reload-btn')?.addEventListener('click', () => loadDlqItems());
     document.getElementById('audit-log-reload-btn')?.addEventListener('click', () => loadAuditLogs());
-    await loadDlqItems();
-    await loadDaemonHeartbeat();
-    await loadMlopsMetrics();
-    await loadAuditLogs();
+    document.getElementById('model-feedback-reload-btn')?.addEventListener('click', () => loadModelFeedback());
+
+    showUnavailable('adm-events-container', 'アプリ利用状況');
+    showUnavailable('pending-container', '承認待ちデータ');
+
+    // 各読込は独立した非同期処理のため Promise.allSettled で実行する。
+    // load*()内部は個別にtry/catchしフォールバック表示するため通常rejectしないが、
+    // 想定外の例外が発生した場合でも他セクションの描画を妨げないための二重の
+    // 安全策として allSettled を用いる(直列await + 未catch例外だと、そこで
+    // 後続の読込ごと止まってしまうため)。
+    await Promise.allSettled([
+        loadDlqItems(),
+        loadDaemonHeartbeat(),
+        loadMlopsMetrics(),
+        loadAuditLogs(),
+        loadModelFeedback(),
+    ]);
 }
