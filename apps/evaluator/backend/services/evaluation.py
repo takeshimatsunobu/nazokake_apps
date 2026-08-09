@@ -92,16 +92,6 @@ EVAL_RUBRIC_TEMPLATE = """あなたは「謎掛け学術振興会」の主席分
 5. 各軸の所見（axis_comments）は、その軸の定義に照らした採点理由を1〜2文で簡潔に述べてください。
 6. 総評（overall）は、作品全体の長所と短所、最も光る軸と弱い軸に言及する学術的講評。"""
 
-# Phase 4 Lv.2: フィードバック乖離分析(feedback_analyzer.generate_correction_prompt)から
-# 動的に更新される自己評価の補正指示。既定は空文字(既存挙動を変えない)。
-# _DYNAMIC_CORRECTION_PROMPT = "" # SRE: Removed stateful memory
-
-
-def update_dynamic_correction_prompt(new_prompt: str) -> None:
-    """_DYNAMIC_CORRECTION_PROMPT を外部(Webhookエンドポイント等)から安全に更新する。"""
-    global _DYNAMIC_CORRECTION_PROMPT
-    _DYNAMIC_CORRECTION_PROMPT = new_prompt
-
 
 async def _log_evaluation_cost(
     service_type: str,
@@ -131,8 +121,10 @@ async def run_evaluation(odai: str, nazokake_text: str) -> dict:
     """
     model_name = os.environ.get("EVALUATOR_MODEL_NAME", "gemini-3.5-flash")
     prompt = f"{EVAL_RUBRIC_TEMPLATE}\n\n【評価対象】\nお題: {odai}\nなぞかけ全文:\n{nazokake_text}"
-    if _DYNAMIC_CORRECTION_PROMPT:
-        prompt += f"\n\n{_DYNAMIC_CORRECTION_PROMPT}"
+    # SRE: 動的プロンプトをDBから取得するステートレスな方法に切り替え
+    correction_prompt = await get_dynamic_correction_prompt()
+    if correction_prompt:
+        prompt += f"\n\n{correction_prompt}"
 
     def _call():
         client = genai.Client(api_key=get_gemini_api_key())

@@ -148,12 +148,13 @@ async def progressive_generate(db, doc_id: str, odai: str, pair_id: str):
             )
             return True
         except Exception as e:
+            logger.exception(f"[{doc_id}] Geminiパスで致命的エラー発生: {e}")
             await async_upsert_item(
                 {
                     "doc_id": doc_id,
                     "status": "error",
                     "eval_status": "error",
-                    "message": f"即時生成に失敗: {e}",
+                    "message": "システム内部で予期せぬエラーが発生しました",
                 }
             )
             return False
@@ -211,12 +212,12 @@ async def progressive_generate(db, doc_id: str, odai: str, pair_id: str):
                 }
             )
         except Exception as e:
-            logger.exception(f"⚠️ おまけ(ELYZA)生成/評価に失敗: {e}")
+            logger.exception(f"[{doc_id}] ELYZAパスで致命的エラー発生: {e}")
             await async_upsert_item(
                 {
                     "doc_id": doc_id,
                     "llmjp_status": "failed",
-                    "message": f"ELYZAお休み理由: {e}",
+                    "message": "おまけ生成中にエラーが発生しました",
                 }
             )
 
@@ -242,7 +243,7 @@ async def _guarded_progressive(db, doc_id: str, odai: str, pair_id: str):
                     "doc_id": doc_id,
                     "status": "error",
                     "eval_status": "error",
-                    "message": str(e),
+                    "message": "システム内部で予期せぬエラーが発生しました",
                 }
             )
         except Exception as db_e:

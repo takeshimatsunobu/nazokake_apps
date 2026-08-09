@@ -23,6 +23,7 @@ from loguru import logger
 
 from nazokake_core.env_config import get_gemini_api_key
 
+from .evaluation import get_dynamic_correction_prompt
 from .output_parser import _extract_json_dict, _valid_nazokake
 
 # MLOps(tools/mlops_pipeline_nazo.py / tools/mlops_pipeline_agent.py)とVRAM(8GB)を
@@ -311,7 +312,15 @@ async def _build_gen_prompts(odai: str):
         + "\n→ 単なる「整う」のダジャレに留めず、『正しい状態にリセットされる価値』という本質的共通点まで"
         "踏み込んでいる点が高評価のポイント。\n"
         + _sample_fewshot_block()
-        + "\n必ず以下のフラットなJSONフォーマット【のみ】で出力してください"
+    )
+
+    # SRE: 動的プロンプトをDBから取得するステートレスな方法に切り替え
+    correction_prompt = await get_dynamic_correction_prompt()
+    if correction_prompt:
+        sys_prompt += f"\n\n{correction_prompt}"
+
+    sys_prompt += (
+        "\n必ず以下のフラットなJSONフォーマット【のみ】で出力してください"
         "（入れ子は禁止。値は例ではなく、お題に対して実際に考えた内容を書く）:\n"
         + _GEN_JSON_TEMPLATE
         + "\n\n※警告（厳守）: 挨拶・説明・前置き・Markdown(```)は一切不要。出力の先頭文字は必ず `{` とし、"
@@ -319,6 +328,7 @@ async def _build_gen_prompts(odai: str):
         '文字列は必ず半角ダブルクオート " で囲む（「」『』 等の日本語括弧は使わない）。'
         "配列やオブジェクトの要素に `=`（イコール）を使わず、必ず JSON の正しい構文で記述すること。"
     )
+
     user_prompt = f"お題「{odai}」でなぞかけを作成し、上記フラットなJSONで出力。"
     return sys_prompt, user_prompt, dyn_temp
 
