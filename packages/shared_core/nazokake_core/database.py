@@ -1310,7 +1310,6 @@ async def async_record_pipeline_outcome_event(
 
 # --- SRE FinOps Patch ---
 # Cloud Loggingのログ破産（DEBUG垂れ流し）を防ぐため、SQLAlchemyのログをINFOへ強制適正化
-import logging
 
 logging.getLogger("sqlalchemy.engine").setLevel(logging.INFO)
 logging.getLogger("sqlalchemy.pool").setLevel(logging.INFO)

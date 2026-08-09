@@ -1,0 +1,11 @@
+【最優先特命タスク】frontend/public/research.html の White Screen of Death (画面真っ白) の修復
+
+今回の障害の震源地はフロントエンドにあります。Phase 1 で検出されたバックエンドの静的解析エラー(error_log)は無視してください。
+現在、過去のパッチ適用の副作用により、`frontend/public/research.html` 内に「未終端のHTMLコメント (<!--)」または「未終端の <script> タグ」が残留しており、DOMツリー全体を飲み込んで画面を真っ白にしています。（コンソールにSyntaxErrorすら出ない状態です）
+
+【あなたのミッション】
+1. `read_file_section` ツールを用いて `frontend/public/research.html` の中身（特に <script> や <!-- が含まれる箇所、またはファイルの末尾）を自律調査してください。
+2. どこでタグやコメントが未終端になっているか（開いたまま閉じられていないか）を特定してください。
+3. 特定後、`submit_aider_plan` ツールを用いて Aider への修正指示を提出してください。
+   - `file_path`: "frontend/public/research.html"
+   - `instruction`: "HTMLの構文崩壊を直すため、未終端となっているコメント(<!--)やscriptタグを正しく閉じるか、不要な残骸であれば削除して、DOMツリーが正常に描画されるように修復してください。"

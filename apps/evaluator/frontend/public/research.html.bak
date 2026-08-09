@@ -1,0 +1,414 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>なぞかけ研究所 - Nazo-Agent</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <style>
+        /* 和風スチームパンク・テーマカラー（本番SSoTの継承） */
+        :root {
+            --color-enji: #902A19; /* 臙脂色 */
+            --color-kogane: #C5B358; /* 黄金色 */
+            --color-wakakusa: #5B8124; /* 若草色 */
+            --color-bg: #Fdfbf7;
+        }
+        body { font-family: "Helvetica Neue", Arial, "Hiragino Kaku Gothic ProN", "Hiragino Sans", Meiryo, sans-serif; background-color: #f3f4f6; }
+        .bg-enji { background-color: var(--color-enji); }
+        .text-enji { color: var(--color-enji); }
+        .border-enji { border-color: var(--color-enji); }
+        .bg-kogane { background-color: var(--color-kogane); }
+        .text-kogane { color: var(--color-kogane); }
+        .bg-wakakusa { background-color: var(--color-wakakusa); }
+        .text-wakakusa { color: var(--color-wakakusa); }
+
+        /* スムーズなアコーディオンアニメーション */
+        details > summary { list-style: none; outline: none; }
+        details > summary::-webkit-details-marker { display: none; }
+        details[open] summary ~ * { animation: slideDown 0.3s ease-in-out; }
+        @keyframes slideDown {
+            0% { opacity: 0; transform: translateY(-10px); }
+            100% { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Markdown(marked.js)出力の最低限の可読性スタイル */
+        .md-content h1, .md-content h2, .md-content h3 {
+            font-weight: bold; color: #1f2937; margin-top: 1.5em; margin-bottom: 0.75em; border-bottom: 2px solid rgba(197, 179, 88, 0.3); padding-bottom: 0.25em;
+        }
+        .md-content h1 { font-size: 1.5rem; color: var(--color-enji); }
+        .md-content h2 { font-size: 1.25rem; }
+        .md-content p { margin-bottom: 1em; line-height: 1.8; color: #374151; }
+        .md-content ul, .md-content ol { padding-left: 1.5rem; margin-bottom: 1em; color: #374151; }
+        .md-content li { margin-bottom: 0.5em; }
+        .md-content code { background: #f3f4f6; padding: 0.2em 0.4em; border-radius: 0.25em; font-size: 0.85em; font-family: monospace; border: 1px solid #e5e7eb; }
+        .md-content blockquote { border-left: 4px solid var(--color-kogane); padding-left: 1rem; margin-left: 0; color: #6b7280; font-style: italic; }
+        .md-content a { color: var(--color-wakakusa); text-decoration: underline; font-weight: 500; }
+
+        /* カスタムスクロールバー（PCサイドバー用） */
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: var(--color-kogane); border-radius: 3px; }
+
+        /* サイドバーのアクティブタブ */
+        .nav-btn.active {
+            background-color: rgba(197, 179, 88, 0.15);
+            border-right: 4px solid var(--color-enji);
+            color: var(--color-enji);
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body class="h-[100dvh] flex flex-col overflow-hidden text-gray-800">
+
+    <!-- ヘッダー (トップページと統一された世界観) -->
+    <header class="shrink-0 bg-gradient-to-r from-[#2C3539] to-[#1a1f22] text-[#F9F6EA] shadow-lg sticky top-0 z-50 border-b-4 border-[#C5B358]">
+        <div class="flex items-center justify-between px-3 py-3 sm:py-4 max-w-7xl mx-auto">
+            <div class="flex items-center gap-3">
+                <!-- モバイル用ハンバーガーメニュー -->
+                <button id="mobile-menu-btn" class="md:hidden p-1 text-[#C5B358] hover:bg-white/10 rounded transition-colors focus:outline-none">
+                    <svg class="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path></svg>
+                </button>
+                <h1 class="font-black tracking-widest flex flex-col items-start shrink overflow-hidden" style="font-family: 'Noto Serif JP', serif;">
+                    <span class="text-lg sm:text-2xl truncate w-full text-transparent bg-clip-text bg-gradient-to-r from-[#C5B358] to-[#e6d587] drop-shadow-sm">
+                        ⚗️ なぞかけ研究所
+                    </span>
+                </h1>
+            </div>
+            <a href="index.html" class="flex items-center px-3 py-1.5 rounded border border-[#C5B358] text-[#C5B358] hover:bg-[#C5B358]/10 transition-all text-xs sm:text-sm font-bold shadow-[0_0_10px_rgba(197,179,88,0.2)]">
+                🏠 本殿へ戻る
+            </a>
+        </div>
+    </header>
+
+    <!-- メインレイアウト -->
+    <div class="flex flex-1 overflow-hidden relative bg-[var(--color-bg)]">
+        
+        <!-- モバイル用オーバーレイ -->
+        <div id="sidebar-overlay" class="fixed inset-0 bg-black/50 z-30 hidden md:hidden transition-opacity"></div>
+
+        <!-- サイドバー（目次） -->
+        <aside id="sidebar" class="absolute inset-y-0 left-0 transform -translate-x-full md:relative md:translate-x-0 z-40 w-72 bg-white border-r border-[#C5B358]/30 shadow-2xl md:shadow-none transition-transform duration-300 ease-in-out flex flex-col shrink-0">
+            <div class="p-4 border-b border-gray-100 bg-[#FAF8F5]">
+                <h2 class="font-bold text-enji flex items-center gap-2 text-sm tracking-widest">
+                    研究目録 (Index)
+                </h2>
+            </div>
+            <nav class="flex-1 overflow-y-auto custom-scrollbar p-3 pb-20">
+                <!-- 既存データタブ群（ご要望のフラット配置） -->
+                <div class="mb-6">
+                    <h3 class="text-xs font-black text-gray-400 tracking-widest mb-2 px-3 border-l-2 border-[#C5B358]">既存の研究データ</h3>
+                    <ul class="space-y-1">
+                        <li><button onclick="switchTab('definition', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">📜 定義</button></li>
+                        <li><button onclick="switchTab('culture', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">🌸 文化</button></li>
+                        <li><button onclick="switchTab('articles', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">📚 動的記事(API)</button></li>
+                    </ul>
+                </div>
+
+                <!-- 新規テーマ構造（ご要望のフラット配置） -->
+                <div class="mb-6">
+                    <h3 class="text-xs font-black text-gray-400 tracking-widest mb-2 px-3 border-l-2 border-[#C5B358]">なぞかけ基礎研究</h3>
+                    <ul class="space-y-1">
+                        <li><button onclick="switchTab('new-base-1', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">なぞかけと生理現象</button></li>
+                        <li><button onclick="switchTab('new-base-2', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">なぞかけその他の研究の現状</button></li>
+                    </ul>
+                </div>
+                
+                <div class="mb-6">
+                    <h3 class="text-xs font-black text-gray-400 tracking-widest mb-2 px-3 border-l-2 border-[#C5B358]">なぞかけ文化の促進</h3>
+                    <ul class="space-y-1">
+                        <li><button onclick="switchTab('new-culture-1', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">📜 なぞかけ進化論：推論と歴史</button></li>
+                        <li><button onclick="switchTab('new-culture-2', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">なぞかけの歴史（漫談風）</button></li>
+                    </ul>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-xs font-black text-gray-400 tracking-widest mb-2 px-3 border-l-2 border-[#C5B358]">なぞかけ比較文化論</h3>
+                    <ul class="space-y-1">
+                        <li><button onclick="switchTab('new-comp-1', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">日本の類似文化</button></li>
+                        <li><button onclick="switchTab('new-comp-2', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">海外の言葉遊びの研究手法</button></li>
+                        <li><button onclick="switchTab('new-comp-3', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">第1象限：秩序と伝達の言語文化</button></li>
+                        <li><button onclick="switchTab('new-comp-4', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">第2象限：共感と審美の言語文化</button></li>
+                        <li><button onclick="switchTab('new-comp-5', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">第3象限：論争と闘争の言語文化</button></li>
+                        <li><button onclick="switchTab('new-comp-6', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">第4象限：対立の遊戯的昇華</button></li>
+                    </ul>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-xs font-black text-gray-400 tracking-widest mb-2 px-3 border-l-2 border-[#C5B358]">なぞかけ生成に関する分析</h3>
+                    <ul class="space-y-1">
+                        <li><button onclick="switchTab('new-gen-1', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">生成AI（LLM）の基礎知識</button></li>
+                        <li><button onclick="switchTab('new-gen-2', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">機械学習の基礎知識</button></li>
+                    </ul>
+                </div>
+
+                <div class="mb-6">
+                    <h3 class="text-xs font-black text-gray-400 tracking-widest mb-2 px-3 border-l-2 border-[#C5B358]">新しいなぞかけの定義（仮）</h3>
+                    <ul class="space-y-1">
+                        <li><button onclick="switchTab('new-def-1', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">🧩 現代のなぞかけの基本の形</button></li>
+                        <li><button onclick="switchTab('new-def-2', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">🏛️ なぞかけの学術的・多角的定義</button></li>
+                        <li><button onclick="switchTab('new-def-3', this)" class="nav-btn w-full text-left px-3 py-2 text-[13px] text-gray-700 rounded transition-colors font-medium">📖 辞書・事典別アプローチ比較一覧</button></li>
+                    </ul>
+                </div>
+            </nav>
+        </aside>
+
+        <!-- メインコンテンツ領域 -->
+        <main class="flex-1 overflow-y-auto p-4 sm:p-8 scroll-smooth" id="main-content">
+            <div class="max-w-4xl mx-auto min-h-full">
+                
+                <!-- 初期画面 (ポータル) -->
+                <section id="tab-portal" class="research-section text-center py-10">
+                    <span class="text-5xl mb-4 block">🏛️</span>
+                    <h2 class="text-2xl font-black text-enji mb-4" style="font-family: 'Noto Serif JP', serif;">謎掛け学術振興会 研究所へようこそ</h2>
+                    <p class="text-gray-600 leading-relaxed max-w-lg mx-auto">
+                        左側の目録（モバイルの場合は左上のメニュー）から、閲覧したい研究テーマを選択してください。<br><br>
+                        ※「📜 定義」「🌸 文化」「📚 動的記事」タブにて、既存の本番データも引き続き閲覧可能です。
+                    </p>
+                </section>
+
+                <!-- 既存データ: 定義 -->
+                <section id="tab-definition" class="research-section hidden space-y-4">
+                    <h1 class="text-2xl font-black text-gray-800 mb-6 border-b-2 border-[#C5B358]/30 pb-2">📜 定義</h1>
+                    <!-- 既存のdefinitionコンテンツ（一部抜粋して保持） -->
+                    <details class="group bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden" open>
+                        <summary class="p-4 cursor-pointer flex justify-between items-center bg-gray-50 hover:bg-gray-100 transition">
+                            <h2 class="text-lg font-bold text-gray-800">🧩 現代のなぞかけの基本の形</h2>
+                            <span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>
+                        </summary>
+                        <div class="p-4 border-t border-gray-100 space-y-4">
+                            <div class="bg-white rounded-lg p-4 shadow-xs border border-gray-100">
+                                <span class="inline-block bg-enji text-white text-xs px-2 py-1 rounded mb-2">📖 実在ファクト</span>
+                                <h3 class="font-bold text-gray-800 mb-2">「Aとかけて、Bと解く。その心はC」</h3>
+                                <ul class="list-disc pl-5 text-sm text-gray-600 space-y-1">
+                                    <li><strong>A（お題）:</strong> 提示されるテーマ。</li>
+                                    <li><strong>B（解き）:</strong> Aとは一見無関係な別の事象。</li>
+                                    <li><strong>C（心）:</strong> AとBを結びつける共通のキーワード。</li>
+                                </ul>
+                            </div>
+                        </div>
+                    </details>
+                </section>
+
+                <!-- 既存データ: 文化 -->
+                <section id="tab-culture" class="research-section hidden space-y-4">
+                    <h1 class="text-2xl font-black text-gray-800 mb-6 border-b-2 border-[#C5B358]/30 pb-2">🌸 文化</h1>
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                        <h3 class="font-bold text-kogane mb-1">【江戸時代】大衆娯楽の爆発と「なぞかけ」の確立</h3>
+                        <p class="text-sm text-gray-600 mb-2">謎本が出版され、現在の「〇〇とかけて」のフォーマットが定着。</p>
+                        <p class="text-xs text-gray-400">※既存データ保護のデモンストレーション表示</p>
+                    </div>
+                </section>
+
+                <!-- 既存データ: API動的記事 -->
+                <section id="tab-articles" class="research-section hidden space-y-4">
+                    <h1 class="text-2xl font-black text-gray-800 mb-6 border-b-2 border-[#C5B358]/30 pb-2">📚 動的記事一覧 (API)</h1>
+                    <div id="articles-status" class="text-center text-sm text-gray-500 py-8">読み込み中...</div>
+                    <div id="articles-groups" class="space-y-4"></div>
+                </section>
+
+                <!-- 新規テーマのプレースホルダー（JSで動的に表示切り替え） -->
+                <section id="tab-new-placeholder" class="research-section hidden">
+                    <h1 id="new-theme-title" class="text-2xl font-black text-gray-800 mb-6 border-b-2 border-[#C5B358]/30 pb-2">テーマタイトル</h1>
+                    <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8 text-center">
+                        <p class="text-gray-400 font-bold mb-2 text-lg">🚧 執筆中 🚧</p>
+                        <p class="text-sm text-gray-500">このセクションの研究データは現在編纂中です。</p>
+                    </div>
+                </section>
+
+            </div>
+        
+      <div class="mb-6 animate-fade-in">
+        <details class="group bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden [&_summary::-webkit-details-marker]:hidden"
+                 ontoggle="if(this.open) loadDefinitionData(event, 'research_physiology-content', 'research_physiology')">
+          <summary class="flex items-center justify-between p-5 cursor-pointer font-bold text-slate-800 bg-gradient-to-r from-slate-50 to-indigo-50 hover:from-indigo-50 hover:to-indigo-100 transition-colors">
+            <div class="flex items-center gap-3">
+              <span class="text-2xl">🧠</span>
+              <div>
+                <h3 class="text-lg md:text-xl font-bold text-slate-800">なぞかけに関する生理学的研究</h3>
+                <p class="text-xs text-slate-500 font-normal">脳科学・神経系・自律神経・内分泌系など152項目の科学的エビデンス DB</p>
+              </div>
+            </div>
+            <span class="transition group-open:rotate-180 text-indigo-600">
+              <svg fill="none" height="24" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" viewBox="0 0 24 24" width="24"><path d="M6 9l6 6 6-6"></path></svg>
+            </span>
+          </summary>
+          <div class="p-4 md:p-6 border-t border-slate-200 bg-slate-50/50">
+            <div id="research_physiology-content" class="min-h-[120px] flex items-center justify-center">
+              <div class="flex items-center gap-3 text-indigo-600 animate-pulse">
+                <svg class="w-6 h-6 animate-spin" fill="none" viewBox="0 0 24 24">
+                  <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                  <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+                <span class="text-sm font-medium">生理学的研究データベース(152項目)を遅延読み込み中...</span>
+              </div>
+            </div>
+          </div>
+        </details>
+      </div>
+
+</main>
+    </div>
+
+    <!-- 記事詳細の全画面モーダル (本番SSoTの維持) -->
+    <div id="article-modal" class="hidden fixed inset-0 z-[100] bg-[#Fdfbf7] flex flex-col">
+        <header class="bg-enji text-white p-4 shadow-md flex justify-between items-center shrink-0">
+            <h1 id="article-modal-title" class="text-lg font-bold truncate pr-2">記事</h1>
+            <button onclick="closeArticleModal()" class="text-sm bg-white/20 px-3 py-1 rounded hover:bg-white/30 transition shrink-0">← 戻る</button>
+        </header>
+        <main class="flex-1 overflow-y-auto p-4 sm:p-8 max-w-4xl mx-auto w-full">
+            <div id="article-modal-body" class="md-content text-sm sm:text-base text-gray-700 bg-white p-6 sm:p-8 rounded-xl shadow-sm border border-gray-200"></div>
+        </main>
+    </div>
+
+    <!-- UI制御 & 既存API連携スクリプト -->
+    <script>
+        const menuBtn = document.getElementById('mobile-menu-btn');
+        const sidebar = document.getElementById('sidebar');
+        const overlay = document.getElementById('sidebar-overlay');
+        const mainContent = document.getElementById('main-content');
+        
+        // サイドバー開閉
+        function toggleSidebar() {
+            sidebar.classList.toggle('-translate-x-full');
+            overlay.classList.toggle('hidden');
+        }
+        menuBtn.addEventListener('click', toggleSidebar);
+        overlay.addEventListener('click', toggleSidebar);
+
+        // 既存のAPIフェッチ管理フラグ
+        let articlesLoaded = false;
+
+        // タブ切り替えロジック
+        function switchTab(tabId, clickedBtn = null) {
+            // 1. 全セクションを非表示
+            document.querySelectorAll('.research-section').forEach(sec => sec.classList.add('hidden'));
+            
+            // 2. サイドバーのハイライトを更新
+            document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
+            if (clickedBtn) {
+                clickedBtn.classList.add('active');
+            }
+
+            // 3. 対象セクションの表示（既存タブ or 新規プレースホルダー）
+            if (['definition', 'culture', 'articles'].includes(tabId)) {
+                document.getElementById('tab-' + tabId).classList.remove('hidden');
+                
+                // 動的記事の初回ロード
+                if (tabId === 'articles' && !articlesLoaded) {
+                    loadResearchArticles();
+                }
+            } else {
+                // 新規テーマの場合、タイトルを書き換えてプレースホルダーを表示
+                const placeholder = document.getElementById('tab-new-placeholder');
+                document.getElementById('new-theme-title').textContent = clickedBtn ? clickedBtn.textContent.trim() : '研究データ';
+                placeholder.classList.remove('hidden');
+            }
+
+            // 4. モバイルの場合は選択後にサイドバーを閉じる
+            if (window.innerWidth < 768 && !sidebar.classList.contains('-translate-x-full')) {
+                toggleSidebar();
+            }
+
+            // 5. 上部へスクロール
+            mainContent.scrollTo({ top: 0, behavior: 'smooth' });
+        }
+
+        // ==========================================
+        // 以下、本番環境の既存APIロジック (SSoTの維持)
+        // ==========================================
+        function extractErrorMessage(data, res) {
+            return (data && (data.message || data.detail)) || `HTTP ${res.status}`;
+        }
+
+        async function loadResearchArticles() {
+            const statusEl = document.getElementById('articles-status');
+            try {
+                const res = await fetch('/api/research/articles');
+                const data = await res.json();
+                if (!res.ok || data.status === 'error') {
+                    throw new Error(extractErrorMessage(data, res));
+                }
+                articlesLoaded = true;
+                renderResearchArticles(data.articles || []);
+                statusEl.classList.add('hidden');
+            } catch (err) {
+                statusEl.textContent = '記事一覧の取得に失敗しました: ' + err.message;
+            }
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        function renderResearchArticles(articles) {
+            const groupsEl = document.getElementById('articles-groups');
+            groupsEl.innerHTML = '';
+
+            const bySubCategory = new Map();
+            for (const article of articles) {
+                if (!bySubCategory.has(article.sub_category)) {
+                    bySubCategory.set(article.sub_category, []);
+                }
+                bySubCategory.get(article.sub_category).push(article);
+            }
+
+            if (bySubCategory.size === 0) {
+                groupsEl.innerHTML = '<p class="text-center text-sm text-gray-400 py-8">公開中の記事はまだありません。</p>';
+                return;
+            }
+
+            for (const [subCategory, items] of bySubCategory) {
+                const details = document.createElement('details');
+                details.className = 'group bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden mb-4';
+
+                const summary = document.createElement('summary');
+                summary.className = 'p-4 cursor-pointer flex justify-between items-center bg-gray-50 hover:bg-gray-100 transition';
+                summary.innerHTML = `<h2 class="text-base font-bold text-gray-800">${escapeHtml(subCategory)}</h2><span class="text-gray-400 group-open:rotate-180 transition-transform">▼</span>`;
+                details.appendChild(summary);
+
+                const list = document.createElement('div');
+                list.className = 'divide-y divide-gray-100 border-t border-gray-100';
+                for (const article of items) {
+                    const btn = document.createElement('button');
+                    btn.type = 'button';
+                    btn.className = 'w-full text-left p-4 text-sm text-gray-700 hover:bg-[#C5B358]/10 hover:text-enji transition flex items-center justify-between gap-2';
+                    btn.innerHTML = `<span>${escapeHtml(article.title)}</span><span class="text-gray-300 shrink-0">›</span>`;
+                    btn.addEventListener('click', () => openArticleModal(article.article_id));
+                    list.appendChild(btn);
+                }
+                details.appendChild(list);
+                groupsEl.appendChild(details);
+            }
+        }
+
+        async function openArticleModal(articleId) {
+            const modal = document.getElementById('article-modal');
+            const titleEl = document.getElementById('article-modal-title');
+            const bodyEl = document.getElementById('article-modal-body');
+            titleEl.textContent = '読み込み中...';
+            bodyEl.innerHTML = '<div class="text-center py-10 text-gray-400">データフェッチ中...</div>';
+            modal.classList.remove('hidden');
+
+            try {
+                const res = await fetch(`/api/research/articles/${encodeURIComponent(articleId)}`);
+                const data = await res.json();
+                if (!res.ok || data.status === 'error') {
+                    throw new Error(extractErrorMessage(data, res));
+                }
+                titleEl.textContent = data.title;
+                bodyEl.innerHTML = marked.parse(data.content || '');
+            } catch (err) {
+                titleEl.textContent = 'エラー';
+                bodyEl.textContent = '記事の取得に失敗しました: ' + err.message;
+            }
+        }
+
+        function closeArticleModal() {
+            document.getElementById('article-modal').classList.add('hidden');
+        }
+    </script>
+</body>
+</html>

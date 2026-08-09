@@ -418,6 +418,7 @@ export async function submitBoardPost(parentId = null) {
 // ============================================================================
 // 研究データ動的ロード機能 (JSONファースト・アーキテクチャ)
 // ============================================================================
+/* [SRE Disabled] 
 export async function loadResearchData() {
     const container = document.getElementById('research-data-container');
     if (!container) return; // 該当タブが開かれていない・コンテナがない場合は何もしない
@@ -473,3 +474,5 @@ function uiEscapeHtmlSafe(str) {
 
 // 初期ロード時の発火
 document.addEventListener('DOMContentLoaded', loadResearchData);
+*/
+

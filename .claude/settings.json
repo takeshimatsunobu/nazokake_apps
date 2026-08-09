@@ -1,0 +1,10 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python -c ' *)",
+      "Bash(python3 -c ' *)",
+      "Bash(py -3 -c \"print\\(1\\)\")",
+      "Bash(py -3 -c ' *)"
+    ]
+  }
+}

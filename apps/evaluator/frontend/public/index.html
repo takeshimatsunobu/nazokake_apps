@@ -107,10 +107,10 @@
                         <div class="absolute top-0 left-0 w-full h-1 bg-[#C5B358]"></div>
                         <h2 class="text-lg font-bold text-[#902A19] text-center mb-6">からくりAIに生成させる</h2>
                         <div class="mb-6">
-                            <input type="text" id="odaiInput" placeholder="お題を入力 (例: 大谷翔平)" class="w-full px-4 py-3 bg-gray-50 border border-[#C5B358]/50 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#C5B358]">
+                            <input type="text" id="odaiInput" placeholder="お題を入力 (例: 大谷翔平)" class="w-full px-5 py-4 bg-gray-50 border-2 border-[#C5B358]/30 rounded-xl shadow-inner focus:bg-white focus:outline-none focus:border-[#C5B358] focus:ring-4 focus:ring-[#C5B358]/20 transition-all duration-300 text-lg">
                         </div>
-                        <button id="generateBtn" data-action="startGeneration" class="theme-btn w-full text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 shadow-md hover:scale-[1.02] transition">
-                            <span class="text-xl">⚙️</span>
+                        <button id="generateBtn" data-action="startGeneration" class="w-full bg-gradient-to-r from-[#5B8124] to-[#4a6b1d] text-white font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-3 shadow-[0_4px_15px_rgba(91,129,36,0.3)] hover:shadow-[0_6px_20px_rgba(91,129,36,0.5)] hover:-translate-y-1 transition-all duration-300 group">
+                            <span class="text-2xl group-hover:rotate-180 transition-transform duration-500">⚙️</span>
                             お題から生成・鑑定
                         </button>
                     </div>
@@ -120,7 +120,7 @@
                     </div>
                     <div id="error-card" class="mt-8 bg-red-50 text-red-600 rounded-xl p-4 hidden border border-red-200 text-center max-w-[500px] mx-auto font-bold"></div>
                     <div id="result-card" class="mt-8 hidden max-w-[600px] mx-auto">
-                        <div class="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-6 border-t-4 border-[#902A19] relative">
+                        <div class="bg-gradient-to-b from-white/95 to-[#FAF8F5]/95 backdrop-blur-md rounded-2xl shadow-xl p-6 md:p-8 border-t-4 border-b-4 border-[#902A19] border-x border-x-gray-200 relative overflow-hidden">
                             <div class="text-center mb-6">
                                 <p class="text-xl font-bold mb-2">
                                     「<span id="resHint" class="text-[#902A19]"></span>
@@ -158,7 +158,7 @@
                                 </div>
                             </div>
                         </div>
-                        <button data-action="shareTextResult" data-arg="gen" class="w-full mt-4 bg-[#2C3539] text-[#C5B358] border border-[#C5B358] py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition shadow-md">📤 なぞかけをSNS (LINE/Xなど) でシェア</button>
+                        <button data-action="shareTextResult" data-arg="gen" class="w-full mt-6 bg-[#2C3539] text-[#C5B358] border-2 border-[#C5B358]/50 py-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-[#1a2022] hover:border-[#C5B358] transition-all duration-300 shadow-md hover:shadow-lg hover:-translate-y-0.5">📤 なぞかけをSNS (LINE/Xなど) でシェア</button>
                     </div>
                 </section>
                 <section id="view-human" class="view-section">
@@ -167,20 +167,20 @@
                         <h2 class="text-lg font-bold text-[#5B8124] text-center mb-6">自作の謎掛けを鑑定する</h2>
                         <div class="space-y-4 mb-6">
                             <div class="flex items-center gap-2">
-                                <input type="text" id="hOdai" placeholder="例: 満員電車" class="flex-1 px-4 py-2 bg-gray-50 border border-[#C5B358]/50 rounded-lg">
+                                <input type="text" id="hOdai" placeholder="例: 満員電車" class="flex-1 px-4 py-3 bg-gray-50 border-2 border-[#C5B358]/30 rounded-lg shadow-inner focus:bg-white focus:outline-none focus:border-[#C5B358] focus:ring-4 focus:ring-[#C5B358]/20 transition-all duration-300">
                                 <span class="font-bold text-gray-700">とかけて、</span>
                             </div>
                             <div class="flex items-center gap-2">
-                                <input type="text" id="hToku" placeholder="例: 鼻づまり" class="flex-1 px-4 py-2 bg-gray-50 border border-[#C5B358]/50 rounded-lg">
+                                <input type="text" id="hToku" placeholder="例: 鼻づまり" class="flex-1 px-4 py-3 bg-gray-50 border-2 border-[#C5B358]/30 rounded-lg shadow-inner focus:bg-white focus:outline-none focus:border-[#C5B358] focus:ring-4 focus:ring-[#C5B358]/20 transition-all duration-300">
                                 <span class="font-bold text-gray-700">と解く。</span>
                             </div>
                             <div class="flex flex-col gap-2 mt-2">
                                 <span class="font-bold text-gray-700 text-sm">その心は、</span>
-                                <input type="text" id="hKokoro" placeholder="例: 身動きが取れない" class="w-full px-4 py-2 bg-gray-50 border border-[#C5B358]/50 rounded-lg">
+                                <input type="text" id="hKokoro" placeholder="例: 身動きが取れない" class="w-full px-4 py-3 bg-gray-50 border-2 border-[#C5B358]/30 rounded-lg shadow-inner focus:bg-white focus:outline-none focus:border-[#C5B358] focus:ring-4 focus:ring-[#C5B358]/20 transition-all duration-300 mt-1">
                             </div>
                         </div>
-                        <button id="humanSubmitBtn" class="bg-[#5B8124] hover:bg-[#4a6b1d] w-full text-white font-bold py-3 px-4 rounded-lg flex items-center justify-center gap-2 shadow-md hover:scale-[1.02] transition">
-                            <span class="text-xl">🖌️</span>
+                        <button id="humanSubmitBtn" class="w-full bg-gradient-to-r from-[#902A19] to-[#7a2315] text-white font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-3 shadow-[0_4px_15px_rgba(144,42,25,0.3)] hover:shadow-[0_6px_20px_rgba(144,42,25,0.5)] hover:-translate-y-1 transition-all duration-300 mt-4 group">
+                            <span class="text-2xl group-hover:scale-125 transition-transform duration-300">🖌️</span>
                             職人AIに鑑定を依頼
                         </button>
                     </div>
@@ -189,7 +189,7 @@
                         <p id="humanStatusMsg" class="text-gray-500 font-medium animate-pulse">からくり分析官が鑑定中...</p>
                     </div>
                     <div id="human-result-card" class="mt-8 hidden max-w-[600px] mx-auto">
-                        <div class="bg-white/95 backdrop-blur-sm rounded-xl shadow-lg p-6 border-t-4 border-[#5B8124] relative">
+                        <div class="bg-gradient-to-b from-white/95 to-[#FAF8F5]/95 backdrop-blur-md rounded-2xl shadow-xl p-6 md:p-8 border-t-4 border-b-4 border-[#5B8124] border-x border-x-gray-200 relative overflow-hidden">
                             <div class="text-center mb-6">
                                 <p class="text-xl font-bold mb-2">
                                     「<span id="hResHint" class="text-[#902A19]"></span>
@@ -227,7 +227,7 @@
                                 </div>
                             </div>
                         </div>
-                        <button data-action="shareTextResult" data-arg="human" class="w-full mt-4 bg-[#2C3539] text-[#C5B358] border border-[#C5B358] py-3 rounded-lg text-sm font-bold flex items-center justify-center gap-2 hover:bg-gray-800 transition shadow-md">📤 なぞかけをSNS (LINE/Xなど) でシェア</button>
+                        <button data-action="shareTextResult" data-arg="human" class="w-full mt-6 bg-[#2C3539] text-[#C5B358] border-2 border-[#C5B358]/50 py-4 rounded-xl text-sm font-bold flex items-center justify-center gap-2 hover:bg-[#1a2022] hover:border-[#C5B358] transition-all duration-300 shadow-md hover:shadow-lg hover:-translate-y-0.5">📤 なぞかけをSNS (LINE/Xなど) でシェア</button>
                     </div>
                 </section>
                 <section id="view-feed" class="view-section">
@@ -244,113 +244,93 @@
                         <div class="animate-bounce w-2 h-2 bg-[#C5B358] rounded-full"></div>
                     </div>
                 </section>
-                <section id="view-guide" class="view-section">
-                    <div class="bg-white/90 backdrop-blur-sm rounded-xl shadow-md p-6 border border-[#C5B358]/50 max-w-[600px] mx-auto mb-8">
-                        <h2 class="text-xl font-black text-[#902A19] text-center mb-4 border-b border-[#C5B358]/30 pb-2" style="font-family: 'Noto Serif JP', serif;">🏮 アプリの楽しみ方（指南書）</h2>
-                        <div class="bg-red-50 text-[#902A19] text-xs p-3 rounded-lg border border-red-200 mb-6 font-bold text-center shadow-inner">※当サイトは「ねづっち」氏および所属事務所とは一切関係のない、非公認の学術的AIプロジェクトです。
-                </div>
-                        <div class="space-y-4 text-sm text-gray-800">
-                            <div class="bg-[#FAF8F5] p-4 rounded-lg border border-[#C5B358]/50 shadow-sm">
+                                                <section id="view-guide" class="view-section">
+                    <div class="bg-white/95 backdrop-blur-md rounded-2xl shadow-xl p-6 md:p-8 border border-[#C5B358]/50 max-w-[600px] mx-auto mb-8 relative overflow-hidden">
+                        <!-- 装飾的な背景要素 -->
+                        <div class="absolute top-0 right-0 -mr-10 -mt-10 w-40 h-40 bg-[#C5B358] opacity-5 rounded-full blur-3xl pointer-events-none"></div>
+                        <div class="absolute bottom-0 left-0 -ml-10 -mb-10 w-40 h-40 bg-[#902A19] opacity-5 rounded-full blur-3xl pointer-events-none"></div>
+
+                        <h2 class="text-xl font-black text-[#902A19] text-center mb-4 border-b border-[#C5B358]/30 pb-2 relative z-10" style="font-family: 'Noto Serif JP', serif;">🏮 アプリの楽しみ方（指南書）</h2>
+                        
+                        <div class="bg-red-50 text-[#902A19] text-xs p-3 rounded-lg border border-red-200 mb-6 font-bold text-center shadow-inner relative z-10">※当サイトは「ねづっち」氏および所属事務所とは一切関係のない、非公認の学術的AIプロジェクトです。</div>
+                        
+                        <div class="space-y-4 text-sm text-gray-800 relative z-10">
+                            <!-- 序の巻 -->
+                            <div class="bg-gradient-to-br from-[#FAF8F5] to-white p-5 rounded-xl border border-[#C5B358]/50 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-0.5">
                                 <h3 class="font-bold text-[#902A19] mb-3 flex items-center gap-2 text-base">
-                                    <span class="text-xl">🔰</span>
+                                    <span class="text-2xl drop-shadow-sm">🔰</span>
                                     序の巻：基本の遊び方
                                 </h3>
-                                <p class="mb-2 leading-relaxed">まずは「⚙️ からくり生成」タブで、好きなお題を入力してみてください。最新のAIが瞬時になぞかけを作ります。</p>
-                                <p class="leading-relaxed">また、「🖌️ 自作鑑定」タブでは、あなたが考えたなぞかけをAI分析官が容赦なく本格採点します！</p>
+                                <p class="mb-2 leading-relaxed text-gray-700">まずは「<span class="font-bold text-[#C5B358]">⚙️ からくり生成</span>」タブで、好きなお題を入力してみてください。最新のAIが瞬時になぞかけを作ります。</p>
+                                <p class="leading-relaxed text-gray-700">また、「<span class="font-bold text-[#5B8124]">🖌️ 自作鑑定</span>」タブでは、あなたが考えたなぞかけをAI分析官が容赦なく本格採点します！</p>
                             </div>
-                            <details class="group bg-white p-4 rounded-lg border border-gray-200 shadow-sm transition-all duration-300">
+
+                            <!-- 破の巻 -->
+                            <details class="group bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300">
                                 <summary class="font-bold text-[#5B8124] flex justify-between items-center cursor-pointer list-none outline-none text-base">
                                     <div class="flex items-center gap-2">
-                                        <span class="text-xl">⚔️</span>
+                                        <span class="text-2xl drop-shadow-sm">⚔️</span>
                                         破の巻：デュアルAIの仕組み
                                     </div>
-                                    <span class="transition-transform duration-300 group-open:rotate-180 text-gray-400">▼</span>
+                                    <span class="transition-transform duration-300 group-open:rotate-180 text-[#5B8124] font-black">▼</span>
                                 </summary>
-                                <div class="mt-4 pt-4 border-t border-gray-100 text-gray-600 leading-relaxed text-xs">
-                                    <p class="mb-3">当システムは、なぞかけを考案する「生成AI（ボケ役）」と、それを11の評価軸で厳しく採点する「評価AI（審査員役）」の、2つの頭脳（デュアルAI）が連携することで機能しています。</p>
-                                    <p class="mb-3">しかし、論理的な計算は得意なAIも、人間特有の「笑いのツボ」や「言葉の絶妙なニュアンス」はまだ完璧には理解できていません。時には的外れな講評をしてしまうこともあります。</p>
-                                    <p class="mb-3">
-                                        そこで、「📜 道場破り」タブの出番です。<br>あなたがAIの作品に「星評価」を下し、しっくりこない部分を「赤ペン先生」として添削すると、そのデータは『人間が本当に面白いと感じる模範解答』としてシステムに蓄積されていきます。
-                                    </p>
-                                    <p>皆様から集まったこの貴重なフィードバックを「新しい教科書」としてAIに再学習させることで、AIは人間の複雑な「お笑いの感覚」を徐々にインストールし、真の天才なぞかけ芸人へと進化していく仕組みです。</p>
+                                <div class="mt-4 pt-4 border-t border-gray-100 text-gray-600 leading-relaxed text-sm">
+                                    <p class="mb-3">当システムは、なぞかけを考案する<span class="font-bold text-[#902A19]">「生成AI（ボケ役）」</span>と、それを11の評価軸で厳しく採点する<span class="font-bold text-[#5B8124]">「評価AI（審査員役）」</span>の、2つの頭脳（デュアルAI）が連携しています。</p>
+                                    <div class="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-3 text-xs shadow-inner">
+                                        <p class="mb-2">💡 <span class="font-bold">しかし、AIにも弱点があります。</span><br>論理的な計算は得意でも、人間特有の「笑いのツボ」や「言葉の絶妙なニュアンス」はまだ完璧には理解できていません。</p>
+                                        <p>そこで、「📜 道場破り」タブの出番です。あなたがAIの作品に「星評価」を下し、しっくりこない部分を「赤ペン先生」として添削すると、それが<span class="font-bold text-[#C5B358]">『人間が本当に面白いと感じる模範解答』</span>として蓄積されます。</p>
+                                    </div>
+                                    <p class="text-xs">皆様からのフィードバックを「新しい教科書」として再学習させ、AIを真の天才なぞかけ芸人へと進化させる学術的プロジェクトです。</p>
                                 </div>
                             </details>
-                            <details class="group bg-white p-4 rounded-lg border border-gray-200 shadow-sm transition-all duration-300">
+
+                            <!-- 急の巻 -->
+                            <details class="group bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300" open>
                                 <summary class="font-bold text-[#C5B358] flex justify-between items-center cursor-pointer list-none outline-none text-base">
                                     <div class="flex items-center gap-2">
-                                        <span class="text-xl">🕸️</span>
-                                        急の巻：11の評価軸（レーダーチャート）
+                                        <span class="text-2xl drop-shadow-sm">🕸️</span>
+                                        急の巻：11の評価軸（学術的探求）
                                     </div>
-                                    <span class="transition-transform duration-300 group-open:rotate-180 text-gray-400">▼</span>
+                                    <span class="transition-transform duration-300 group-open:rotate-180 text-[#C5B358] font-black">▼</span>
                                 </summary>
-                                <div class="mt-4 pt-4 border-t border-gray-100 text-gray-600 leading-relaxed text-xs">
-                                    <p class="mb-4 font-bold text-gray-700">当システムの分析官AIは、単なる言葉遊びの枠を超え、認知科学や言語学などの学術的背景に基づいた「11の評価軸」で作品を本格採点しています。</p>
-                                    <div class="mb-4 bg-gray-50 p-3 rounded border border-gray-200">
-                                        <h4 class="font-bold text-[#5B8124] border-b border-gray-300 pb-1 mb-2">
-                                            【第1の柱：言語と技巧】<span class="font-normal text-[10px] text-gray-500 ml-1">職人としての基礎</span>
-                                        </h4>
-                                        <ul class="list-none space-y-1.5 pl-1">
-                                            <li>
-                                                <span class="font-bold text-gray-700">自然さ (S_nat):</span>
-                                                文脈や言い回しが、日本語として違和感なく自然に成立しているか。
-                                            </li>
-                                            <li>
-                                                <span class="font-bold text-gray-700">技巧性 (S_tech):</span>
-                                                同音異義語、掛詞、ダブルミーニングなどの「言葉遊び」の精巧さ。
-                                            </li>
-                                            <li>
-                                                <span class="font-bold text-gray-700">リズム (S_rhy):</span>
-                                                声に出して読んだ時の心地よさ（七五調など）。
-                                            </li>
-                                            <li>
-                                                <span class="font-bold text-gray-700">韻律 (S_prosody):</span>
-                                                母音の響きや、韻を踏んでいるかなど、音響的な美しさ。
-                                            </li>
-                                        </ul>
+                                <div class="mt-4 pt-4 border-t border-gray-100 text-gray-600 leading-relaxed">
+                                    <p class="mb-4 text-sm font-bold text-gray-700">当システムの分析官AIは、単なる言葉遊びの枠を超え、認知科学や言語学などの学術的背景に基づいた「11の評価軸」で作品を本格採点しています。</p>
+                                    
+                                    <div class="space-y-3 mb-5">
+                                        <div class="bg-gray-50 p-3 rounded-lg border-l-4 border-[#5B8124] shadow-sm hover:shadow-md transition-shadow">
+                                            <h4 class="font-bold text-[#5B8124] mb-1 flex justify-between items-end">
+                                                <span>【第1の柱：言語と技巧】</span>
+                                                <span class="font-normal text-[10px] text-gray-500">職人としての基礎</span>
+                                            </h4>
+                                            <p class="text-xs text-gray-600">自然さ / 技巧性 / リズム / 韻律</p>
+                                        </div>
+                                        <div class="bg-gray-50 p-3 rounded-lg border-l-4 border-[#902A19] shadow-sm hover:shadow-md transition-shadow">
+                                            <h4 class="font-bold text-[#902A19] mb-1 flex justify-between items-end">
+                                                <span>【第2の柱：論理と共感】</span>
+                                                <span class="font-normal text-[10px] text-gray-500">笑いと感情のコア</span>
+                                            </h4>
+                                            <p class="text-xs text-gray-600">意外性 / 論理・納得感 / 文化的背景</p>
+                                        </div>
+                                        <div class="bg-gray-50 p-3 rounded-lg border-l-4 border-[#C5B358] shadow-sm hover:shadow-md transition-shadow">
+                                            <h4 class="font-bold text-[#C5B358] mb-1 flex justify-between items-end">
+                                                <span>【第3の柱：芸術性と深み】</span>
+                                                <span class="font-normal text-[10px] text-gray-500">芸術的評価の真骨頂</span>
+                                            </h4>
+                                            <p class="text-xs text-gray-600">視覚的喚起力 / 感覚的表現 / クロスモーダル / <span class="font-bold text-[#902A19]">存在論的深み</span></p>
+                                        </div>
                                     </div>
-                                    <div class="mb-4 bg-gray-50 p-3 rounded border border-gray-200">
-                                        <h4 class="font-bold text-[#902A19] border-b border-gray-300 pb-1 mb-2">
-                                            【第2の柱：論理と共感】<span class="font-normal text-[10px] text-gray-500 ml-1">笑いと感情のコア</span>
-                                        </h4>
-                                        <ul class="list-none space-y-1.5 pl-1">
-                                            <li>
-                                                <span class="font-bold text-gray-700">意外性 (S_sur):</span>
-                                                お題と解きの距離感。どれだけ遠く意外なものを結びつけたか。
-                                            </li>
-                                            <li>
-                                                <span class="font-bold text-gray-700">論理/納得感 (S_emo):</span>
-                                                「その心は」を聞いた瞬間の、論理的な納得度やカタルシス（アハ体験）。
-                                            </li>
-                                            <li>
-                                                <span class="font-bold text-gray-700">文化的背景 (S_cultural):</span>
-                                                日本の文化、常識、あるあるネタなど、人間同士の「共通認識」をうまく利用しているか。
-                                            </li>
-                                        </ul>
+
+                                    <div class="bg-gradient-to-br from-[#FAF8F5] to-white p-6 rounded-2xl border-2 border-[#C5B358]/40 text-center shadow-lg relative overflow-hidden group/link mt-2">
+                                        <div class="absolute inset-0 bg-[#C5B358] opacity-0 group-hover/link:opacity-5 transition-opacity duration-500"></div>
+                                        <div class="absolute -right-4 -top-4 text-7xl opacity-10 group-hover/link:scale-110 transition-transform duration-500">⚗️</div>
+                                        <p class="text-sm md:text-base text-[#902A19] mb-4 font-bold relative z-10">🎓 「なぞかけのメカニズム」を深く知りたい方へ</p>
+                                        <a href="research.html" class="relative z-10 inline-flex items-center justify-center gap-3 bg-[#2C3539] text-[#C5B358] hover:bg-gray-800 font-bold py-3.5 px-8 rounded-full text-sm md:text-base transition-all duration-300 shadow-[0_4px_15px_rgba(197,179,88,0.3)] hover:shadow-[0_6px_20px_rgba(197,179,88,0.5)] hover:-translate-y-1 w-full sm:w-auto">
+                                            <span class="text-xl group-hover/link:animate-bounce">⚗️</span>
+                                            なぞかけ研究所へ向かう
+                                        </a>
                                     </div>
-                                    <div class="mb-4 bg-gray-50 p-3 rounded border border-gray-200">
-                                        <h4 class="font-bold text-[#C5B358] border-b border-gray-300 pb-1 mb-2">
-                                            【第3の柱：芸術性と深み】<span class="font-normal text-[10px] text-gray-500 ml-1">芸術的評価の真骨頂</span>
-                                        </h4>
-                                        <ul class="list-none space-y-1.5 pl-1">
-                                            <li>
-                                                <span class="font-bold text-gray-700">視覚的喚起力 (S_visual):</span>
-                                                その情景が、頭の中で鮮明な映像として浮かび上がるか。
-                                            </li>
-                                            <li>
-                                                <span class="font-bold text-gray-700">感覚的表現 (S_sensory):</span>
-                                                視覚以外の五感（聴覚、触覚、味覚、嗅覚）に訴えかける表現があるか。
-                                            </li>
-                                            <li>
-                                                <span class="font-bold text-gray-700">クロスモーダル (S_cm):</span>
-                                                異なる感覚領域（例：「甘い声」「冷たい視線」など）を比喩的に交差させているか。
-                                            </li>
-                                            <li>
-                                                <span class="font-bold text-gray-700">存在論的深み (S_ontology):</span>
-                                                単なる表面的な類似性ではなく、物事の「本質」や「存在意義」の共通点を突いているか。<span class="text-[#902A19] font-bold">（※これが高いと名作になります）</span>
-                                            </li>
-                                        </ul>
-                                    </div>
-                                    <p class="mt-4 p-3 bg-red-50 text-[#902A19] rounded-lg border border-red-100 font-bold text-center">※分析官の講評は学問的基準に照らし合わせるため時に厳しくなりますが、どうか気に病まず、笑い飛ばしてください！</p>
+
+                                    <p class="mt-5 p-3 bg-red-50 text-[#902A19] rounded-lg border border-red-100 text-xs font-bold text-center">※分析官の講評は学問的基準に照らし合わせるため時に厳しくなりますが、どうか気に病まず、笑い飛ばしてください！</p>
                                 </div>
                             </details>
                         </div>
@@ -428,3 +408,5 @@
         <script type="module" src="/main_index.js?v=20260802"></script>
     </body>
 </html>
+
+

@@ -9,9 +9,10 @@ REPO_ROOT = Path(__file__).parent
 OUTPUT_JSON = REPO_ROOT / "apps" / "evaluator" / "frontend" / "public" / "data" / "research_data.json"
 
 TARGET_IDS = [
-    "basic-form", "academic-definition", "dictionary-comparison", 
-    "evolution-academic", "evolution-comic", "research_physiology", 
-    "research_others", "culture_japan", "culture_world_academic", "culture_world_survey"
+    "basic-form", "academic-definition", "dictionary-comparison",
+    "evolution-academic", "evolution-comic", "research_physiology",
+    "research_others", "culture_japan", "culture_world_theory",
+    "culture_world_academic", "culture_world_survey"
 ]
 
 def read_csv_safe(file_name):
@@ -175,11 +176,45 @@ def build_culture_japan():
 
 def _unwrap_details(block):
     # フロント側でも <details> によるアコーディオンを描画するため、
-    # 抽出ブロックに残った <details>/<summary> を取り除き二重ネストを防ぐ
-    block = re.sub(r'<summary>.*?</summary>', '', block, flags=re.DOTALL)
-    block = re.sub(r'<details[^>]*>', '', block)
-    block = re.sub(r'</details>', '', block)
+    # 抽出ブロックに残った「最も外側」の <details>/<summary> だけを取り除き二重ネストを防ぐ。
+    # ブロック内部（タスク2/4/5等で追加した）子アコーディオンの <details>/<summary> は保持する。
+    block = block.strip()
+    block = re.sub(r'^<details\b[^>]*>', '', block, count=1, flags=re.IGNORECASE)
+    block = re.sub(r'</details>\s*$', '', block, count=1, flags=re.IGNORECASE)
+    block = block.strip()
+    block = re.sub(r'^<summary\b[^>]*>.*?</summary>', '', block, count=1, flags=re.DOTALL | re.IGNORECASE)
     return block.strip()
+
+def _find_top_level_details_blocks(content):
+    # 入れ子の <details> があっても、最も外側（トップレベル）の <details>...</details> だけを
+    # 深さを数えながら抽出する（非貪欲正規表現だと最初の内側の閉じタグで止まってしまうため）
+    open_re = re.compile(r'<details\b[^>]*>', re.IGNORECASE)
+    close_tag = '</details>'
+    blocks = []
+    pos = 0
+    length = len(content)
+    while True:
+        m = open_re.search(content, pos)
+        if not m:
+            break
+        start = m.start()
+        cursor = m.end()
+        depth = 1
+        while depth > 0:
+            next_open = open_re.search(content, cursor)
+            next_close_idx = content.find(close_tag, cursor)
+            if next_close_idx == -1:
+                cursor = length
+                break
+            if next_open and next_open.start() < next_close_idx:
+                depth += 1
+                cursor = next_open.end()
+            else:
+                depth -= 1
+                cursor = next_close_idx + len(close_tag)
+        blocks.append(content[start:cursor])
+        pos = cursor
+    return blocks
 
 def extract_html_block(filename, target_id):
     path = REPO_ROOT / "apps" / "evaluator" / "frontend" / "public" / "research_data" / filename
@@ -188,9 +223,8 @@ def extract_html_block(filename, target_id):
     try:
         with open(path, 'r', encoding='utf-8') as f:
             content = f.read()
-        # <details ...> ... </details> を大雑把に抽出し、中身に target_id の文字列（日本語タイトルなど）が含まれるものを探す
-        # 今回は簡易的に、抽出先のマッピングを決め打ちします
-        blocks = re.findall(r'(<details.*?</details>)', content, re.DOTALL)
+        # トップレベルの <details ...>...</details> ブロックのみを抽出する（入れ子は数えて無視）
+        blocks = _find_top_level_details_blocks(content)
 
         if target_id == "basic-form" and len(blocks) > 0:
             return _unwrap_details(blocks[0])
@@ -530,13 +564,10 @@ def _build_continent_accordion(countries):
     '''
 
 
-def build_culture_world_academic_v3():
-    rows = read_csv_skip("041世界の言語活動調査.(学術的).csv", skip_lines=1)
-    if not rows: return "<div class='p-4 text-slate-500'>データがありません。</div>"
-    
-    # 全体説明（A）のHTML
-    intro_html = '''
-    <div class="bg-white text-slate-800 p-6 md:p-8 rounded-2xl shadow-sm mb-12 border border-emerald-200">
+def build_culture_world_theory():
+    # 「世界の言語文化：コミュニケーションの4象限モデル」の理論体系（旧: academic_v3のintro_html）
+    return '''
+    <div class="bg-white text-slate-800 p-6 md:p-8 rounded-2xl shadow-sm border border-emerald-200">
         <h2 class="text-2xl md:text-3xl font-extrabold text-emerald-800 mb-8 border-b-2 border-emerald-200 pb-4">
             🌍 世界の言語文化：コミュニケーションの4象限モデル
         </h2>
@@ -624,6 +655,11 @@ def build_culture_world_academic_v3():
     </div>
     '''
 
+
+def build_culture_world_academic_v3():
+    rows = read_csv_skip("041世界の言語活動調査.(学術的).csv", skip_lines=1)
+    if not rows: return "<div class='p-4 text-slate-500'>データがありません。</div>"
+
     # 国別にグループ化
     grouped = {}
     for row in rows:
@@ -633,7 +669,7 @@ def build_culture_world_academic_v3():
         if country not in grouped: grouped[country] = []
         grouped[country].append(row)
 
-    # 地図コンテナ（1. イントロ ➔ 2. 地図 ➔ 3. 大陸別アコーディオン ➔ 4. 選択エリア ➔ 5. 隠しデータ の順）
+    # 地図コンテナ（1. 地図 ➔ 2. 大陸別アコーディオン ➔ 3. 選択エリア ➔ 4. 隠しデータ の順。理論体系は culture_world_theory として別出力）
     map_html = '''
     <div class="mb-8 p-4 bg-white rounded-xl shadow-sm border border-slate-200">
         <h3 class="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">🗺️ 地図から国を選択</h3>
@@ -716,7 +752,7 @@ def build_culture_world_academic_v3():
         country_parts.append("</div></details>")
         country_blocks.append(f'<div id="country-data-{html.escape(country)}" style="display:none;">' + "".join(country_parts) + '</div>')
 
-    html_parts = [intro_html, map_html, continent_accordion_html, display_area_html] + country_blocks
+    html_parts = [map_html, continent_accordion_html, display_area_html] + country_blocks
     return "".join(html_parts)
 
 def build_culture_world_survey_v3():
@@ -836,6 +872,8 @@ def compile_data():
             content = build_research_physiology()
         elif target_id == "culture_japan":
             content = build_culture_japan()
+        elif target_id == "culture_world_theory":
+            content = build_culture_world_theory()
         elif target_id == "culture_world_academic":
             content = build_culture_world_academic_v3()
         elif target_id == "culture_world_survey":

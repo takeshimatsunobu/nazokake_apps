@@ -1,0 +1,120 @@
+import os, re
+
+filepath = 'build_research_data.py'
+with open(filepath, 'r', encoding='utf-8') as f:
+    content = f.read()
+
+new_funcs = """
+def build_culture_world_academic():
+    rows = read_csv_skip("041世界の言語活動調査.(学術的).csv", skip_lines=1)
+    if not rows:
+        return "<div class='p-4 text-slate-500'>データがありません。</div>"
+    grouped = {}
+    for row in rows:
+        if len(row) < 17:
+            continue
+        quadrant = row[0].strip()
+        if quadrant not in grouped:
+            grouped[quadrant] = []
+        grouped[quadrant].append(row)
+    html_parts = ["<div class='space-y-10'>"]
+    for quad, items in grouped.items():
+        html_parts.append("<section><h2 class='text-2xl font-bold text-indigo-800 border-b-2 border-indigo-200 pb-2 mb-4'>" + html.escape(quad) + "</h2><div class='space-y-6'>")
+        for row in items:
+            _, country, name, definition, structure, bg, func, effect, ex1_ctx, ex1_expr, ex1_ana, ex2_ctx, ex2_expr, ex2_ana, ex3_ctx, ex3_expr, ex3_ana = [r.strip() for r in row]
+            html_parts.append(f'''
+            <article class='bg-white rounded-xl p-6 shadow-sm border border-slate-200'>
+                <div class='flex items-center gap-2 mb-3'>
+                    <span class='bg-indigo-100 text-indigo-800 px-2 py-1 rounded text-xs font-bold'>{html.escape(country)}</span>
+                    <h3 class='text-lg font-bold text-slate-800'>{html.escape(name)}</h3>
+                </div>
+                <div class='grid grid-cols-1 md:grid-cols-2 gap-4 mb-4'>
+                    <div>
+                        <h4 class='text-xs font-bold text-slate-400 mb-1'>定義</h4>
+                        <p class='text-sm text-slate-700'>{html.escape(definition)}</p>
+                    </div>
+                    <div>
+                        <h4 class='text-xs font-bold text-slate-400 mb-1'>社会的機能 / 心理的効果</h4>
+                        <p class='text-sm text-slate-700'>{html.escape(func)} / {html.escape(effect)}</p>
+                    </div>
+                </div>
+                <div class='bg-slate-50 p-4 rounded-lg border border-slate-100'>
+                    <h4 class='text-xs font-bold text-slate-500 mb-2'>代表的な事例</h4>
+                    <p class='text-sm text-slate-700'><strong>表現:</strong> {html.escape(ex1_expr)} <br><span class='text-slate-500'>分析: {html.escape(ex1_ana)}</span></p>
+                </div>
+            </article>
+            ''')
+        html_parts.append("</div></section>")
+    html_parts.append("</div>")
+    return "".join(html_parts)
+
+def build_culture_world_survey():
+    rows = read_csv_skip("042 世界の言語活動調査(実態調査).csv", skip_lines=1)
+    if not rows:
+        return "<div class='p-4 text-slate-500'>データがありません。</div>"
+    grouped = {}
+    for row in rows:
+        if len(row) < 17:
+            continue
+        quadrant = row[0].strip()
+        if quadrant not in grouped:
+            grouped[quadrant] = []
+        grouped[quadrant].append(row)
+    html_parts = ["<div class='space-y-10'>"]
+    for quad, items in grouped.items():
+        html_parts.append("<section><h2 class='text-2xl font-bold text-teal-800 border-b-2 border-teal-200 pb-2 mb-4'>" + html.escape(quad) + "</h2><div class='space-y-6'>")
+        for row in items:
+            _, country, type_label, name, content, func, effect, fact_check, ex1_ctx, ex1_expr, ex1_ana, ex2_ctx, ex2_expr, ex2_ana, ex3_ctx, ex3_expr, ex3_ana = [r.strip() for r in row]
+            type_color = "bg-rose-100 text-rose-800" if "都市伝説" in type_label else "bg-teal-100 text-teal-800"
+            html_parts.append(f'''
+            <article class='bg-white rounded-xl p-6 shadow-sm border border-slate-200'>
+                <div class='flex items-center gap-2 mb-3'>
+                    <span class='{type_color} px-2 py-1 rounded text-xs font-bold'>{html.escape(type_label)}</span>
+                    <span class='bg-slate-100 text-slate-600 px-2 py-1 rounded text-xs font-bold'>{html.escape(country)}</span>
+                    <h3 class='text-lg font-bold text-slate-800'>{html.escape(name)}</h3>
+                </div>
+                <div class='mb-4'>
+                    <h4 class='text-xs font-bold text-slate-400 mb-1'>信じられている内容</h4>
+                    <p class='text-sm text-slate-700'>{html.escape(content)}</p>
+                </div>
+                <div class='bg-amber-50 p-3 rounded text-sm text-slate-800 border border-amber-200 mb-4'>
+                    <span class='font-bold text-amber-700'>[事実確認] 学術的背景・反証:</span> {html.escape(fact_check)}
+                </div>
+                <div class='bg-slate-50 p-4 rounded-lg border border-slate-100'>
+                    <h4 class='text-xs font-bold text-slate-500 mb-2'>主な事例</h4>
+                    <p class='text-sm text-slate-700'><strong>表現:</strong> {html.escape(ex1_expr)} <br><span class='text-slate-500'>分析: {html.escape(ex1_ana)}</span></p>
+                </div>
+            </article>
+            ''')
+        html_parts.append("</div></section>")
+    html_parts.append("</div>")
+    return "".join(html_parts)
+"""
+
+if "def build_culture_world_academic():" not in content:
+    # 新関数の追加
+    content = re.sub(r'(def compile_data\(\):)', new_funcs + r'\n\1', content)
+    
+    # 漫談風のブロック抽出
+    content = re.sub(r'# evolution-comic は tab-culture にないのでスキップ', 
+                     r'if target_id == "evolution-comic" and len(blocks) > 1:\n            return blocks[1]', content)
+    
+    # 学術・実態調査の注入ルーティング
+    content = re.sub(
+        r'(elif target_id == "culture_japan":\s*content = build_culture_japan\(\))',
+        r'\1\n        elif target_id == "culture_world_academic":\n            content = build_culture_world_academic()\n        elif target_id == "culture_world_survey":\n            content = build_culture_world_survey()',
+        content
+    )
+    
+    # 漫談風の注入ルーティング
+    content = re.sub(
+        r'elif target_id == "evolution-academic":',
+        r'elif target_id in ["evolution-academic", "evolution-comic"]:',
+        content
+    )
+    
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print("✅ 成功: すべての欠落データ（3項目）のパースと注入ロジックを追加しました。")
+else:
+    print("⚠️ 変更なし: すでに適用済みのようです。")

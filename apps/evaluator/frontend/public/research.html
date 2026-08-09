@@ -30,6 +30,7 @@
           <p class="text-xs text-slate-400">Nazo-Agent Systemic Research Lab</p>
         </div>
       </div>
+      <a href="https://nazokakeapp-137e5.web.app/" class="shrink-0 flex items-center gap-1 px-3 py-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-sm font-bold text-white transition">🏠 トップへ戻る</a>
     </div>
   </header>
 
@@ -154,9 +155,19 @@
                 <span class="text-2xl">🌍</span> 世界言語文化
             </h2>
             <div class="space-y-4 pl-2 border-l-2 border-slate-200">
+                <details class="group bg-white rounded-xl shadow-sm border border-emerald-200 overflow-hidden [&_summary::-webkit-details-marker]:hidden" ontoggle="if(this.open) loadDefinitionData(event, 'culture-world-theory-content', 'culture_world_theory')">
+                    <summary class="cursor-pointer p-4 hover:bg-emerald-50 transition-colors flex items-center justify-between">
+                        <div class="flex items-center gap-3"><span class="text-xl">🌍</span><span class="font-bold text-slate-800">世界の言語文化：コミュニケーションの4象限モデル（仮称）</span></div>
+                        <span class="text-slate-400 group-open:rotate-180 transition-transform duration-300">▼</span>
+                    </summary>
+                    <div id="culture-world-theory-content" data-loaded="false" class="p-6 border-t border-emerald-100 bg-emerald-50/30">
+                                    <div class="p-4 text-gray-500 text-sm">データ読み込み中...</div>
+                                </div></div></div>
+                    </div>
+                </details>
                 <details class="group bg-white rounded-xl shadow-sm border border-teal-200 overflow-hidden [&_summary::-webkit-details-marker]:hidden" ontoggle="if(this.open) loadDefinitionData(event, 'culture-world-academic-content', 'culture_world_academic')">
                     <summary class="cursor-pointer p-4 hover:bg-teal-50 transition-colors flex items-center justify-between">
-                        <div class="flex items-center gap-3"><span class="text-xl">📚</span><span class="font-bold text-slate-800">学術的な研究</span></div>
+                        <div class="flex items-center gap-3"><span class="text-xl">📚</span><span class="font-bold text-slate-800">学術的な研究（地図付き）</span></div>
                         <span class="text-slate-400 group-open:rotate-180 transition-transform duration-300">▼</span>
                     </summary>
                     <div id="culture-world-academic-content" data-loaded="false" class="p-6 border-t border-teal-100 bg-teal-50/30">
@@ -166,7 +177,7 @@
                 </details>
                 <details class="group bg-white rounded-xl shadow-sm border border-cyan-200 overflow-hidden [&_summary::-webkit-details-marker]:hidden" ontoggle="if(this.open) loadDefinitionData(event, 'culture-world-survey-content', 'culture_world_survey')">
                     <summary class="cursor-pointer p-4 hover:bg-cyan-50 transition-colors flex items-center justify-between">
-                        <div class="flex items-center gap-3"><span class="text-xl">📋</span><span class="font-bold text-slate-800">実態調査(仮称)</span></div>
+                        <div class="flex items-center gap-3"><span class="text-xl">📋</span><span class="font-bold text-slate-800">実態調査(仮称)（地図付き）</span></div>
                         <span class="text-slate-400 group-open:rotate-180 transition-transform duration-300">▼</span>
                     </summary>
                     <div id="culture-world-survey-content" data-loaded="false" class="p-6 border-t border-cyan-100 bg-cyan-50/30">
@@ -332,7 +343,7 @@ function initWorldMapForSection(sectionRoot) {
         btn.addEventListener('click', () => showCountryData(btn.getAttribute('data-country')));
     });
 
-    new jsVectorMap({
+    const map = new jsVectorMap({
         selector: mapContainer,
         map: 'world',
         zoomButtons: true,
@@ -346,6 +357,18 @@ function initWorldMapForSection(sectionRoot) {
             const countryName = COUNTRY_CODE_TO_NAME[String(code).toUpperCase()];
             showCountryData(countryName);
         }
+    });
+
+    // 初期化直後はTailwindのJIT（Play CDN）によるaspect-[4/3]等のCSS適用がまだ間に合っておらず、
+    // コンテナが正しい高さを持つ前にjsVectorMapがサイズを確定してしまい、
+    // 「地図が上部に小さく潰れ、下に空白ができる」崩れが起きる。
+    // レイアウト確定後（2フレーム後）に明示的に再計算させることで解消する。
+    const refreshMapSize = () => { if (map && typeof map.updateSize === 'function') map.updateSize(); };
+    requestAnimationFrame(() => requestAnimationFrame(refreshMapSize));
+
+    // アコーディオンを閉じて再度開いた際にもサイズが崩れることがあるため、開くたびに再計算する
+    sectionRoot.addEventListener('toggle', () => {
+        if (sectionRoot.open) requestAnimationFrame(() => requestAnimationFrame(refreshMapSize));
     });
 }
 </script>
