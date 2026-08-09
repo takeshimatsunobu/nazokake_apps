@@ -91,6 +91,9 @@ export async function modelAction(docId, model, action) {
             body: JSON.stringify(body)
         });
         showToast(`${model === 'gemini' ? 'Gemini' : 'ELYZA'}を${labels[action] || action}しました`);
+        // 承認待ちパネル(pending-container)から対象アイテムを消すため一覧を再取得する。
+        // DLQ操作(retryDlqItem/discardDlqItem)が成功後にloadDlqItems()するのと同じ規約。
+        await loadPendingItems();
     } catch (e) { showToast("操作に失敗しました", "warning"); }
 }
 
@@ -623,11 +626,10 @@ async function loadAppUsage() {
 // 承認待ちデータ。バックエンド(admin.py get_pending_items)は GET /admin/pending で
 // gemini_status/elyza_statusのいずれかが"pending"のなぞかけを作成日時降順で
 // 最大50件返す({items: [...]})。
-// 【既知の制約】承認/棄却/殿堂入り等の操作(modelAction、data-action="modelAction")
-// は、main_admin.jsのクリック委譲ディスパッチ(CLICK_ACTIONS)に未登録のため現状
-// クリックしても発火しない(DLQのretry/discardボタンと同じ既存の制約であり、この
-// パネルに起因するものではない)。本対応はまず一覧の可視化のみを復旧範囲とし、
-// 操作ボタンは意図的に含めない。
+// 各アイテムの"pending"状態のモデル側にのみ承認/棄却ボタンを描画する
+// (_renderPendingActionButtons)。クリックはmain_admin.jsのCLICK_ACTIONS経由で
+// modelAction(docId, model, action)へディスパッチされ、成功後はこのパネルの
+// 再取得(loadPendingItems())まで行う(modelAction内部で完結)。
 /**
  * @returns {Promise<{items: Array<Record<string, any>>}>}
  */
@@ -639,6 +641,21 @@ async function fetchPendingItems() {
  * @param {Record<string, any>} item
  * @returns {string}
  */
+/**
+ * @param {string} docId
+ * @param {'gemini'|'elyza'} model
+ * @returns {string}
+ */
+function _renderPendingActionButtons(docId, model) {
+    return `
+        <div class="flex gap-2 mt-2">
+            <button data-action="modelAction" data-doc-id="${docId}" data-model="${model}" data-model-action="approve"
+                class="text-xs bg-emerald-50 text-emerald-700 px-3 py-1 rounded hover:bg-emerald-100 transition border border-emerald-200">✅ 承認</button>
+            <button data-action="modelAction" data-doc-id="${docId}" data-model="${model}" data-model-action="reject"
+                class="text-xs bg-red-50 text-red-600 px-3 py-1 rounded hover:bg-red-100 transition border border-red-200">🚫 棄却</button>
+        </div>`;
+}
+
 function renderPendingItem(item) {
     const odai = (item.odai || '').replace(/</g, '&lt;');
     const geminiText = (item.nazokake_text || '(未生成)').replace(/</g, '&lt;');
@@ -654,10 +671,12 @@ function renderPendingItem(item) {
                 <div class="bg-blue-50/40 border border-blue-100 rounded p-3">
                     <p class="text-xs font-bold text-blue-700 mb-1">Gemini (${item.gemini_status || 'n/a'}${gScore})</p>
                     <p class="text-sm text-gray-700 whitespace-pre-wrap break-all">${geminiText}</p>
+                    ${item.gemini_status === 'pending' ? _renderPendingActionButtons(item.doc_id, 'gemini') : ''}
                 </div>
                 <div class="bg-emerald-50/40 border border-emerald-100 rounded p-3">
                     <p class="text-xs font-bold text-emerald-700 mb-1">ELYZA (${item.elyza_status || 'n/a'}${eScore})</p>
                     <p class="text-sm text-gray-700 whitespace-pre-wrap break-all">${elyzaText}</p>
+                    ${item.elyza_status === 'pending' ? _renderPendingActionButtons(item.doc_id, 'elyza') : ''}
                 </div>
             </div>
         </div>`;
