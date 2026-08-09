@@ -46,8 +46,23 @@ if not firebase_admin._apps:
 from fastapi import FastAPI
 
 # 🌟 機能ごとに独立したルーターを api/routers から読み込む
-from apps.evaluator.backend.api.routers import (
+# コンテナ内(/app)ではapps/evaluator/backend配下がCOPYで平坦化され
+# apps.evaluator.backend パッケージ自体が存在しないため(ModuleNotFoundError:
+# No module named 'apps.evaluator.backend')、main.pyと同じディレクトリを起点
+# とする相対パッケージ名で読み込む(ローカル実行時もuvicornのcwdがこの
+# ディレクトリのためimportは変わらず解決できる)。
+from api.routers import (
+    admin,
+    admin_costs,
+    admin_feedbacks,
+    board,
+    feed,
+    feedback,
+    generate,
+    metrics,
     research,
+    submission,
+    user_feedback,
 )
 
 # 🌟 ロギング初期化設定
@@ -79,12 +94,12 @@ _RESEARCH_PUBLIC = Path(__file__).resolve().parent.parent / "frontend" / "public
 
 # [1] Tactical CIC UI (/cic)
 if _CIC_PUBLIC.exists():
-    # [SRE Muted (Route Shadowing Fix)] app.mount("/cic", StaticFiles(directory=str(_CIC_PUBLIC), html=True), name="cic_static")
+    # [SRE Muted (Route Shadowing Fix)] app.mount("/cic", StaticFiles(directory=str(_CIC_PUBLIC), html=True), name="cic_static")
     pass
 
 # [2] なぞかけ研究所 UI (ルート /)
 if _RESEARCH_PUBLIC.exists():
-    # [SRE Muted (Route Shadowing Fix)] app.mount("/", StaticFiles(directory=str(_RESEARCH_PUBLIC), html=True), name="research_static")
+    # [SRE Muted (Route Shadowing Fix)] app.mount("/", StaticFiles(directory=str(_RESEARCH_PUBLIC), html=True), name="research_static")
     pass
 
 # --- SSoT準拠: 動的パス解決とルーティングの絶対法則 ---
@@ -97,6 +112,27 @@ DATA_DIR = PROJECT_ROOT / "data" / "research"
 
 # 1. APIルーターの登録（最優先）
 app.include_router(research.router, prefix="/api/research", tags=["research"])
+
+# ルート側は各ルーターの@router内パスに既に/generate, /metrics/log,
+# /submit_human, /feedback, /feed/..., /nazokake/{doc_id}/feedback が含まれる
+# ため、/apiのみを付与する
+app.include_router(generate.router, prefix="/api", tags=["generate"])
+app.include_router(metrics.router, prefix="/api", tags=["metrics"])
+app.include_router(submission.router, prefix="/api", tags=["submission"])
+app.include_router(feedback.router, prefix="/api", tags=["feedback"])
+app.include_router(feed.router, prefix="/api", tags=["feed"])
+app.include_router(user_feedback.router, prefix="/api", tags=["user_feedback"])
+
+# board.pyは/items, /postのみのため/api/boardを付与
+app.include_router(board.router, prefix="/api/board", tags=["board"])
+
+# admin系(admin.py: /action, /dlq, /audit_logs, /deploy / admin_costs.py:
+# /costs, /costs/dashboard / admin_feedbacks.py: /feedbacks, ...)は
+# 既存フロントエンド(admin.js)が ${API_BASE}/admin/... で呼ぶ規約に合わせ
+# /api/adminを付与する
+app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+app.include_router(admin_costs.router, prefix="/api/admin", tags=["admin"])
+app.include_router(admin_feedbacks.router, prefix="/api/admin", tags=["admin"])
 
 @app.get("/healthz")
 def healthz():
