@@ -123,6 +123,12 @@ jobs:
           service: ${{ env.SERVICE_NAME }}
           region: ${{ env.REGION }}
           image: ${{ env.IMAGE }}:${{ github.sha }}
+          # CPUを常に割り当てる(CPU always allocated)。BackgroundTasksでの生成処理
+          # (Gemini API呼び出し)が、レスポンス返却直後のCPUスロットリングで途中停止
+          # しないようにするための設定。既定(リクエスト処理中のみCPU割当)のままだと、
+          # HTTPレスポンス送出後にCPUが絞られ、バックグラウンドの非同期処理が
+          # 完走できない場合がある。
+          flags: --no-cpu-throttling
           # instructions/248: `gcloud run deploy` はインクリメンタルであり、ここを
           # 省略しても既存のシークレット/環境変数バインドを消しはしない(実際、この
           # ワークフローが去年から本番へデプロイし続けている現行リビジョンにも

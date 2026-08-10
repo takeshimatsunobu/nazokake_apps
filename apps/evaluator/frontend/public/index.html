@@ -30,20 +30,20 @@
         <script type="importmap">
         {
             "imports": {
-                "config": "/config.js?v=20260802",
-                "state": "/state.js?v=20260802",
-                "api": "/api.js?v=20260802",
-                "app": "/app.js?v=20260802",
-                "admin": "/admin.js?v=20260802",
-                "firebase-config": "/firebase-config.js?v=20260802",
-                "ui/auth": "/ui/auth.js?v=20260802",
-                "ui/toast": "/ui/toast.js?v=20260802",
-                "ui/tabs": "/ui/tabs.js?v=20260802",
-                "ui/feed": "/ui/feed.js?v=20260802",
-                "ui/board": "/ui/board.js?v=20260802",
-                "ui/form": "/ui/form.js?v=20260802",
-                "ui/result": "/ui/result.js?v=20260802",
-                "ui/feedback": "/ui/feedback.js?v=20260802",
+                "config": "/config.js?v=20260810",
+                "state": "/state.js?v=20260810",
+                "api": "/api.js?v=20260810",
+                "app": "/app.js?v=20260810",
+                "admin": "/admin.js?v=20260810",
+                "firebase-config": "/firebase-config.js?v=20260810",
+                "ui/auth": "/ui/auth.js?v=20260810",
+                "ui/toast": "/ui/toast.js?v=20260810",
+                "ui/tabs": "/ui/tabs.js?v=20260810",
+                "ui/feed": "/ui/feed.js?v=20260810",
+                "ui/board": "/ui/board.js?v=20260810",
+                "ui/form": "/ui/form.js?v=20260810",
+                "ui/result": "/ui/result.js?v=20260810",
+                "ui/feedback": "/ui/feedback.js?v=20260810",
                 "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
                 "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
             }
@@ -109,6 +109,29 @@
                         <div class="mb-6">
                             <input type="text" id="odaiInput" placeholder="お題を入力 (例: 大谷翔平)" class="w-full px-5 py-4 bg-gray-50 border-2 border-[#C5B358]/30 rounded-xl shadow-inner focus:bg-white focus:outline-none focus:border-[#C5B358] focus:ring-4 focus:ring-[#C5B358]/20 transition-all duration-300 text-lg">
                         </div>
+                        <div class="mb-4">
+                            <label for="persona" class="block text-xs font-bold text-gray-600 mb-1">🎭 語り手のペルソナ</label>
+                            <select id="persona" class="w-full px-4 py-3 bg-gray-50 border-2 border-[#C5B358]/30 rounded-xl shadow-inner focus:bg-white focus:outline-none focus:border-[#C5B358] focus:ring-4 focus:ring-[#C5B358]/20 transition-all duration-300 text-sm">
+                                <option value="1">1. 昭和生まれの天才漫才師</option>
+                                <option value="2">2. 辞書の編纂者</option>
+                                <option value="3">3. アジア系ITエンジニア</option>
+                                <option value="4">4. 大阪のおばちゃん</option>
+                                <option value="5">5. 理屈っぽい中学2年生男子</option>
+                                <option value="6">6. 超ポジティブな高2ギャル</option>
+                                <option value="7">7. マニアックな大学生</option>
+                                <option value="8">8. 人間観察が趣味の女子大生</option>
+                                <option value="9">9. 社会の不条理に揉まれる若手OL</option>
+                                <option value="10">10. 横文字だらけの中年起業家</option>
+                            </select>
+                        </div>
+                        <div class="mb-6">
+                            <label for="temperature" class="flex justify-between items-center text-xs font-bold text-gray-600 mb-1">
+                                <span>🌡️ キャラの暴走度</span>
+                                <span id="temperatureValue" class="text-[#902A19]">0.6</span>
+                            </label>
+                            <input type="range" id="temperature" min="0.2" max="0.9" step="0.1" value="0.6" data-oninput-action="setTemperatureDescription" class="w-full accent-[#902A19]">
+                            <div id="temperature-description" class="text-[11px] text-gray-500 mt-1">おすすめ！適度なユーモアとキャラの個性が光ります。</div>
+                        </div>
                         <button id="generateBtn" data-action="startGeneration" class="w-full bg-gradient-to-r from-[#5B8124] to-[#4a6b1d] text-white font-bold py-4 px-6 rounded-xl flex items-center justify-center gap-3 shadow-[0_4px_15px_rgba(91,129,36,0.3)] hover:shadow-[0_6px_20px_rgba(91,129,36,0.5)] hover:-translate-y-1 transition-all duration-300 group">
                             <span class="text-2xl group-hover:rotate-180 transition-transform duration-500">⚙️</span>
                             お題から生成・鑑定
@@ -132,6 +155,7 @@
                                 </p>
                                 <p class="text-sm text-gray-500 mb-2">そのこころは、</p>
                                 <p class="text-xl font-bold text-[#902A19]" id="resKokoro"></p>
+                                <div id="res_persona_comment" class="text-xs text-gray-500 italic mt-3"></div>
                             </div>
                             <hr class="my-4 border-[#C5B358]/30">
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -405,7 +429,7 @@
     </button>
 </nav>
         <!-- import mapを経由しないエントリーポイント自体もキャッシュバスティング対象に含める -->
-        <script type="module" src="/main_index.js?v=20260802"></script>
+        <script type="module" src="/main_index.js?v=20260810"></script>
     </body>
 </html>
 

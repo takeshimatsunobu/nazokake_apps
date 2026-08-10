@@ -27,7 +27,11 @@ dependencies = [
 # のビルドステージは`uv sync --frozen`でこのuv.lockのみを参照してインストールする
 # ため、ロックファイルを更新しない限りビルド結果が変わることはない。
 [tool.uv.sources]
-nazokake-core = { path = "../../../packages/shared_core" }
+# editable=true: path依存の既定(非editable)だとuv syncのたびに
+# packages/shared_coreのスナップショットがsite-packagesへ静的コピーされ、
+# 以降そのソースへ加えた変更(新規関数の追加等)が反映されなくなる
+# (今回のasync_get_pending_items ImportErrorの実際の原因)。
+nazokake-core = { path = "../../../packages/shared_core", editable = true }
 
 # このディレクトリ自体はアプリケーション(main.pyをuvicornで直接起動)であり、配布用の
 # Pythonパッケージではないため、uvに自己ビルド/自己インストールを行わせない

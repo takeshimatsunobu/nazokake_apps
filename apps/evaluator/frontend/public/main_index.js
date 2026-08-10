@@ -12,11 +12,15 @@ import {
     switchTab, startGeneration, submitFeedback, shareTextResult, switchBoardCategory,
     submitBoardPost, submitUserEvaluation, submitHumanRiddle,
 } from "app";
+import { API_BASE } from "config";
 import { uiInitForm } from "ui/form";
 import { setFeedbackRating } from "ui/feedback";
 import { uiShowReplyForm, uiHideReplyForm } from "ui/board";
 import { setFeedRating } from "ui/feed";
-import { setGenRating, setGenComment, submitGenEvaluation, uiResetGenerator } from "ui/result";
+import {
+    setGenRating, setGenComment, submitGenEvaluation, uiResetGenerator,
+    setTemperatureDescription, initTemperatureDescription,
+} from "ui/result";
 
 // action名(data-action属性の値)の完全一致キーで実関数へディスパッチする。
 // 旧実装のactionStr.includes(...)という部分文字列マッチは、意図しない誤爆
@@ -41,6 +45,7 @@ const CLICK_ACTIONS = {
 
 const INPUT_ACTIONS = {
     setGenComment: (ds, value) => setGenComment(ds.model, value),
+    setTemperatureDescription: (ds, value) => setTemperatureDescription(value),
 };
 
 document.addEventListener('click', (e) => {
@@ -63,6 +68,8 @@ document.addEventListener('input', (e) => {
 document.addEventListener('DOMContentLoaded', () => {
     // 自作鑑定フォームを初期化。UI制御は ui/form.js、API通信は submitHumanRiddle を注入。
     uiInitForm(submitHumanRiddle);
+    // 「キャラの暴走度」スライダーの初期値(既定0.6)に対応する一言解説を表示する。
+    initTemperatureDescription();
 });
 
 // Service Worker登録(旧index.html末尾のインラインscriptから移設、ロジックは無改変)。
@@ -75,13 +82,29 @@ document.addEventListener('DOMContentLoaded', () => {
 //     });
 // }
 
+// SW機能は上記の通り無効化済みだが、それ以前にこのオリジンへアクセス済みのブラウザには
+// 過去のService Worker登録が残ったままになっている場合がある(register()を呼ばなくなった
+// だけでは既存の登録は自動解除されない)。古いSWがfetchをインターセプトし続け、バックエンド
+// 修正後も「現在オフラインです」等の古いキャッシュ画面から抜け出せない実害が確認された
+// (ユーザーからの報告)ため、残存登録があれば毎回自動的に解除する安全策を恒久的に入れる。
+// 登録が無ければ何もしない(no-op)ため、通常時のコストは無視できる。
+if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.getRegistrations().then(regs => {
+        regs.forEach(reg => {
+            reg.unregister();
+            console.log('🧹 [SW Cleanup] 残存していたService Worker登録を解除しました:', reg.scope);
+        });
+    }).catch(() => {});
+}
+
 // バックエンドの0円コールドスタート対策ウォームアップ(旧index.html末尾のインラインscriptから移設、
 // ロジックは無改変)。
 window.addEventListener('load', () => {
     setTimeout(() => {
-        // ローカル環境（localhost/127.0.0.1）ならポート7800、本番なら絶対パスを自動選択
-        const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-        const warmupUrl = isLocal ? 'http://127.0.0.1:7800/api/health' : 'https://nazokake-backend-r6jq2erkta-an.a.run.app/api/health';
+        // config.js の API_BASE(SSoT)を使う。以前はここで別途ローカルポートをハードコード
+        // 複製しており、config.jsとの食い違い(構成ドリフト)でERR_CONNECTION_REFUSEDを
+        // 起こしたことがあるため、二重管理をやめて一本化する。
+        const warmupUrl = `${API_BASE}/health`;
 
         console.log("⚙️ [Warmup] " + warmupUrl + " へフェッチを送信し、サーバーを安全に起動します...");
 

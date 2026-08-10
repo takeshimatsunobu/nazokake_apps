@@ -52,32 +52,13 @@ MIGRATION_LOCK_TIMEOUT_SEC = 30
 
 
 def _load_alembic_config_utf8(ini_path: Path) -> Config:
-    """alembic.config.Config を構築する。
-    【Fail-Closed】Alembic内部プロパティのオーバーライド(黒魔術)を廃止。
-    Python標準のconfigparserでUTF-8読み込み後、Alembic公式のProgrammatic API
-    (set_main_option / set_section_option)を用いてクリーンに設定を適用する。
-    """
-
     here = ini_path.resolve().parent.as_posix()
     parser = ConfigParser(defaults={"here": here})
-
     if not parser.read(str(ini_path), encoding="utf-8"):
-        raise FileNotFoundError(
-            f"[Fatal] Alembic設定ファイルが見つかりません: {ini_path}"
-        )
-
+        raise FileNotFoundError(f"[Fatal] Alembic設定ファイルが見つかりません: {ini_path}")
     cfg = Config()
     cfg.config_file_name = str(ini_path)
-
-    for section in parser.sections():
-        for key, value in parser.items(section):
-            if key == "here":
-                continue  # defaultsで混入した変数はスキップ
-            if section == "alembic":
-                cfg.set_main_option(key, value)
-            else:
-                cfg.set_section_option(section, key, value)
-
+    cfg.file_config = parser
     return cfg
 
 

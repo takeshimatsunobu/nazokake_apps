@@ -13,6 +13,22 @@ _OLLAMA_SEMAPHORE = asyncio.Semaphore(1)
 import json
 import os
 import random
+import sys
+
+# Windowsの既定コンソールはcp932であり、print()で絵文字(📚等)を出力すると
+# UnicodeEncodeErrorが発生する。本モジュールは_load_fewshot_pool()をモジュール
+# 読み込み時点で即時実行するため、この例外はアプリ全体の起動クラッシュに直結する
+# (uvicorn起動時、api.routers importチェーン経由でこのファイルがimportされた
+# 瞬間に発生)。tools/run_migrations.pyと同じ対策(stdout/stderrをUTF-8へ
+# reconfigure)をここでも適用する。TextIOWrapperでない場合(pipe等)はreconfigure
+# 自体が無いため呼ばない。
+if sys.platform == "win32":
+    import io
+
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if isinstance(sys.stderr, io.TextIOWrapper):
+        sys.stderr.reconfigure(encoding="utf-8")
 
 import filelock
 import httpx
@@ -97,6 +113,10 @@ GEN_SCHEMA = {
         },
         "toku": {"type": "STRING", "description": "解きとなる10文字以内の短い名詞"},
         "kokoro": {"type": "STRING", "description": "共通点・オチの文章（そのこころ）"},
+        "persona_comment": {
+            "type": "STRING",
+            "description": "ペルソナの語り口・キャラクターになりきった一言コメント（エンタメ演出用、任意）",
+        },
     },
     "required": [
         "associations",
@@ -113,14 +133,18 @@ GEN_SCHEMA = {
         "surprise_check",
         "toku",
         "kokoro",
+        "persona_comment",
     ],
 }
 
 # システムプロンプトに埋め込むJSON出力例（フラット構造。f-stringの波括弧エスケープを避けるため別定義で連結）。
+# persona_comment は required に含めない(空文字でも許容)ため、古いFew-shot/ELYZA出力が
+# このキーを欠いても _valid_nazokake / Result のバリデーションを壊さない。
 _GEN_JSON_TEMPLATE = (
     '{"associations": ["..."], "kakekotoba": ["..."], '
     '"shared_essence": "...", "surprise_check": "...", '
-    '"toku": "解きの単語(10文字以内)", "kokoro": "オチの文章"}'
+    '"toku": "解きの単語(10文字以内)", "kokoro": "オチの文章", '
+    '"persona_comment": "ペルソナになりきった一言コメント"}'
 )
 
 # Few-shot のお手本（フラット構造）。ダジャレ単発で終わらせず、本質的共通点まで踏み込む良例を1件提示する。
@@ -276,10 +300,18 @@ def _summarize_thinking(t) -> str:
     return " / ".join(parts)
 
 
-async def _build_gen_prompts(odai: str):
+async def _build_gen_prompts(
+    odai: str,
+    persona_prompt: str | None = None,
+    temperature_override: float | None = None,
+):
     """動的設定(temperature/persona)を取得し、CoT生成用の system/user プロンプトを組み立てる。
 
     お手本は「固定の完全例1件（フォーマット固定）＋プールからのランダム抽出N件（多様性）」のハイブリッド。
+
+    persona_prompt/temperature_override が指定された場合(personas.pyの固定ペルソナを
+    ユーザーがリクエストで選択した場合)は、Firestore(system_configs/ai_settings)経由の
+    管理者設定デフォルトより優先する。未指定時は従来通りFirestoreの動的設定にフォールバックする。
     """
     db = firestore.client()
     dyn_temp, dyn_persona = 0.8, "あなたは前衛的な天才なぞかけ芸人です。"
@@ -296,6 +328,11 @@ async def _build_gen_prompts(odai: str):
             f"⚠️ 動的設定(ai_settings)の取得に失敗、既定値にフォールバック: {e}"
         )
 
+    if persona_prompt is not None:
+        dyn_persona = persona_prompt
+    if temperature_override is not None:
+        dyn_temp = temperature_override
+
     sys_prompt = (
         f"{dyn_persona}\n\n{GEN_GUIDANCE}\n\n"
         "【思考の手順（フラットなJSONの各キーを上から順に必ず埋める）】\n"
@@ -305,7 +342,9 @@ async def _build_gen_prompts(odai: str):
         "   ※ここが命。単なる音の一致（ダジャレ）で終わらせず、両者が共有する本質まで掘り下げること。\n"
         "4. surprise_check: お題と解きが物理的・概念的に「遠い」かを自己評価する（S_sur）。近ければ却下し選び直す。\n"
         "5. toku: 以上を踏まえ、最も意外で本質を突く解き（短い名詞）を決定する。\n"
-        "6. kokoro: 種明かしの一文（そのこころ）。掛詞と本質的共通点が両立する「なるほど」のオチにする。\n\n"
+        "6. kokoro: 種明かしの一文（そのこころ）。掛詞と本質的共通点が両立する「なるほど」のオチにする。\n"
+        "7. persona_comment: 上記のなぞかけを発表した直後、あなたのペルソナのキャラクター・"
+        "語り口になりきったまま放つ一言コメント（30〜60文字程度）。\n\n"
         "【絶対制約】toku は必ず10文字以内の短い名詞。\n\n"
         "【お手本（このレベルの思考の深さと出力フォーマットを再現せよ）】\n"
         + _GEN_FEWSHOT_EXAMPLE
@@ -380,7 +419,14 @@ def _finalize(parsed: dict) -> dict:
     toku = str(parsed.get("toku", "") or "").strip()[:10]
     kokoro = str(parsed.get("kokoro", "") or "").strip()
     hint = str(parsed.get("hint", "") or "").strip() or _summarize_thinking(thinking)
-    return {"hint": hint, "toku": toku, "kokoro": kokoro, "thinking": thinking}
+    persona_comment = str(parsed.get("persona_comment", "") or "").strip()
+    return {
+        "hint": hint,
+        "toku": toku,
+        "kokoro": kokoro,
+        "persona_comment": persona_comment,
+        "thinking": thinking,
+    }
 
 
 def _is_gemini_auth_error(err: Exception | None) -> bool:
@@ -407,7 +453,11 @@ def _is_gemini_auth_error(err: Exception | None) -> bool:
     )
 
 
-async def generate_via_gemini(odai: str) -> dict:
+async def generate_via_gemini(
+    odai: str,
+    persona_prompt: str | None = None,
+    temperature_override: float | None = None,
+) -> dict:
     """【即時・主軸】Gemini 3.5 Flash で構造化生成（GEN_SCHEMA＋3回リトライ）。失敗時は例外送出。"""
     api_key = get_gemini_api_key() or ""
     if not api_key:
@@ -419,7 +469,9 @@ async def generate_via_gemini(odai: str) -> dict:
             "(GEMINI_API_KEY)の設定をご確認いただくよう連絡してください。"
         )
 
-    sys_prompt, user_prompt, dyn_temp = await _build_gen_prompts(odai)
+    sys_prompt, user_prompt, dyn_temp = await _build_gen_prompts(
+        odai, persona_prompt, temperature_override
+    )
     fallback_model = "gemini-3.5-flash"
 
     last_err = None
@@ -471,7 +523,11 @@ async def generate_via_gemini(odai: str) -> dict:
     raise RuntimeError(f"Gemini生成に3回失敗しました: {last_err}")
 
 
-async def generate_via_llmjp(odai: str) -> dict:
+async def generate_via_llmjp(
+    odai: str,
+    persona_prompt: str | None = None,
+    temperature_override: float | None = None,
+) -> dict:
     """【遅延・おまけ】ローカル ELYZA(Ollama) で生成。VRAM 8GB防弾仕様。
 
     接続先・モデルは env で設定: LLMJP_URL / LLMJP_MODEL。
@@ -489,7 +545,7 @@ async def generate_via_llmjp(odai: str) -> dict:
             "⚠️ [VRAM排他制御] MLOpsパイプラインがVRAMロックを保持中のため、"
             "ローカル推論(ELYZA)を諦めクラウドAPI(Gemini)へフォールバックします。"
         )
-        return await generate_via_gemini(odai)
+        return await generate_via_gemini(odai, persona_prompt, temperature_override)
 
     try:
         async with _OLLAMA_SEMAPHORE:
@@ -498,7 +554,9 @@ async def generate_via_llmjp(odai: str) -> dict:
             )
             await asyncio.sleep(2.0)
 
-            sys_prompt, user_prompt, dyn_temp = await _build_gen_prompts(odai)
+            sys_prompt, user_prompt, dyn_temp = await _build_gen_prompts(
+                odai, persona_prompt, temperature_override
+            )
             url = os.environ.get(
                 "LLMJP_URL", "http://localhost:11434/v1/chat/completions"
             )
@@ -512,7 +570,9 @@ async def generate_via_llmjp(odai: str) -> dict:
                     url,
                     sys_prompt,
                     user_prompt,
-                    max_tokens=1024,
+                    # persona_comment分の出力が増えるため800まで許容(do_sample相当は
+                    # Ollamaがtemperature>0で自動的にサンプリングするため明示指定不要)。
+                    max_tokens=800,
                     temperature=dyn_temp,
                     json_mode=True,
                     model=model,

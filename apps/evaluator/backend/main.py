@@ -3,6 +3,7 @@ from fastapi.staticfiles import StaticFiles
 # V8.9 Final Test
 import os
 import sys
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi.middleware.cors import CORSMiddleware
@@ -78,7 +79,19 @@ else:
         format="<green>{time}</green> <level>{message}</level>",
     )
 
-app = FastAPI(title="なぞかけディスカバリー API")
+from nazokake_core.database import Base, _engine
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    # startup: DBスキーマの初期化(旧 @app.on_event("startup") から移行)
+    async with _engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield
+    # shutdown: 現時点でクリーンアップ処理は無し(将来ここに追加する)
+
+
+app = FastAPI(title="なぞかけディスカバリー API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -86,18 +99,16 @@ app.add_middleware(
         "https://nazokakeapp-137e5.web.app",
         "http://localhost:5000",
         "http://127.0.0.1:5000",
+        # ローカル開発の実際のuvicorn起動先(run_api.ps1/start_dev.ps1)。"localhost"と
+        # "127.0.0.1"はブラウザのSame-Origin Policy上は別オリジン扱いのため両方明示する
+        # (config.jsのAPI_BASEは常に127.0.0.1:8000へ固定される一方、ページ自体を
+        # localhost:8000で開いた場合はオリジンが食い違いCORSプリフライトが必要になる)。
+        "http://localhost:8000",
+        "http://127.0.0.1:8000",
     ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-from nazokake_core.database import Base, _engine
-
-
-@app.on_event("startup")
-async def _ensure_db_schema():
-    async with _engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
 
 # ルーターの登録 (research ルーター含む)
 try:

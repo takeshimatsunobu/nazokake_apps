@@ -39,6 +39,18 @@ from pathlib import Path
 from types import FrameType
 from typing import Any
 
+# Windowsの既定コンソールはcp932であり、print()で絵文字等を出力するとUnicodeEncodeError
+# (最悪クラッシュ)や文字化けを起こす。apps/evaluator/backend/services/generation.py
+# (このファイルが後段でimportする_load_fewshot_pool()が起動時に即printする)と同じ対策を、
+# このファイル自身のprint(_log())が呼ばれるより前、かつどのimportよりも前に適用する。
+if sys.platform == "win32":
+    import io
+
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if isinstance(sys.stderr, io.TextIOWrapper):
+        sys.stderr.reconfigure(encoding="utf-8")
+
 BASE_DIR = Path(__file__).resolve().parent.parent
 # apps/evaluator/backend の services.generation / services.evaluation をそのまま
 # 再利用するため(generate_via_llmjp / run_evaluationの再実装を避けるため)、
@@ -48,6 +60,7 @@ for _path in (BASE_DIR, BACKEND_DIR):
     if str(_path) not in sys.path:
         sys.path.insert(0, str(_path))
 
+import firebase_admin  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 from firebase_admin import firestore  # noqa: E402
 
@@ -56,6 +69,7 @@ from nazokake_core.firestore_sync import (  # noqa: E402
     _ensure_firebase_app,
     _resolve_collection,
 )
+from personas import PERSONAS  # noqa: E402
 from services.evaluation import run_evaluation  # noqa: E402
 from services.generation import generate_via_llmjp  # noqa: E402
 
@@ -133,14 +147,14 @@ def _find_claimable_doc_ids(db, collection: str) -> list[str]:
 
     pending_docs = (
         db.collection(collection)
-        .where("elyza_job_status", "==", "pending")
+        .where(filter=firestore.FieldFilter("elyza_job_status", "==", "pending"))
         .limit(CLAIM_BATCH_SIZE)
         .stream()
     )
     stale_docs = (
         db.collection(collection)
-        .where("elyza_job_status", "==", "processing")
-        .where("elyza_job_locked_at", "<", stale_cutoff)
+        .where(filter=firestore.FieldFilter("elyza_job_status", "==", "processing"))
+        .where(filter=firestore.FieldFilter("elyza_job_locked_at", "<", stale_cutoff))
         .limit(CLAIM_BATCH_SIZE)
         .stream()
     )
@@ -183,6 +197,12 @@ def _claim_job_sync(db, collection: str, doc_id: str) -> dict[str, Any] | None:
             doc_ref,
             {"elyza_job_status": "processing", "elyza_job_locked_at": _now_iso()},
         )
+        # persona/temperature: POST /generate 側がpersona列(汎用JSONカラム)に
+        # {"persona_id":.., "temperature":..} として書き込み済み(instructions/
+        # generate.py::generate_ai)。ユーザーが選んだペルソナ・温度をELYZA側の
+        # 生成にも反映するため、ここで一緒に読み取る。欠落時はデフォルトへ安全に
+        # フォールバックする(旧データ・persona未選択時)。
+        persona_meta = remote.get("persona") if isinstance(remote.get("persona"), dict) else {}
         return {
             "doc_id": doc_id,
             "odai": remote.get("odai") or "",
@@ -194,6 +214,8 @@ def _claim_job_sync(db, collection: str, doc_id: str) -> dict[str, Any] | None:
             # (含めるとスコープ外フィールドとしてガードに拒否される)。ワーカー自身の
             # ローカルSQLite側の記録にのみ必要。
             "dpo_pair_id": remote.get("dpo_pair_id"),
+            "persona_id": persona_meta.get("persona_id"),
+            "temperature": persona_meta.get("temperature"),
         }
 
     return _txn(db.transaction())
@@ -242,6 +264,10 @@ async def _process_job(db, collection: str, job: dict[str, Any]) -> None:
     odai = job['odai']
     retry_count = job['retry_count']
     dpo_pair_id = job.get('dpo_pair_id')
+    # ユーザーが選択したペルソナ/Temperatureをジョブから受け取る(存在しない/不正な
+    # IDはpersonas.PERSONAS.getのデフォルト(1)にフォールバックする)。
+    persona_prompt = PERSONAS.get(job.get('persona_id'), PERSONAS[1])['prompt']
+    temperature = job.get('temperature')
 
     if not odai:
         _log(f'⚠️ [{doc_id}] odaiが空のため生成をスキップし、失敗として扱います。')
@@ -253,7 +279,7 @@ async def _process_job(db, collection: str, job: dict[str, Any]) -> None:
 
     async def _bounded_gen_and_eval(idx):
         async with sem:
-            raw_result = await generate_via_llmjp(odai)
+            raw_result = await generate_via_llmjp(odai, persona_prompt, temperature)
             text = _compose_text(odai, raw_result)
             evaluation = await run_evaluation(odai, text)
             return {
@@ -390,6 +416,18 @@ def _build_arg_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = _build_arg_parser().parse_args(argv)
     load_dotenv()
+
+    # main.py(apps/evaluator/backend)と同じ固定projectIdでFirebase Admin SDKを初期化する。
+    # 【instructions/250】_ensure_firebase_app()(nazokake_core.firestore_sync)はGCP上の
+    # デフォルト認証情報からproject_idを自動解決できる場合のみ動作するが、ローカルGPU機
+    # (このワーカーの実行環境)ではGOOGLE_CLOUD_PROJECT等が設定されておらず、
+    # "ValueError: Project ID is required to access Firestore" で即クラッシュする。
+    # ここで先に明示的なprojectId付きでinitialize_app()しておけば、
+    # _ensure_firebase_app()の `if not firebase_admin._apps:` ガードにより
+    # 後続のproject_id自動解決は一切試みられず、安全にスキップされる。
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(options={"projectId": "nazokakeapp-137e5"})
+
     ensure_db_ready()
 
     if not args.loop:

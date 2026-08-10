@@ -1,6 +1,5 @@
 import { firebaseConfig } from "firebase-config";
-
-const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://127.0.0.1:7800/api' : 'https://nazokake-backend-r6jq2erkta-an.a.run.app/api';
+import { API_BASE } from "config";
 
 function showToast(msg, type='info') {
     const container = document.getElementById('toast-container'); if(!container) return;

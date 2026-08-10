@@ -34,6 +34,7 @@ from firebase_admin import firestore
 from api.deps import get_db, handle_exceptions
 from api.routers.admin_costs import is_budget_exceeded
 from models.schemas import GenerateRequest
+from personas import PERSONAS
 from services.generation import generate_via_gemini, generate_via_llmjp
 from services.evaluation import run_evaluation, AXES
 from nazokake_core.database import async_get_item, async_upsert_item
@@ -78,7 +79,14 @@ def _validate_scores_with_fallback(raw: dict) -> dict:
         return Scores(**{axis: 0.5 for axis in AXES}).model_dump()
 
 
-async def progressive_generate(db, doc_id: str, odai: str, pair_id: str):
+async def progressive_generate(
+    db,
+    doc_id: str,
+    odai: str,
+    pair_id: str,
+    persona_prompt: str | None = None,
+    temperature: float | None = None,
+):
     """段階的開示の本体。Gemini と ELYZA を「完全に独立した並列フロー」で実行する。
 
     各モデルが自分のペースで「生成 → 本文先行update → 評価 → 評価後update」を進め、
@@ -103,7 +111,7 @@ async def progressive_generate(db, doc_id: str, odai: str, pair_id: str):
     async def process_gemini() -> bool:
         """主軸パス: 生成→本文先行→評価→スコア。失敗は status:error を書き、False を返す。"""
         try:
-            g = await generate_via_gemini(odai)
+            g = await generate_via_gemini(odai, persona_prompt, temperature)
             validated_result = _validate_result_with_fallback(
                 g, "生成結果の検証に失敗しました"
             )
@@ -179,7 +187,7 @@ async def progressive_generate(db, doc_id: str, odai: str, pair_id: str):
             )
             return
         try:
-            raw_result_l = await generate_via_llmjp(odai)
+            raw_result_l = await generate_via_llmjp(odai, persona_prompt, temperature)
             validated_result_l = _validate_result_with_fallback(
                 raw_result_l, "生成結果の検証に失敗しました"
             )
@@ -231,10 +239,19 @@ async def progressive_generate(db, doc_id: str, odai: str, pair_id: str):
         )
 
 
-async def _guarded_progressive(db, doc_id: str, odai: str, pair_id: str):
+async def _guarded_progressive(
+    db,
+    doc_id: str,
+    odai: str,
+    pair_id: str,
+    persona_prompt: str | None = None,
+    temperature: float | None = None,
+):
     """未捕捉例外でもDBに必ず error を書き、無限ロード（サイレントデス）を防ぐ最終防壁。"""
     try:
-        await progressive_generate(db, doc_id, odai, pair_id)
+        await progressive_generate(
+            db, doc_id, odai, pair_id, persona_prompt, temperature
+        )
     except Exception as e:
         logger.exception(f"[{doc_id}] 背景タスク(生成・評価)で致命的エラー発生: {e}")
         try:
@@ -433,6 +450,8 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
     # ローカルDB更新へ記録し、抽出スクリプトがバッチ由来・アプリ由来を同一ロジックで
     # ペア回収できるようにする。
     pair_id = f"dpo-{uuid.uuid4().hex[:12]}"
+    # ペルソナ選択(personas.py)。存在しないIDはデフォルト(1)にフォールバックする。
+    persona_prompt = PERSONAS.get(req.persona_id, PERSONAS[1])["prompt"]
     await async_upsert_item(
         {
             "doc_id": doc_id,
@@ -449,6 +468,9 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
             "created_at": datetime.now(timezone.utc).isoformat(),
             "random_weight": random.random(),  # noqa: S311 (無限スクロール用シーク乱数。暗号用途ではない)
             "dpo_pair_id": pair_id,
+            # persona列(既存のJSON汎用カラム)にリクエストされたペルソナID/温度を記録する。
+            # 新規マイグレーション不要でスキーマへ組み込むための選択。
+            "persona": {"persona_id": req.persona_id, "temperature": req.temperature},
         }
     )
     # 【instructions/283】Cloud RunはCPUをリクエスト処理中のみ割り当てる仕様のため、
@@ -459,7 +481,11 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
     # 処理中に同期を完結させる。
     await sync_once_safe()
     # 背景で生成パイプラインを発火し、即座にレスポンスを返す（HTTPをブロックしない）
-    task = asyncio.create_task(_guarded_progressive(db, doc_id, req.odai, pair_id))
+    task = asyncio.create_task(
+        _guarded_progressive(
+            db, doc_id, req.odai, pair_id, persona_prompt, req.temperature
+        )
+    )
     _bg_tasks.add(task)
     task.add_done_callback(_bg_tasks.discard)
     return {"status": "processing", "task_id": doc_id}

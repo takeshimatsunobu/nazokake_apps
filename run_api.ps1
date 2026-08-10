@@ -108,13 +108,6 @@ if ($ExtraArgs -and (($ExtraArgs -join " ") -match "(?i)(--workers|-w\b)")) {
 }
 
 # --- 【フロントエンド型同期】 -------------------------------------------------
-$FrontendNodeModules = Join-Path $FrontendDir "node_modules"
-
-if (-not (Test-Path $FrontendNodeModules)) {
-    Write-Error "フロントエンドの依存パッケージが未インストールです。'$FrontendDir' で 'npm install' を実行してから再試行してください。"
-    exit 1
-}
-
 Write-Host "🔄 OpenAPIスキーマをダンプ中..."
 & $VenvPython (Join-Path $ProjectRoot "tools\export_openapi.py")
 if ($LASTEXITCODE -ne 0) {
@@ -122,11 +115,27 @@ if ($LASTEXITCODE -ne 0) {
     exit 1
 }
 
-Write-Host "🔄 フロントエンドの型定義(api.d.ts)を再生成中..."
-npm --prefix $FrontendDir run generate-types
-if ($LASTEXITCODE -ne 0) {
-    Write-Error "フロントエンドの型定義生成に失敗しました(npm run generate-types が非0で終了)。"
-    exit 1
+# npmが未インストールの環境(バックエンド/ローカルGPUワーカー専用機等、フロントエンドを
+# 編集・配信する予定が無いマシン)では、型定義の再生成は本質的に実行不可能かつ不要である。
+# 以前はnpm自体の有無を確認せずnode_modulesの存在だけを見てハード失敗していたため、
+# そもそもnpmが入っていない環境ではバックエンド(uvicorn)自体が起動できなかった。
+# npmが見つからない場合はこのステップ全体を警告付きでスキップし、uvicorn起動へ進む。
+$npmAvailable = [bool](Get-Command npm -ErrorAction SilentlyContinue)
+if (-not $npmAvailable) {
+    Write-Warning "npm が見つかりません。フロントエンドの型定義(api.d.ts)再生成をスキップし、バックエンドの起動へ進みます(Node.js/npmが必要な場合は https://nodejs.org からインストールしてください)。"
+} else {
+    $FrontendNodeModules = Join-Path $FrontendDir "node_modules"
+    if (-not (Test-Path $FrontendNodeModules)) {
+        Write-Error "フロントエンドの依存パッケージが未インストールです。'$FrontendDir' で 'npm install' を実行してから再試行してください。"
+        exit 1
+    }
+
+    Write-Host "🔄 フロントエンドの型定義(api.d.ts)を再生成中..."
+    npm --prefix $FrontendDir run generate-types
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "フロントエンドの型定義生成に失敗しました(npm run generate-types が非0で終了)。"
+        exit 1
+    }
 }
 
 # --- 【スキーマ同期】 ---------------------------------------------------------

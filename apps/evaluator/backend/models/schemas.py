@@ -10,6 +10,8 @@ class HumanSubmitRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     odai: str
+    persona_id: int = Field(default=1, ge=1, le=10)
+    temperature: float = Field(default=0.6, ge=0.0, le=1.0)
 
 
 class TelemetryLogRequest(BaseModel):

@@ -44,6 +44,7 @@ class Result(BaseModel):
     hint: str = ""
     toku: str
     kokoro: str
+    persona_comment: str = ""
 
 # 🚨 私が消してしまっていた Big5 クラスを完全復元
 class Big5(BaseModel):

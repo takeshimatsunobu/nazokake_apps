@@ -25,11 +25,11 @@ export async function apiLogEvent(eventName, duration, tabName = "", comment = "
     } catch (e) {}
 }
 
-export async function apiGenerate(odai) {
+export async function apiGenerate(odai, personaId = 1, temperature = 0.6) {
     return fetchAPI('/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ odai })
+        body: JSON.stringify({ odai, persona_id: personaId, temperature })
     });
 }
 

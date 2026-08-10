@@ -1,0 +1,16 @@
+import os, re
+
+filepath = 'apps/evaluator/frontend/public/research_data/tab-definition.html'
+
+if os.path.exists(filepath):
+    with open(filepath, 'r', encoding='utf-8') as f:
+        content = f.read()
+
+    # 諸悪の根源である md:col-span-2 を正規表現で完全に削除
+    content = re.sub(r'\s*\bmd:col-span-2\b', '', content)
+
+    with open(filepath, 'w', encoding='utf-8') as f:
+        f.write(content)
+    print("✅ 成功: 残存していた md:col-span-2 をすべて削除し、グリッドの暗黙列バグを解消しました。")
+else:
+    print(f"❌ エラー: {filepath} が見つかりません。")

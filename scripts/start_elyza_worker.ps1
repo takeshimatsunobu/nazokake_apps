@@ -46,6 +46,22 @@ $PSNativeCommandUseErrorActionPreference = $false
 $env:PYTHONUTF8 = "1"
 $env:PYTHONIOENCODING = "utf-8"
 
+# Python側(generation.py/ondemand_elyza_worker.py)は既にsys.stdout.reconfigure(encoding=
+# "utf-8")でUTF-8バイト列を正しく出力しているが、それを描画する側のコンソール(conhost)の
+# アクティブなコードページが依然として既定のANSI(日本語環境ではcp932)のままだと、
+# UTF-8バイト列がcp932として誤って解釈され文字化けする(実機で確認: "答 Few-shot..."等)。
+# [Console]::OutputEncodingはこのプロセスが書き込む実コンソールの出力コードページ
+# (chcp 65001相当)を切り替える。子プロセス(python.exe)もこのコンソールに直接アタッチ
+# されて描画されるため、この設定が子プロセスの出力の文字化けにも効く。
+# 標準出力がリダイレクト/パイプされている場合(実コンソールハンドルが無い)は
+# 「The handle is invalid」例外になるが、その場合はそもそもコンソール描画の文字化け
+# 問題自体が起こらないため無視してよい。
+try {
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
+} catch {
+    # リダイレクト/パイプ実行時は無視(上記コメント参照)
+}
+
 $ProjectRoot = Split-Path -Parent $PSScriptRoot
 $VenvDir = Join-Path $ProjectRoot ".venv"
 $VenvPython = Join-Path $VenvDir "Scripts\python.exe"

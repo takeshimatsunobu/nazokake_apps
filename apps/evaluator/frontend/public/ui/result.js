@@ -56,6 +56,43 @@ export function uiBuildCritiqueHtml(data) {
     return `<span class="text-gray-700">${data.reasoning || "なし"}</span>`;
 }
 
+// === 「キャラの暴走度」(Temperature)スライダーの一言解説 ===
+// スライダー(id="temperature", min=0.2 max=0.9 step=0.1)の値に応じて、下の
+// #temperature-description をリアルタイムに切り替える。区分の上限値で判定する
+// (0.2/0.3→安全運転、0.4-0.6→おすすめ、0.7/0.8→攻めの姿勢、0.9→危険領域)。
+const TEMPERATURE_DESCRIPTIONS = [
+    { max: 0.3, text: "安全運転モード。無難で綺麗にまとまったコメントを返します。" },
+    { max: 0.6, text: "おすすめ！適度なユーモアとキャラの個性が光ります。" },
+    { max: 0.8, text: "攻めの姿勢。キャラのクセが強く出始めます。" },
+    { max: Infinity, text: "危険領域。設定を忘れて暴走するかもしれません。" },
+];
+
+function _temperatureDescriptionFor(value) {
+    const v = Number(value);
+    // 浮動小数点の丸め誤差(0.30000000000000004等)で区分境界を取りこぼさないよう微小な許容誤差を入れる。
+    const hit = TEMPERATURE_DESCRIPTIONS.find(({ max }) => v <= max + 1e-9);
+    return (hit || TEMPERATURE_DESCRIPTIONS[TEMPERATURE_DESCRIPTIONS.length - 1]).text;
+}
+
+// スライダーの現在値表示(#temperatureValue)と一言解説(#temperature-description)を更新する。
+// main_index.js の data-oninput-action="setTemperatureDescription" 経由と、
+// ページ読み込み時の初期化(initTemperatureDescription)の両方から呼ばれる。
+// 【重要】ここではスライダーのvalue自体には一切触れない。startGeneration()(app.js)の
+// 既存API呼び出しロジックはinput要素のvalueを直接読むだけなので、表示更新だけを行う
+// この関数を追加してもリクエストボディの組み立てには影響しない。
+export function setTemperatureDescription(value) {
+    const valueEl = document.getElementById('temperatureValue');
+    if (valueEl) valueEl.textContent = value;
+    const descEl = document.getElementById('temperature-description');
+    if (descEl) descEl.textContent = _temperatureDescriptionFor(value);
+}
+
+// ページ読み込み時、スライダーの初期値(HTML属性のvalue、既定0.6)に対応する解説を表示する。
+export function initTemperatureDescription() {
+    const slider = document.getElementById('temperature');
+    if (slider) setTemperatureDescription(slider.value);
+}
+
 // === からくりAI生成結果の描画（Progressive Disclosure / Gemini & ELYZA 同格表示） ===
 // 生成と評価が分離されているため、ポーリングのたびに本関数を呼び、入手済みデータでカードを更新する。
 // 状態: gemini_generated(本文のみ・採点中) → gemini_completed(採点済) → llmjp_status:generated → all_completed。
@@ -117,7 +154,8 @@ function _genModelCard(opts) {
                     「<span class="text-[#5B8124]">${esc(r.toku || '')}</span>」ととく。
                 </p>
                 <p class="text-xs text-gray-500 mt-2">そのこころは、</p>
-                <p class="font-bold text-[#902A19] mt-1 text-lg">${esc(r.kokoro || '')}</p>`;
+                <p class="font-bold text-[#902A19] mt-1 text-lg">${esc(r.kokoro || '')}</p>
+                ${r.persona_comment ? `<p class="text-xs text-gray-500 italic mt-3">💬 ${esc(r.persona_comment)}</p>` : ''}`;
     } else {
         body = `<div class="py-6 text-center text-gray-400 text-sm"><div class="animate-spin inline-block rounded-full h-6 w-6 border-b-2 border-[#C5B358] mb-2"></div><br>生成中...</div>`;
     }

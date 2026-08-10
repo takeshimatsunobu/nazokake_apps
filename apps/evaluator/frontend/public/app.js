@@ -47,17 +47,21 @@ export async function shareText(odai, toku, kokoro, score, isHuman) {
 
 export async function startGeneration() {
     const odai = document.getElementById('odaiInput')?.value.trim(); if (!odai) { showError("お題を入力してください！"); return; }
+    const personaId = parseInt(document.getElementById('persona')?.value, 10) || 1;
+    const temperature = parseFloat(document.getElementById('temperature')?.value) || 0.6;
     // UI制御（前回結果のクリア＋ローディング開始）は ui/result.js に委譲。
     uiGenReset();
     uiGenLoadingStart();
     logEvent('generate_requested');
     try {
-        const data = await apiGenerate(odai);
+        const data = await apiGenerate(odai, personaId, temperature);
         if (!data?.task_id) {
             showError("生成タスクの開始に失敗しました(task_idが取得できませんでした)");
             return;
         }
-        pollStatus(data.task_id);
+        // ローカルGPU(ELYZA)が停止・暴走していても無限ロードにならないよう、
+        // ポーリング開始時点を起点に60秒のタイムアウトを持たせる。
+        pollStatus(data.task_id, Date.now() + 60000);
     } catch (e) { showError(e.message); }
 }
 // 段階開示ポーリング。本文が出た時点(gemini_generated)からデュアルカードを描画し、
@@ -80,7 +84,13 @@ function isElyzaSideDone(data) {
     if (data.elyza_job_status == null || ELYZA_JOB_TERMINAL_STATUSES.includes(data.elyza_job_status)) return true;
     return LLMJP_TERMINAL_STATUSES.includes(data.llmjp_status);
 }
-async function pollStatus(taskId) {
+// タスクごとに一度だけタイムアウトアラートを出すためのガード。
+const _timedOutTasks = new Set();
+
+// deadline: このタスクのポーリングを打ち切る絶対時刻(ms epoch)。ローカルGPU(ELYZA)が
+// 停止・暴走して応答が返らない場合でも、60秒でポーリングを諦めてGeminiの結果のみを
+// 画面に確定表示する(無限ロード防止のフォールバック)。
+async function pollStatus(taskId, deadline) {
     try {
         const data = await apiGetStatus(taskId);
         if (data.status === 'error' || data.eval_status === 'error') { throw new Error(data.message || "エラー"); }
@@ -91,7 +101,16 @@ async function pollStatus(taskId) {
         }
         const overallDone = data.status === 'all_completed' || data.status === 'completed';
         if (overallDone && isElyzaSideDone(data)) { return; } // 全完了（Gemini・ELYZA双方）。ポーリング終了
-        setTimeout(() => pollStatus(taskId), 2000);
+        if (deadline && Date.now() >= deadline) {
+            if (!_timedOutTasks.has(taskId)) {
+                _timedOutTasks.add(taskId);
+                uiGenLoadingStop();
+                alert("ローカルGPU(ELYZA)からの応答がタイムアウトしました。Geminiの結果のみ表示します。");
+                uiMarkGenPollFailed(taskId); // 未着のELYZAカードをフォールバック表示へ倒す
+            }
+            return; // これ以上ポーリングしない
+        }
+        setTimeout(() => pollStatus(taskId, deadline), 2000);
     } catch (e) {
         // 【instructions/289】ポーリングが例外(Fetch通信エラー、または上のstatus==='error'
         // 判定による明示的throw)で中断した場合、トップレベルのローディング解除(showError内)

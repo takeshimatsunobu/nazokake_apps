@@ -1278,7 +1278,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "loguru" },
     { name = "mcp" },
-    { name = "nazokake-core", directory = "../../../packages/shared_core" },
+    { name = "nazokake-core", editable = "../../../packages/shared_core" },
     { name = "opentelemetry-api", specifier = ">=1.44.0" },
     { name = "pydantic" },
     { name = "python-dotenv" },
@@ -1288,7 +1288,7 @@ requires-dist = [
 [[package]]
 name = "nazokake-core"
 version = "0.1.0"
-source = { directory = "../../../packages/shared_core" }
+source = { editable = "../../../packages/shared_core" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },
