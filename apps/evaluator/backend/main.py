@@ -88,9 +88,9 @@ except ImportError:
 from pathlib import Path
 from pathlib import Path
 
-_BASE_DIR = Path(__file__).resolve().parent.parent.parent.parent
+_BASE_DIR = _PROJECT_ROOT
 _CIC_PUBLIC = _BASE_DIR / "public"
-_RESEARCH_PUBLIC = Path(__file__).resolve().parent.parent / "frontend" / "public"
+_RESEARCH_PUBLIC = _PROJECT_ROOT / "apps" / "evaluator" / "frontend" / "public"
 
 # [1] Tactical CIC UI (/cic)
 if _CIC_PUBLIC.exists():
@@ -106,7 +106,7 @@ if _RESEARCH_PUBLIC.exists():
 BACKEND_DIR = Path(__file__).resolve().parent
 PROJECT_ROOT = _PROJECT_ROOT
 
-FRONTEND_DIR = BACKEND_DIR.parent / "frontend" / "public"
+FRONTEND_DIR = PROJECT_ROOT / "apps" / "evaluator" / "frontend" / "public"
 LEGACY_DIR = PROJECT_ROOT / "public"
 DATA_DIR = PROJECT_ROOT / "data" / "research"
 
