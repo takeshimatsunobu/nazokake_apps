@@ -2,19 +2,24 @@
 # ==============
 # `gcloud run deploy --source .` / `gcloud builds submit` がCloud Buildへアップロード
 # するソース一式(=apps/evaluator/DockerfileのビルドコンテキストとしてDockerデーモンへ
-# 渡される内容)を絞り込む。フェーズ1の実測(gcloud meta list-files-for-upload)で、
-# 本設定の旧版でも881ファイルがアップロード対象に残っており、その42%(369件)が
-# tools/、29%(252件)がtools/instructions/単体という実態が判明した。フェーズ2で
-# tools/instructions/等をarchive/へ、本番に不要なファイル群を整理した上で、
-# 本ファイルを「apps/evaluator/Dockerfileが実際にCOPYするパスのみ通す」水準まで
-# 絞り込む。
+# 渡される内容)を絞り込む。apps/evaluator/Dockerfileが実際にCOPYするのは以下の
+# 6パスのみ: apps/evaluator/backend, packages/shared_core, apps/tactical_cic,
+# public, apps/evaluator/frontend/public, apps/evaluator/Dockerfile自身。
+# それ以外は本番ビルドに一切使われない。
+#
+# 【実測結果の記録】
+#   旧版(フェーズ1調査時点)                : 881ファイル
+#   フェーズ4版(初回の包括的除外)           : 183ファイル / 54.0 MiB (実ビルド成功)
+#   本ファイル書き換え直後(apps/batch_factory
+#   等の除外が抜け落ちた状態)               : 581ファイル / 794.7 MiB (アップロード停滞)
+# apps/batch_factory/(独自の.gitを持つ7.2GBのMLパイプライン、LoRAチェックポイントの
+# .safetensors/.pt等を含む)の除外漏れが主因。ディレクトリ単位の除外だけでなく、
+# 同種の大容量モデルファイルが将来どこに置かれても確実に弾けるよう、拡張子単位でも
+# 多層に除外する。
 #
 # 【重要】apps/evaluator/Dockerfileの COPY --exclude=serviceAccountKey.json
 # --exclude=.env はDockerイメージ層でのみ有効で、Cloud Buildへの「ソースアップロード」
-# 自体はここ(.gcloudignore)でしか防げない。旧版はこの除外が無く、
-# apps/evaluator/backend/.env と apps/evaluator/backend/serviceAccountKey.json が
-# 実際にローカルに存在する状態でアップロード対象に含まれ得た(ルートの.dockerignore
-# で過去に発見・修正済みの instructions/218 と同種の実害あるギャップ)。
+# 自体はここ(.gcloudignore)でしか防げない(instructions/218と同種の教訓)。
 
 # --- 【最優先】機密ファイル(Cloud Buildのソースアップロード自体からも除外) ---
 **/serviceAccountKey.json
@@ -24,52 +29,77 @@
 **/*.pem
 **/*.key
 
-# --- 本番に不要なML/バッチパイプライン(フェーズ2以降、archive/またはtools/へ整理済み) ---
-archive/
-apps/batch_factory/
-apps/evaluator_backup/
-workers/
-tools/
-Nazokake_localLLM/
-llama-bin/
-models/
-data/
-run/
+# --- 【最優先】機械学習モデルの実体(拡張子単位。どこに置かれても確実に弾く多層防御) ---
+**/*.safetensors
+**/*.pt
+**/*.pth
+**/*.gguf
+**/*.gguf.bak
+**/*.bin
+**/*.ckpt
+**/*.onnx
+
+# --- 本番に不要なML/バッチパイプライン一式(ディレクトリ単位。フェーズ2以降、
+#     archive/またはtools/content_pipeline/へ整理済みの残りも含め全滅させる) ---
+/archive/
+/apps/batch_factory/
+/apps/evaluator_backup/
+/workers/
+/tools/
+/Nazokake_localLLM/
+/llama-bin/
+/models/
+/data/
+/run/
 
 # --- 本番に不要な開発/運用ツール群 ---
-docs/
-infra/
-scripts/
-tests/
-.github/
-.claude/
-.claudeignore
+/docs/
+/infra/
+/scripts/
+/tests/
+/.github/
+/.claude/
+/.claudeignore
 
 # --- 本番に不要なルート直下の設定/ドキュメント/DB実体 ---
 *.md
-run_api.ps1
-start_dev.ps1
-Makefile
-requirements_orchestrator.txt
-pyrightconfig.json
-.pre-commit-config.yaml
-firebase.json
-firestore.indexes.json
-*.db
-*.db-shm
-*.db-wal
+/run_api.ps1
+/start_dev.ps1
+/Makefile
+/requirements_orchestrator.txt
+/pyrightconfig.json
+/.pre-commit-config.yaml
+/firebase.json
+/firestore.indexes.json
+**/*.db
+**/*.db-shm
+**/*.db-wal
 
-# --- ビルド成果物・仮想環境・キャッシュ(GBクラスの肥大化要因) ---
+# --- ビルド成果物・仮想環境・キャッシュ(GBクラスの肥大化要因。**/で深さ不問にする) ---
 .git/
 **/.venv*/
 **/__pycache__/
 **/*.pyc
 **/node_modules/
-.ruff_cache/
-.pytest_cache/
-packages/shared_core/build/
-packages/shared_core/*.egg-info/
+**/.ruff_cache/
+**/.pytest_cache/
+**/.mypy_cache/
+/packages/shared_core/build/
+/packages/shared_core/*.egg-info/
 
 # --- その他のローカル実行時アーティファクト ---
-.coverage
-.vram.lock
+/.coverage
+/.vram.lock
+
+# --- apps/evaluator/ 直下の散乱ファイル(実測で発見: テスト/デバッグ用の一回限り
+#     スクリプト・墓標化済みデプロイスクリプト・別用途のfirebase.json等が200件混在
+#     しており、ディレクトリ単位の除外を後から個別に足し続けるのは漏れの温床になる。
+#     apps/evaluator/Dockerfileが実際にCOPYするのは backend/・frontend/(のうち
+#     public/のみ)・Dockerfile自身だけのため、ここは「既定で全て除外し、必要な
+#     ものだけ明示的に再許可する」allowlist方式に切り替える)。
+/apps/evaluator/*
+!/apps/evaluator/backend/
+!/apps/evaluator/frontend/
+!/apps/evaluator/Dockerfile
+/apps/evaluator/frontend/*
+!/apps/evaluator/frontend/public/
