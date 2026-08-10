@@ -1,96 +1,13 @@
-# Cloud Build (gcloud builds submit) がアップロードするソースから除外するファイル。
-#
-# 注意: `#!include:.gitignore` は使わない。ルートの .gitignore は
-# `/apps/evaluator/` と `/apps/batch_factory/` を丸ごと除外しており(埋め込みリポジトリ
-# のため)、それをそのまま取り込むと cloudbuild.yaml がビルドに必要とする
-# apps/evaluator/backend/ と apps/evaluator/Dockerfile まで除外されてしまう。
-# そのため本ファイルは .gitignore に依存せず、Cloud Build用に独立して定義する。
-
-# --- 機密ファイル(絶対にアップロードしない) ---
-.env
-.env.*
-**/.env
-**/.env.*
-!**/.env.example
-serviceAccountKey.json
-**/serviceAccountKey.json
-*.pem
-*.key
-
-# --- Git ---
 .git/
-**/.git/
-
-# --- Python仮想環境(GBクラスの肥大化要因。全アプリ共通) ---
-.venv/
-.venv*/
-**/.venv/
 **/.venv*/
-venv/
-env/
-__pycache__/
 **/__pycache__/
-*.pyc
-.mypy_cache/
-**/.mypy_cache/
-
-# --- ローカルLLM本体・LoRA成果物・大容量モデルファイル ---
-# 注意: 汎用的な `models/` / `**/models/` は使わない。
-# apps/evaluator/backend/models/ はPydanticスキーマ(DTO)を置く現役のPythonパッケージであり、
-# これを除外するとビルド後のコンテナが ModuleNotFoundError で起動不能になる。
-# 大容量モデル成果物は個別の実ディレクトリ(下記)とファイル拡張子で狙い撃ちする。
-*.gguf
-*.gguf.bak
-*.safetensors
-*.bin
-*.pt
-apps/evaluator/models/
-llama-bin/
-**/llama-bin/
-unsloth_compiled_cache/
-**/unsloth_compiled_cache/
-cloudflared.exe
-**/cloudflared.exe
-
-# --- apps/batch_factory: このcloudbuild.yamlはevaluatorのみビルドするため丸ごと不要 ---
-apps/batch_factory/
-
-# --- apps/evaluator: ビルドに必要な backend/・Dockerfile・frontend/public/ 以外は不要 ---
-# 【instructions/241で発見・修正】apps/evaluator/frontend/ を丸ごと除外していたが、
-# instructions/204(フロントエンド一元配信)以降、Dockerfileが
-# `COPY apps/evaluator/frontend/public ./apps/evaluator/frontend/public` を実行するため、
-# このディレクトリ全除外は本来ビルドに必要なファイルまで欠落させる古い記述だった
-# (cloudbuild.yaml経由の`gcloud builds submit`を実際に使うとCOPY失敗でビルドが壊れる)。
-# public/ のみ明示的に再度含める。
-apps/evaluator/frontend/*
-!apps/evaluator/frontend/public
-apps/evaluator/data/
-apps/evaluator/scripts/
-apps/evaluator/export_context_final/
-apps/evaluator/service_frontend/
-apps/evaluator/.firebase/
-apps/evaluator/*.gguf.bak
-
-# --- ローカルSQLite実体・一時的な事実抽出成果物(instructions/241) ---
-*.db
-*.db-wal
-*.db-shm
-docs/audit/
-
-# --- ローカル開発ツール・キャッシュ・履歴(リポジトリ全体) ---
-.agents/
-.aider*
-**/.aider*
-.claude/
-.vscode/
-node_modules/
+**/*.db
+**/*.db-shm
+**/*.db-wal
 **/node_modules/
-
-# --- その他の大容量・環境依存ディレクトリ ---
+run/
+.env
+apps/evaluator_backup/
+models/
+llama-bin/
 Nazokake_localLLM/
-*.bak
-*.bak_v*
-nazo_agent.py.bak*
-.venv/
-__pycache__/
-.git/

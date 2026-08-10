@@ -4,7 +4,8 @@ exclude: >
     node_modules/|
     tools/audit_reports/|
     _tmp.*|
-    \.git/
+    \.git/|
+    archive/
   )
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks

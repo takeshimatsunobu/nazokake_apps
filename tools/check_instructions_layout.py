@@ -32,7 +32,14 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding="utf-8")
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-INSTRUCTIONS_DIR = BASE_DIR / "tools" / "instructions"
+# 【フェーズ2の構造整理で移設】tools/instructions/ は本番デプロイに不要な履歴文書
+# (instructions/NNNとしてコードベース全体のコメントから無数に参照される意思決定
+# トレイル)のため archive/instructions_history/tools_instructions/ へ隔離した。
+# このガード自体は instructions/194 の再発防止(6階層・113ファイルのネスト事故)
+# として引き続き必要なため、移設後の実際の置き場を追いかけて更新する
+# (旧パスのままだと INSTRUCTIONS_DIR.is_dir() が常に False になり、チェックが
+# 気付かれないまま永久に無効化されてしまう)。
+INSTRUCTIONS_DIR = BASE_DIR / "archive" / "instructions_history" / "tools_instructions"
 
 
 def find_nested_instructions(instructions_dir: Path) -> list[Path]:

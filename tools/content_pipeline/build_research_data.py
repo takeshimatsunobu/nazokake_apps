@@ -658,15 +658,18 @@ def build_culture_world_theory():
 
 def build_culture_world_academic_v3():
     rows = read_csv_skip("041世界の言語活動調査.(学術的).csv", skip_lines=1)
-    if not rows: return "<div class='p-4 text-slate-500'>データがありません。</div>"
+    if not rows:
+        return "<div class='p-4 text-slate-500'>データがありません。</div>"
 
     # 国別にグループ化
     grouped = {}
     for row in rows:
-        if len(row) < 17: continue
+        if len(row) < 17:
+            continue
         quad = row[0].strip()
         country = row[1].strip()
-        if country not in grouped: grouped[country] = []
+        if country not in grouped:
+            grouped[country] = []
         grouped[country].append(row)
 
     # 地図コンテナ（1. 地図 ➔ 2. 大陸別アコーディオン ➔ 3. 選択エリア ➔ 4. 隠しデータ の順。理論体系は culture_world_theory として別出力）
@@ -757,14 +760,17 @@ def build_culture_world_academic_v3():
 
 def build_culture_world_survey_v3():
     rows = read_csv_skip("042 世界の言語活動調査(実態調査).csv", skip_lines=1)
-    if not rows: return "<div class='p-4 text-slate-500'>データがありません。</div>"
+    if not rows:
+        return "<div class='p-4 text-slate-500'>データがありません。</div>"
 
     grouped = {}
     for row in rows:
-        if len(row) < 17: continue
+        if len(row) < 17:
+            continue
         quad = row[0].strip()
         country = row[1].strip()
-        if country not in grouped: grouped[country] = []
+        if country not in grouped:
+            grouped[country] = []
         grouped[country].append(row)
 
     # 地図コンテナ（1. 地図 ➔ 2. 大陸別アコーディオン ➔ 3. 選択エリア ➔ 4. 隠しデータ の順。イントロは無し）
