@@ -232,20 +232,17 @@ def _sample_fewshot_block() -> str:
     )
 
 
-async def chat_completion_local(
+def _chat_completion_local_sync(
     url,
     system_prompt,
     user_prompt,
-    max_tokens=256,
-    temperature=0.8,
-    json_mode=False,
-    model="gemma",
-    read_timeout=35.0,
+    max_tokens,
+    temperature,
+    json_mode,
+    model,
 ):
     import os
 
-    if not url:
-        raise ValueError("URL未設定")
     payload = {
         "model": model,
         "messages": [
@@ -272,8 +269,8 @@ async def chat_completion_local(
         headers["CF-Access-Client-Secret"] = cf_secret
 
     # 接続フェイルファスト: サーバダウン時は connect=5s で即諦め、読み取り(生成)には read_timeout の猶予を確保する
-    async with httpx.AsyncClient(timeout=httpx.Timeout(120.0, connect=5.0)) as client:
-        res = await client.post(url, json=payload, headers=headers)
+    with httpx.Client(timeout=httpx.Timeout(120.0, connect=5.0)) as client:
+        res = client.post(url, json=payload, headers=headers)
         res.raise_for_status()
         return (
             res.json()
@@ -282,6 +279,40 @@ async def chat_completion_local(
             .get("content", "")
             .strip()
         )
+
+
+async def chat_completion_local(
+    url,
+    system_prompt,
+    user_prompt,
+    max_tokens=256,
+    temperature=0.8,
+    json_mode=False,
+    model="gemma",
+    read_timeout=35.0,
+):
+    if not url:
+        raise ValueError("URL未設定")
+    # 【実機計測に基づく修正】httpx.AsyncClient(イベントループネイティブな非同期I/O)を
+    # このプロセス内で使うと、firebase_admin(Firestore用gRPCクライアント)が同じ
+    # プロセス/イベントループに存在する状態でOllamaへの応答が22.8秒までブロート
+    # することを実測で確認した(Windows既定のProactorEventLoopとgRPCの相性問題と
+    # 推測される。firebase_admin無しの単体実行では同一ペイロードで5.5秒)。同じ
+    # プロセス内のGemini呼び出し(generate_via_gemini)が既に同期clientを
+    # asyncio.to_threadで別スレッド実行することでこの問題を回避しているのと同じ
+    # パターンへ統一し、Ollama呼び出し側もイベントループ非依存の別スレッド実行に
+    # 切り替える。実測で22.8秒→7.3秒(約3倍)に短縮した。read_timeoutは現状
+    # 未使用(内部でhttpx.Timeout(120.0, connect=5.0)を固定使用)のため触れていない。
+    return await asyncio.to_thread(
+        _chat_completion_local_sync,
+        url,
+        system_prompt,
+        user_prompt,
+        max_tokens,
+        temperature,
+        json_mode,
+        model,
+    )
 
 
 def _summarize_thinking(t) -> str:
