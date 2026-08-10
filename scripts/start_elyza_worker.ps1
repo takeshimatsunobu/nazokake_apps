@@ -23,10 +23,19 @@
        秒待って自動再起動するループを回す。Ctrl+C等によるGraceful Shutdown
        (ondemand_elyza_worker.py側でSIGINT/SIGTERMをハンドルし、正常終了時はexit 0を
        返す)ではループを終了する。
+    5. 【多重起動防止ガード】 起動前にOSのプロセス一覧を直接調べ、
+       ondemand_elyza_worker.py を実行中の python.exe が既に存在すれば警告して
+       exit 1 する(instructions/実機インシデント: ゾンビ化した複数ワーカーが
+       同じ.vram.lockファイルを奪い合い、VRAM排他制御のセルフロックアウトと
+       誤認される実害が発生した)。$PidFile(このラッパー自身のPID)だけでは
+       taskkill /F 等で finally が実行されずに残る「陳腐化したPIDファイル」と
+       「本当に別プロセスが生きている」を区別できないため、OSプロセス一覧を
+       正とする。意図的に多重起動したい場合のみ -Force で無効化できる。
 
 .EXAMPLE
     .\scripts\start_elyza_worker.ps1
     .\scripts\start_elyza_worker.ps1 -Interval 30 -RestartDelaySec 30
+    .\scripts\start_elyza_worker.ps1 -Force   # 多重起動防止ガードを意図的に無視する
 #>
 
 [CmdletBinding(PositionalBinding = $false)]
@@ -35,7 +44,9 @@ param(
     # 側の DEFAULT_POLL_INTERVAL_SEC をそのまま使わせ、既定値をここへ重複して
     # ハードコードしない(run_api.ps1 の -Port と同じSSoT尊重の考え方)。
     [double]$Interval = 0,
-    [int]$RestartDelaySec = 15
+    [int]$RestartDelaySec = 15,
+    # 多重起動防止ガードを意図的にバイパスする(通常は使わない)。
+    [switch]$Force
 )
 
 # native実行ファイルの非0終了やstderr出力を、PowerShell側の$ErrorActionPreference
@@ -87,6 +98,27 @@ if (-not (Test-Path $VenvPython)) {
 if (-not (Test-Path $WorkerScript)) {
     Write-Error "ELYZAワーカーが見つかりません: $WorkerScript"
     exit 1
+}
+
+# --- 【多重起動防止ガード】 ---------------------------------------------------
+# $PidFile(このラッパー自身のPID記録)には頼らない。taskkill /F 等の強制終了では
+# finally { Remove-Item -Path $PidFile } が実行されず、PIDファイルだけが
+# 「生きているように見えるが実際は死んでいる」状態で残り得る。逆にstart_dev.ps1
+# 経由や手動の直接実行(python workers/ondemand_elyza_worker.py)はそもそも
+# このPIDファイルの管理下に無い。そのため、起動方法を問わずOSのプロセス一覧を
+# 直接調べる方式にする(実機調査でこのセッション中に使い続けた手法と同じ)。
+if (-not $Force) {
+    $existingWorkers = @(
+        Get-CimInstance Win32_Process -Filter "Name='python.exe'" -ErrorAction SilentlyContinue |
+            Where-Object { $_.CommandLine -match 'ondemand_elyza_worker\.py' }
+    )
+    if ($existingWorkers.Count -gt 0) {
+        Write-Error "ELYZAワーカーが既に起動中のため、多重起動を防止しました。以下のプロセスを確認し、不要であれば停止してから再実行してください(意図的に多重起動する場合は -Force を付けてください):"
+        foreach ($p in $existingWorkers) {
+            Write-Error "  PID $($p.ProcessId) (起動時刻: $($p.CreationDate)): $($p.CommandLine)"
+        }
+        exit 1
+    }
 }
 
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
