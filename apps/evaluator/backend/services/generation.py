@@ -14,6 +14,7 @@ import json
 import os
 import random
 import sys
+import threading
 
 # Windowsの既定コンソールはcp932であり、print()で絵文字(📚等)を出力すると
 # UnicodeEncodeErrorが発生する。本モジュールは_load_fewshot_pool()をモジュール
@@ -53,19 +54,75 @@ from .output_parser import _extract_json_dict, _valid_nazokake
 _VRAM_LOCK_PATH = os.environ.get("VRAM_LOCK_PATH", ".vram.lock")
 
 
-def _try_acquire_vram_lock() -> filelock.FileLock | None:
-    """VRAM排他ロックの非ブロッキング取得を試みる(OSレベルのファイルロック、プロセス間)。
+class _ReentrantVramLock:
+    """VRAM排他ロックを「同一プロセス内では再入可能」にするラッパー。
+
+    【実機ログで確認したセルフロックアウト】workers/ondemand_elyza_worker.py の
+    best-of-N構成(1ジョブ内でgenerate_via_llmjp()をN=3回concurrent実行)では、
+    毎回 filelock.FileLock(...) を新規に生成していたため、同一プロセス内の
+    3つの並行呼び出しがそれぞれ独立したロックオブジェクトとしてOSレベルの
+    同じロックファイルを奪い合っていた。timeout=0(フェイルファスト)のため、
+    1つ目が取得した直後に2つ目・3つ目が「自分自身が(別インスタンス経由で)
+    取得したロック」に阻まれて即座にGeminiへフォールバックしていた
+    (外部のMLOpsパイプラインは無関係で、完全な自己ブロック)。
+
+    本来このロックで排他したいのは「別プロセス(MLOpsパイプライン等)との同時
+    VRAMアクセス」であり、同一プロセス内でのOllama呼び出し自体は既に
+    _OLLAMA_SEMAPHORE(Semaphore(1))が直列化を保証している。そのため、同一
+    プロセス内では参照カウント方式で再入を許可し、他プロセスが実際に保持して
+    いる場合のみフェイルファストでNoneを返す(timeout=0のセマンティクスは
+    「他プロセス」に対してのみ維持する)。
+    """
+
+    def __init__(self, path: str):
+        self._path = path
+        self._guard = threading.Lock()
+        self._file_lock: filelock.FileLock | None = None
+        self._refcount = 0
+
+    def try_acquire(self) -> bool:
+        """成功時True。既にこのプロセスが保持していれば再入として即成功する。
+        他プロセスが実際に保持している場合のみFalse(リトライしない)。
+        """
+        with self._guard:
+            if self._file_lock is not None:
+                self._refcount += 1
+                return True
+            lock = filelock.FileLock(self._path, timeout=0)
+            try:
+                lock.acquire()
+            except filelock.Timeout:
+                return False
+            self._file_lock = lock
+            self._refcount = 1
+            return True
+
+    def release(self) -> None:
+        """参照カウントが0になった時点で初めて実際のOSロックを解放する。
+        対応するtry_acquireが無い誤呼び出しは安全側で無視する。
+        """
+        with self._guard:
+            if self._file_lock is None:
+                return
+            self._refcount -= 1
+            if self._refcount <= 0:
+                self._file_lock.release()
+                self._file_lock = None
+                self._refcount = 0
+
+
+_vram_lock = _ReentrantVramLock(_VRAM_LOCK_PATH)
+
+
+def _try_acquire_vram_lock() -> bool:
+    """VRAM排他ロックの非ブロッキング取得を試みる(OSレベルのファイルロック、
+    プロセス間。同一プロセス内は_ReentrantVramLockにより再入可能)。
 
     MLOpsパイプラインが同じロックファイルを保持している間は即座に諦め、ローカルLLM
-    (Ollama)呼び出しを行わずNoneを返す(呼び出し元はクラウドAPIへフォールバックする)。
-    取得できた場合は呼び出し元が使用後に必ずrelease()するロックオブジェクトを返す。
+    (Ollama)呼び出しを行わずFalseを返す(呼び出し元はクラウドAPIへフォールバック
+    する)。取得できた場合は呼び出し元が使用後に必ず_vram_lock.release()すること。
     """
-    lock = filelock.FileLock(_VRAM_LOCK_PATH, timeout=0)
-    try:
-        lock.acquire()
-    except filelock.Timeout:
-        return None
-    return lock
+    return _vram_lock.try_acquire()
 
 
 # ============================================================
@@ -570,8 +627,8 @@ async def generate_via_llmjp(
     場合は、ローカル推論を直ちに諦めクラウドAPI(Gemini)へシームレスにフォールバック
     する(限られたVRAM 8GBをMLOpsの学習/評価と同時に食い合わないため)。
     """
-    lock = await asyncio.to_thread(_try_acquire_vram_lock)
-    if lock is None:
+    acquired = await asyncio.to_thread(_try_acquire_vram_lock)
+    if not acquired:
         print(
             "⚠️ [VRAM排他制御] MLOpsパイプラインがVRAMロックを保持中のため、"
             "ローカル推論(ELYZA)を諦めクラウドAPI(Gemini)へフォールバックします。"
@@ -621,7 +678,7 @@ async def generate_via_llmjp(
             print("✅ ELYZA（おまけ）生成に成功！VRAMロックを解除します。")
             return _finalize(cand)
     finally:
-        await asyncio.to_thread(lock.release)
+        await asyncio.to_thread(_vram_lock.release)
 
 
 async def generate_nazokake(odai: str) -> dict:
