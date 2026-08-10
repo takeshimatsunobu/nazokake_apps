@@ -85,7 +85,18 @@ WORKDIR /build/apps/evaluator/backend
 # ではないアプリケーション)のため、依存関係のみを/build/apps/evaluator/backend/.venv
 # へインストールする(runtimeステージでも同じ絶対パスへコピーする、上記ヘッダー
 # コメント参照)。
-RUN uv sync --frozen --no-install-project --no-dev
+# --no-editable: apps/evaluator/backend/pyproject.tomlの[tool.uv.sources]は
+# nazokake-coreをeditable=trueで宣言している(ローカル開発時、packages/shared_core
+# への変更を再インストール無しで即座に反映させるための設定)。しかしeditable
+# installは`.venv`内に実体を置かず、ビルド時のカレントディレクトリを起点とした
+# 絶対パス(/build/packages/shared_core/...)を指す.pth/finderファイルしか
+# 作らない。runtimeステージは`.venv`のみをCOPYし、packages/shared_core自体は
+# 一切引き継がないため、そのままだと`ModuleNotFoundError: No module named
+# 'nazokake_core'`で起動時クラッシュする(実機で発生・特定・修正確認済み)。
+# --no-editableでこの1回のsyncに限りnazokake-coreを`.venv/site-packages`内へ
+# 実ファイルとして複製させ、runtimeステージが`.venv`だけを持ち運べば自己完結する
+# ようにする(ローカル開発用pyproject.tomlのeditable=true設定自体は変更しない)。
+RUN uv sync --frozen --no-install-project --no-dev --no-editable
 
 
 # ---- Runtime: 軽量な実行専用イメージ ----
