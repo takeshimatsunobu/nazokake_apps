@@ -79,8 +79,10 @@ def _parse_git_status_targets(porcelain_output: str) -> list[str]:
 
     - 追跡済みファイルの変更は、既知のステータスコード(_SAFE_GIT_STATUS_CODES)の
       場合のみ対象へ含める。
-    - 未追跡ファイル(??)は tools/instructions/ 配下のみを安全対象として許可する
-      (それ以外の未追跡ファイルを無差別に対象化することは絶対に行わない)。
+    - 未追跡ファイル(??)は無条件でスキップする(意図しない任意ファイルの自動コミット
+      を避けるfail-closed設計。以前はtools/instructions/配下のみ例外的に許可して
+      いたが、フェーズ2でtools/instructions/をarchive/instructions_history/へ移設した
+      ことで対象が恒久的に存在しなくなったため、その特例コード自体を撤去した)。
     - サブモジュールの内部変更(" m"等、小文字を含む未知のコード)は安全側に倒して
       スキップする(意図しないサブモジュールポインタの自動コミットを避ける)。
     - リネーム("R  old -> new")は旧パス・新パスの両方を対象に含める。
@@ -96,9 +98,6 @@ def _parse_git_status_targets(porcelain_output: str) -> list[str]:
         else:
             paths = [rest.strip().strip('"')]
 
-        if code == "??":
-            targets.extend(p for p in paths if p.startswith("tools/instructions/"))
-            continue
         if code not in _SAFE_GIT_STATUS_CODES:
             continue
         targets.extend(paths)
@@ -106,8 +105,8 @@ def _parse_git_status_targets(porcelain_output: str) -> list[str]:
 
 
 def _auto_commit_pending_changes(repo_root: Path) -> list[str]:
-    """作業ツリーに変更があれば、追跡済みファイルおよびtools/instructions/配下の
-    安全な未追跡ファイルのみを明示的に指定して自動コミットする(admin.pyから移設)。
+    """作業ツリーに追跡済みファイルの変更があれば、それらのみを明示的に指定して
+    自動コミットする(admin.pyから移設)。未追跡ファイルはfail-closedで対象外。
 
     【絶対制約】`git add .`は使わない。対象パスは必ず個別に列挙して`git add --`へ渡す
     (_parse_git_status_targets()が安全対象のみへ絞り込む)。変更が無い、または

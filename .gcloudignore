@@ -1,13 +1,75 @@
+# .gcloudignore
+# ==============
+# `gcloud run deploy --source .` / `gcloud builds submit` がCloud Buildへアップロード
+# するソース一式(=apps/evaluator/DockerfileのビルドコンテキストとしてDockerデーモンへ
+# 渡される内容)を絞り込む。フェーズ1の実測(gcloud meta list-files-for-upload)で、
+# 本設定の旧版でも881ファイルがアップロード対象に残っており、その42%(369件)が
+# tools/、29%(252件)がtools/instructions/単体という実態が判明した。フェーズ2で
+# tools/instructions/等をarchive/へ、本番に不要なファイル群を整理した上で、
+# 本ファイルを「apps/evaluator/Dockerfileが実際にCOPYするパスのみ通す」水準まで
+# 絞り込む。
+#
+# 【重要】apps/evaluator/Dockerfileの COPY --exclude=serviceAccountKey.json
+# --exclude=.env はDockerイメージ層でのみ有効で、Cloud Buildへの「ソースアップロード」
+# 自体はここ(.gcloudignore)でしか防げない。旧版はこの除外が無く、
+# apps/evaluator/backend/.env と apps/evaluator/backend/serviceAccountKey.json が
+# 実際にローカルに存在する状態でアップロード対象に含まれ得た(ルートの.dockerignore
+# で過去に発見・修正済みの instructions/218 と同種の実害あるギャップ)。
+
+# --- 【最優先】機密ファイル(Cloud Buildのソースアップロード自体からも除外) ---
+**/serviceAccountKey.json
+**/.env
+**/.env.*
+!**/.env.example
+**/*.pem
+**/*.key
+
+# --- 本番に不要なML/バッチパイプライン(フェーズ2以降、archive/またはtools/へ整理済み) ---
+archive/
+apps/batch_factory/
+apps/evaluator_backup/
+workers/
+tools/
+Nazokake_localLLM/
+llama-bin/
+models/
+data/
+run/
+
+# --- 本番に不要な開発/運用ツール群 ---
+docs/
+infra/
+scripts/
+tests/
+.github/
+.claude/
+.claudeignore
+
+# --- 本番に不要なルート直下の設定/ドキュメント/DB実体 ---
+*.md
+run_api.ps1
+start_dev.ps1
+Makefile
+requirements_orchestrator.txt
+pyrightconfig.json
+.pre-commit-config.yaml
+firebase.json
+firestore.indexes.json
+*.db
+*.db-shm
+*.db-wal
+
+# --- ビルド成果物・仮想環境・キャッシュ(GBクラスの肥大化要因) ---
 .git/
 **/.venv*/
 **/__pycache__/
-**/*.db
-**/*.db-shm
-**/*.db-wal
+**/*.pyc
 **/node_modules/
-run/
-.env
-apps/evaluator_backup/
-models/
-llama-bin/
-Nazokake_localLLM/
+.ruff_cache/
+.pytest_cache/
+packages/shared_core/build/
+packages/shared_core/*.egg-info/
+
+# --- その他のローカル実行時アーティファクト ---
+.coverage
+.vram.lock
