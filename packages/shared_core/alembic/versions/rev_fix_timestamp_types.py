@@ -10,14 +10,14 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = 'fix_timestamp_types'
-down_revision = None
+down_revision = 'c82a34711ad1'
 branch_labels = None
 depends_on = None
 
 def upgrade():
     # SQLiteは ALTER COLUMN を直接サポートしていないため、
     # 実際にはAlembicの batch_alter_table を使用して型変換を行います。
-    with op.batch_alter_table('trigger_states', schema=None) as batch_op:
+    with op.batch_alter_table('trigger_state', schema=None) as batch_op:
         batch_op.alter_column('last_triggered_at',
                existing_type=sa.VARCHAR(),
                type_=sa.DateTime(),
@@ -36,7 +36,7 @@ def downgrade():
                type_=sa.VARCHAR(),
                existing_nullable=False)
 
-    with op.batch_alter_table('trigger_states', schema=None) as batch_op:
+    with op.batch_alter_table('trigger_state', schema=None) as batch_op:
         batch_op.alter_column('last_triggered_at',
                existing_type=sa.DateTime(),
                type_=sa.VARCHAR(),
