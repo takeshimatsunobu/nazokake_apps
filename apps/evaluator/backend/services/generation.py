@@ -651,32 +651,51 @@ async def generate_via_llmjp(
             model = os.environ.get("LLMJP_MODEL", "elyza:8b")
             print(f"🏠 [おまけ] ローカル ELYZA で生成中... ({url}, model={model})")
 
-            start_time = asyncio.get_running_loop().time()
-            try:
-                # json_mode=True: Ollama の response_format=json_object で完結したJSONを強制。
-                raw = await chat_completion_local(
-                    url,
-                    sys_prompt,
-                    user_prompt,
-                    # persona_comment分の出力が増えるため800まで許容(do_sample相当は
-                    # Ollamaがtemperature>0で自動的にサンプリングするため明示指定不要)。
-                    max_tokens=800,
-                    temperature=dyn_temp,
-                    json_mode=True,
-                    model=model,
-                    read_timeout=120.0,
-                )
-            finally:
-                # ローカル実行系はトークン単価ではなく稼働時間ベースの電気代として計上する
-                # (成功/失敗を問わず、VRAMを占有した実時間は発生しているため記録する)。
-                elapsed = asyncio.get_running_loop().time() - start_time
-                await _log_generation_cost("Ollama", execution_time_sec=elapsed)
+            # 【出力ブレへの耐性】8Bクラスのローカルモデルは一定確率でJSONスキーマから
+            # 外れた出力(必須フィールド欠落)を返す。以前は単発の失敗でValueErrorが
+            # asyncio.gather()経由でジョブ全体(他のbest-of-N候補も道連れ)をクラッシュ
+            # させていた。同じロック保持区間内(再取得不要、安価)で少数回リトライし、
+            # それでもダメならVRAMロック取得不可時と同じフォールバック経路
+            # (generate_via_gemini)を再利用して、ジョブ全体を道連れにしない。
+            _MAX_OUTPUT_RETRIES = 2
+            for attempt in range(_MAX_OUTPUT_RETRIES + 1):
+                start_time = asyncio.get_running_loop().time()
+                try:
+                    # json_mode=True: Ollama の response_format=json_object で完結したJSONを強制。
+                    raw = await chat_completion_local(
+                        url,
+                        sys_prompt,
+                        user_prompt,
+                        # persona_comment分の出力が増えるため800まで許容(do_sample相当は
+                        # Ollamaがtemperature>0で自動的にサンプリングするため明示指定不要)。
+                        max_tokens=800,
+                        temperature=dyn_temp,
+                        json_mode=True,
+                        model=model,
+                        read_timeout=120.0,
+                    )
+                finally:
+                    # ローカル実行系はトークン単価ではなく稼働時間ベースの電気代として計上する
+                    # (成功/失敗を問わず、VRAMを占有した実時間は発生しているため記録する)。
+                    elapsed = asyncio.get_running_loop().time() - start_time
+                    await _log_generation_cost("Ollama", execution_time_sec=elapsed)
 
-            cand = _extract_json_dict(raw)
-            if not _valid_nazokake(cand):
-                raise ValueError("ELYZA の出力が不正（必須フィールド欠落）")
-            print("✅ ELYZA（おまけ）生成に成功！VRAMロックを解除します。")
-            return _finalize(cand)
+                cand = _extract_json_dict(raw)
+                if _valid_nazokake(cand):
+                    print("✅ ELYZA（おまけ）生成に成功！VRAMロックを解除します。")
+                    return _finalize(cand)
+
+                remaining = _MAX_OUTPUT_RETRIES - attempt
+                print(
+                    f"⚠️ [ELYZA出力不正] {attempt + 1}回目の出力がスキーマ不備(必須フィールド欠落)。"
+                    + (f"あと{remaining}回リトライします..." if remaining > 0 else "リトライ上限に達しました。")
+                )
+
+            print(
+                "⚠️ [ELYZA出力不正] リトライしても改善しなかったため、"
+                "クラウドAPI(Gemini)へフォールバックします。"
+            )
+            return await generate_via_gemini(odai, persona_prompt, temperature_override)
     finally:
         await asyncio.to_thread(_vram_lock.release)
 
