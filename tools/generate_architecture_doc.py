@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-import os
 import sys
 from pathlib import Path
 
@@ -9,8 +8,13 @@ except ImportError:
     print("Error: jinja2 is not installed. Please run: uv run --with jinja2 python tools/generate_architecture_doc.py")
     sys.exit(1)
 
-# 出力先ディレクトリの確保
-Path('docs').mkdir(parents=True, exist_ok=True)
+# 【堅牢化】旧版は Path('docs') という __file__ アンカー無しの裸の相対パスで、
+# 呼び出し時のカレントディレクトリ次第で誤動作していた(instructions/218の教訓と同種)。
+# 【フェーズ2の構造整理で移設】docs/ はarchive/instructions_history/docs/へ隔離した
+# (tools/extract_architecture.py・generate_doc_via_gemini.pyと同じ追従修正)。
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DOCS_DIR = REPO_ROOT / "archive" / "instructions_history" / "docs"
+DOCS_DIR.mkdir(parents=True, exist_ok=True)
 
 template_str = """# {{ title }}
 
@@ -72,6 +76,6 @@ data = {
 ]
 }
 
-out = Path('docs/architecture_for_beginners.md')
+out = DOCS_DIR / "architecture_for_beginners.md"
 out.write_text(Template(template_str).render(data), encoding='utf-8')
 print(f'Done! Generated {out} successfully.')

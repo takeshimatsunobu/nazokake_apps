@@ -55,9 +55,12 @@ if sys.platform == "win32":
     sys.stderr.reconfigure(encoding="utf-8")  # pyright: ignore[reportAttributeAccessIssue]
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
-FACTS_PATH = REPO_ROOT / "docs" / "architecture_facts.json"
-OUTPUT_PATH = REPO_ROOT / "docs" / "system_overview_v3.md"
-TMP_PATH = REPO_ROOT / "docs" / "system_overview_v3.tmp.md"
+# 【フェーズ2の構造整理で移設】docs/ は archive/instructions_history/docs/ へ隔離した
+# (tools/extract_architecture.pyと同じ追従修正)。
+DOCS_DIR = REPO_ROOT / "archive" / "instructions_history" / "docs"
+FACTS_PATH = DOCS_DIR / "architecture_facts.json"
+OUTPUT_PATH = DOCS_DIR / "system_overview_v3.md"
+TMP_PATH = DOCS_DIR / "system_overview_v3.tmp.md"
 
 # instructions/251 で明示されたモデル名。無断で差し替えない(§モジュールdocstring参照)。
 MODEL_NAME = "gemini-3.1-pro-preview"

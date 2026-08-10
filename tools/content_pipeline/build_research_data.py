@@ -2,10 +2,29 @@ import csv
 import json
 import html
 import re
+import sys
 from pathlib import Path
 
+# Windowsの既定コンソール(cp932)はprint()中の絵文字でUnicodeEncodeErrorを起こす。
+# apps/evaluator/backend/services/generation.py等で適用済みの対策と同一。
+if sys.platform == "win32":
+    import io
+
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if isinstance(sys.stderr, io.TextIOWrapper):
+        sys.stderr.reconfigure(encoding="utf-8")
+
 # --- 定義 ---
-REPO_ROOT = Path(__file__).parent
+# 【フェーズ2の構造整理で移設】このスクリプトはリポジトリ直下からtools/content_pipeline/
+# へ移動した(current_pipeline/がゴミではなく現役のコンテンツ生成ツールと判明したため)。
+# 移動前はPath(__file__).parentがそのままリポジトリルートと一致していたが、1階層
+# ネストが増えたため、tools/content_pipeline/ -> tools/ -> リポジトリルート の3段で
+# 正しくアンカーし直す。CSVソースは移動時にスクリプトと同じ場所(research_csv_source/)
+# へ同梱したため、そちらは REPO_ROOT を経由せずスクリプト自身の隣を直接指す。
+SCRIPT_DIR = Path(__file__).resolve().parent
+REPO_ROOT = SCRIPT_DIR.parent.parent
+CSV_DIR = SCRIPT_DIR / "research_csv_source"
 OUTPUT_JSON = REPO_ROOT / "apps" / "evaluator" / "frontend" / "public" / "data" / "research_data.json"
 
 TARGET_IDS = [
@@ -16,7 +35,7 @@ TARGET_IDS = [
 ]
 
 def read_csv_safe(file_name):
-    path = REPO_ROOT / file_name
+    path = CSV_DIR / file_name
     if not path.exists():
         return []
     for enc in ['utf-8-sig', 'cp932', 'euc-jp']:
@@ -31,7 +50,7 @@ def read_csv_safe(file_name):
 
 
 def read_csv_skip(file_name, skip_lines=1):
-    path = REPO_ROOT / file_name
+    path = CSV_DIR / file_name
     if not path.exists():
         return []
     for enc in ['utf-8-sig', 'cp932', 'utf-8', 'euc-jp']:

@@ -23,7 +23,11 @@ from collections import Counter
 from pathlib import Path
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-INSTRUCTIONS_DIR = BASE_DIR / "tools" / "instructions"
+# 【フェーズ2の構造整理で移設】tools/instructions/ は本番デプロイに不要な履歴文書として
+# archive/instructions_history/tools_instructions/ へ隔離した(tools/check_instructions_
+# layout.pyと同じ追従修正)。放置するとINSTRUCTIONS_DIRが空ディレクトリを指し続け、
+# ai_knowledge_base.jsonが空のナレッジベースとしてサイレントに再生成されてしまう。
+INSTRUCTIONS_DIR = BASE_DIR / "archive" / "instructions_history" / "tools_instructions"
 KNOWLEDGE_BASE_PATH = BASE_DIR / "run" / "ai_knowledge_base.json"
 
 if sys.platform == "win32":

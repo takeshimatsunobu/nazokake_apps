@@ -88,8 +88,11 @@ FRONTEND_SCAN_DIRS = [REPO_ROOT / name for name in FRONTEND_SCAN_DIR_NAMES]
 
 ROUTE_METHODS = {"get", "post", "put", "delete", "patch", "websocket"}
 
-OUTPUT_PATH = REPO_ROOT / "docs" / "architecture_facts.json"
-TMP_PATH = REPO_ROOT / "docs" / "architecture_facts.tmp.json"
+# 【フェーズ2の構造整理で移設】docs/ は本番デプロイに不要な文書としてarchive/
+# instructions_history/docs/ へ隔離した。旧パスのままだとdocs/自体が存在せず書き込みに失敗する。
+DOCS_DIR = REPO_ROOT / "archive" / "instructions_history" / "docs"
+OUTPUT_PATH = DOCS_DIR / "architecture_facts.json"
+TMP_PATH = DOCS_DIR / "architecture_facts.tmp.json"
 
 
 def _display_path(py_file: Path) -> str:
