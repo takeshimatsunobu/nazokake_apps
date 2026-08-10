@@ -104,7 +104,7 @@ if _RESEARCH_PUBLIC.exists():
 
 # --- SSoT準拠: 動的パス解決とルーティングの絶対法則 ---
 BACKEND_DIR = Path(__file__).resolve().parent
-PROJECT_ROOT = BACKEND_DIR.parents[2]
+PROJECT_ROOT = _PROJECT_ROOT
 
 FRONTEND_DIR = BACKEND_DIR.parent / "frontend" / "public"
 LEGACY_DIR = PROJECT_ROOT / "public"
