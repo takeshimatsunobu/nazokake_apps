@@ -91,6 +91,14 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from nazokake_core.database import Base, _engine
+
+
+@app.on_event("startup")
+async def _ensure_db_schema():
+    async with _engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
 # ルーターの登録 (research ルーター含む)
 try:
     app.include_router(research.router)
@@ -147,7 +155,7 @@ app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(admin_costs.router, prefix="/api/admin", tags=["admin"])
 app.include_router(admin_feedbacks.router, prefix="/api/admin", tags=["admin"])
 
-@app.get("/healthz")
+@app.get("/api/health")
 def healthz():
     return {"ok": True}
 

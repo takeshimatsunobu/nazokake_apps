@@ -51,7 +51,14 @@ export async function startGeneration() {
     uiGenReset();
     uiGenLoadingStart();
     logEvent('generate_requested');
-    try { const data = await apiGenerate(odai); pollStatus(data.task_id); } catch (e) { showError(e.message); }
+    try {
+        const data = await apiGenerate(odai);
+        if (!data?.task_id) {
+            showError("生成タスクの開始に失敗しました(task_idが取得できませんでした)");
+            return;
+        }
+        pollStatus(data.task_id);
+    } catch (e) { showError(e.message); }
 }
 // 段階開示ポーリング。本文が出た時点(gemini_generated)からデュアルカードを描画し、
 // 状態が進むたび(gemini_completed → all_completed)に冪等に再描画する。
