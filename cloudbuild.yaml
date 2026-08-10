@@ -31,6 +31,19 @@ substitutions:
 
 steps:
   - name: gcr.io/cloud-builders/docker
+    # 【実機で確認した障害】gcr.io/cloud-builders/docker が内蔵するdocker CLIは
+    # 既定でクラシックビルダーのままであり、apps/evaluator/Dockerfileの
+    # `COPY --exclude=...`(BuildKit専用構文)を "Unknown flag: exclude" として
+    # 拒否する。DOCKER_BUILDKIT=1でBuildKitを明示的に有効化すると、Dockerfile
+    # 冒頭の `# syntax=docker/dockerfile:1` プラグマによりBuildKitが最新の公式
+    # frontendを動的取得するため、ローカルのdocker CLI自体の新旧に関わらず
+    # `--exclude` を正しく解釈できる。
+    #
+    # Dockerfile側の`--exclude`(serviceAccountKey.json/.env等の機密ファイルを
+    # イメージ層から二重に除外する多層防御。.gcloudignore/.dockerignoreと役割が
+    # 異なる)は意図的に維持し、こちら側をビルド環境に合わせて修正する。
+    env:
+      - "DOCKER_BUILDKIT=1"
     args:
       - build
       - -f
