@@ -105,6 +105,14 @@ app.add_middleware(
         # localhost:8000で開いた場合はオリジンが食い違いCORSプリフライトが必要になる)。
         "http://localhost:8000",
         "http://127.0.0.1:8000",
+        # 現行のCloud Runサービス(nazokake-api)自身のURL。config.jsのAPI_BASEを相対パス
+        # "/api"化した(firebase.jsonのCloud Runリライトと合わせ、Firebase Hosting経由・
+        # Cloud Run直アクセスのいずれも同一オリジンになるため、この一覧は本来この2URLに
+        # 対して必須ではなくなった)が、直接APIを叩く外部ツール・移行期の動作確認用に
+        # 防御的に明示しておく。Cloud Runは同一サービスに新旧2種類のURL形式
+        # (ハッシュ形式/プロジェクト番号形式)を割り当てるため両方とも列挙する。
+        "https://nazokake-api-r6jq2erkta-an.a.run.app",
+        "https://nazokake-api-862686676938.asia-northeast1.run.app",
     ],
     allow_methods=["*"],
     allow_headers=["*"],

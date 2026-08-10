@@ -46,7 +46,12 @@ env:
   PROJECT_ID: nazokakeapp-137e5
   REGION: asia-northeast1
   REPOSITORY: nazo-agent
-  SERVICE_NAME: nazokake-backend
+  # 【service名の統合】従来はnazokake-backendへ自動デプロイしていたが、手動検証中に
+  # 別名(nazokake-api)のCloud Runサービスを作成してそちらを正式運用に切り替えた
+  # ため、CI/CDの向き先もそれに追従させる。IMAGE(Artifact Registry上のイメージ名)は
+  # Cloud RunのSERVICE_NAMEとは独立した別概念のため意図的に変更しない
+  # (nazokake-apiサービスも同じ"nazokake-backend"イメージ名のまま運用する)。
+  SERVICE_NAME: nazokake-api
   DOCKERFILE_PATH: apps/evaluator/Dockerfile
   IMAGE: asia-northeast1-docker.pkg.dev/nazokakeapp-137e5/nazo-agent/nazokake-backend
 
