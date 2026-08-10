@@ -27,7 +27,7 @@ if str(_SHARED_CORE_ROOT) not in sys.path:
 
 # Now that the path is set, we can import the router
 # The app in main.py is too complex, so we create a minimal app for this test
-from apps.evaluator.backend.api.routers import generate
+from api.routers import generate
 
 # Create a minimal app and include only the router we need to test
 app = FastAPI()
@@ -41,7 +41,7 @@ async def test_fail_closed_on_gemini_exception():
     the API returns a generic error message and does not leak the exception details.
     """
     with patch(
-        "apps.evaluator.backend.api.routers.generate.generate_via_gemini",
+        "api.routers.generate.generate_via_gemini",
         side_effect=Exception("SREテスト用の致命的エラー"),
     ) as mock_gemini:
         # Keep all background task operations, polling, and assertions inside the with patch context
