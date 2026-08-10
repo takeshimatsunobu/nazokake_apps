@@ -4,6 +4,8 @@ from fastapi.staticfiles import StaticFiles
 import os
 import sys
 from pathlib import Path
+
+from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
 # apps/evaluator は別リポジトリとしてcwd(apps/evaluator/backend)基準で動くため、
@@ -77,6 +79,17 @@ else:
     )
 
 app = FastAPI(title="なぞかけディスカバリー API")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://nazokakeapp-137e5.web.app",
+        "http://localhost:5000",
+        "http://127.0.0.1:5000",
+    ],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # ルーターの登録 (research ルーター含む)
 try:

@@ -66,13 +66,14 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 // Service Worker登録(旧index.html末尾のインラインscriptから移設、ロジックは無改変)。
-if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-        navigator.serviceWorker.register('sw.js').then(reg => {
-            console.log('ServiceWorker registration successful!');
-        }).catch(err => console.error('ServiceWorker registration failed: ', err));
-    });
-}
+// SW機能は無効化済み(sw.js.disabled)のため登録呼び出しも停止(MIME type text/htmlエラー対策)。
+// if ('serviceWorker' in navigator) {
+//     window.addEventListener('load', () => {
+//         navigator.serviceWorker.register('sw.js').then(reg => {
+//             console.log('ServiceWorker registration successful!');
+//         }).catch(err => console.error('ServiceWorker registration failed: ', err));
+//     });
+// }
 
 // バックエンドの0円コールドスタート対策ウォームアップ(旧index.html末尾のインラインscriptから移設、
 // ロジックは無改変)。
