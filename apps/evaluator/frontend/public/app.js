@@ -60,8 +60,14 @@ export async function startGeneration() {
             return;
         }
         // ローカルGPU(ELYZA)が停止・暴走していても無限ロードにならないよう、
-        // ポーリング開始時点を起点に60秒のタイムアウトを持たせる。
-        pollStatus(data.task_id, Date.now() + 60000);
+        // ポーリング開始時点を起点にタイムアウトを持たせる。
+        // 【実機計測に基づく調整】本番はCloud Run→Firestoreジョブ作成→ローカル
+        // ワーカーのポーリング検知(最大8秒、workers/ondemand_elyza_worker.py)→
+        // 生成→Firestore書き戻し→Cloud Runの再ポーリングという往復になり、直結経路
+        // (ローカル開発)だけでもELYZA側の完走に42秒程度かかることを実測済み。
+        // 旧来の60秒だと本番の現実的な往復時間に対して余裕が無く、正常に完走する
+        // はずのジョブまでタイムアウトしてGemini単独表示へ縮退していた。
+        pollStatus(data.task_id, Date.now() + 90000);
     } catch (e) { showError(e.message); }
 }
 // 段階開示ポーリング。本文が出た時点(gemini_generated)からデュアルカードを描画し、
@@ -87,9 +93,9 @@ function isElyzaSideDone(data) {
 // タスクごとに一度だけタイムアウトアラートを出すためのガード。
 const _timedOutTasks = new Set();
 
-// deadline: このタスクのポーリングを打ち切る絶対時刻(ms epoch)。ローカルGPU(ELYZA)が
-// 停止・暴走して応答が返らない場合でも、60秒でポーリングを諦めてGeminiの結果のみを
-// 画面に確定表示する(無限ロード防止のフォールバック)。
+// deadline: このタスクのポーリングを打ち切る絶対時刻(ms epoch、呼び出し元で90秒後に
+// 設定)。ローカルGPU(ELYZA)が停止・暴走して応答が返らない場合でも、期限が来たら
+// ポーリングを諦めてGeminiの結果のみを画面に確定表示する(無限ロード防止のフォールバック)。
 async function pollStatus(taskId, deadline) {
     try {
         const data = await apiGetStatus(taskId);

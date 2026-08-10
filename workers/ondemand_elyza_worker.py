@@ -73,7 +73,13 @@ from personas import PERSONAS  # noqa: E402
 from services.evaluation import run_evaluation  # noqa: E402
 from services.generation import generate_via_llmjp  # noqa: E402
 
-DEFAULT_POLL_INTERVAL_SEC = 20.0
+# 【実機計測に基づく調整】本番はCloud Run→Firestoreジョブ作成→本ワーカーの
+# ポーリング検知→生成→Firestore書き戻し→Cloud Runの再ポーリングという往復になり、
+# 直結経路(ローカル開発)だけでもELYZA側の完走に42秒程度かかることを実測済み。
+# 旧来の20秒間隔だと「ジョブに気付くまでの最大待ち時間」だけで20秒を追加消費し、
+# フロントエンドの60秒タイムアウト(app.js)を圧迫していた。Firestoreの読み取り
+# クォータを圧迫しない範囲で間隔を縮め、往復時間の余裕を確保する。
+DEFAULT_POLL_INTERVAL_SEC = 8.0
 CLAIM_BATCH_SIZE = 5
 # ワーカークラッシュ等で"processing"のまま停止した場合のゾンビ回収閾値。
 STALE_PROCESSING_TIMEOUT_SEC = 900  # 15分
