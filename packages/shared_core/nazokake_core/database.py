@@ -751,6 +751,16 @@ _NAZOKAKE_ITEM_BULK_DEFAULTS: dict[str, Any] = {
     "sync_status": "synced",  # Firestoreから来た時点で定義上「既に同期済み」
     "retry_count": 0,
     "elyza_job_retry_count": 0,
+    # 【Phase5.5: 起動時リストアを実際に配線した際、実機検証で発覚・修正】
+    # is_fewshot_selected(NOT NULL, default=False)はPhase2で新設された際に
+    # このリストへの追記が漏れていた。async_restore_from_firestore()自体が
+    # これまで一度も呼ばれていなかった(=このコードパスに一度も実データが
+    # 到達したことがなかった)ため、上記のelyza_job_retry_countと全く同じ欠陥が
+    # 気づかれないまま存在していた。旧Firestoreドキュメントはこのキーを
+    # 持たないため、`NOT NULL constraint failed: nazokake_items.is_fewshot_selected`
+    # でチャンク単位のトランザクションが丸ごとロールバックし、実質すべての
+    # 復元が0件になっていた(restored=0が実機ログで確認された実例)。
+    "is_fewshot_selected": False,
     # Phase5/6で新設したNOT NULL列。旧Firestoreドキュメントはこのキーを持たないため、
     # 「復元される既存データは全て旧世代のAI生成パイプライン由来」とみなして補う。
     "origin_type": "ai_generated",

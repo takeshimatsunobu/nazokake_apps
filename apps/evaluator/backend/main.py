@@ -1,12 +1,14 @@
 from fastapi.staticfiles import StaticFiles
 
 # V8.9 Final Test
+import asyncio
 import os
 import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from loguru import logger
 
 # apps/evaluator は別リポジトリとしてcwd(apps/evaluator/backend)基準で動くため、
@@ -84,6 +86,50 @@ else:
     )
 
 from nazokake_core.database import Base, _engine
+from nazokake_core.firestore_sync import async_restore_from_firestore
+
+# --- Phase5.5: Cloud Run起動時のFirestore復元(instructions/240で設計されていたが
+# 未配線だった「記憶喪失バグ」の解消)状態管理 ---
+# Cloud Runコンテナの/tmp SQLiteはコンテナ再起動のたびに空になるため、起動時に
+# Firestoreから復元しないと過去のnazokake_itemsが実質消え去っていた。
+# _firestore_restore_done: 復元試行が完了(成功/失敗いずれか)した時点でsetされる。
+# 起動プローブ(/api/health)をブロックしないよう、lifespan startupではこの完了を
+# awaitしない(下記lifespan参照)。
+_firestore_restore_done = asyncio.Event()
+_firestore_restore_status: dict = {"state": "pending", "error": None, "stats": None}
+
+# 復元ゲートの対象外パス。/api/healthはCloud Runの起動プローブ/ヘルスチェックが
+# 叩くため、復元中でも常に即応する必要がある(復元自体の進捗もここで確認できる
+# よう_firestore_restore_statusを応答に含める、下記healthz参照)。
+_RESTORE_GATE_EXEMPT_PATHS = {"/api/health"}
+
+
+async def _run_firestore_restore_in_background() -> None:
+    """Firestoreからのリストアをバックグラウンドで実行する(lifespan startupから
+    awaitせずasyncio.create_task()で起動される)。
+
+    件数次第で数秒〜数十秒かかり得るため、ここでawaitして起動をブロックすると
+    Cloud Runの起動プローブがタイムアウトしかねない。代わりにサーバー自体は
+    即座に受付可能にしつつ、完了(成功/失敗問わず)するまでの間は
+    _firestore_restore_gate ミドルウェアが /api/* リクエストへ503(復元中)を
+    返すことで、不完全なデータへ静かに誤応答することを防ぐ。
+    """
+    global _firestore_restore_status
+    _firestore_restore_status = {"state": "in_progress", "error": None, "stats": None}
+    try:
+        stats = await async_restore_from_firestore()
+        _firestore_restore_status = {"state": "completed", "error": None, "stats": stats}
+        logger.info(f"✅ [起動時リストア] Firestoreからの復元が完了しました: {stats}")
+    except Exception as e:
+        # 【絶対制約】リストア失敗はサーバー起動そのものを失敗させない。復元は
+        # あくまでバックアップからの補完であり、失敗してもsync_once()による
+        # 通常の同期(ローカル→Firestore)は継続できるため致命的ではない。
+        _firestore_restore_status = {"state": "failed", "error": str(e), "stats": None}
+        logger.error(f"⚠️ [起動時リストア] Firestoreからの復元に失敗しました(空のDBのまま起動を継続します): {e}")
+    finally:
+        # 成功/失敗どちらでも、これ以上APIリクエストをブロックし続けない
+        # (失敗時に永久に503を返し続けるとサービス全体が機能しなくなるため)。
+        _firestore_restore_done.set()
 
 
 @asynccontextmanager
@@ -91,11 +137,47 @@ async def lifespan(app: FastAPI):
     # startup: DBスキーマの初期化(旧 @app.on_event("startup") から移行)
     async with _engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+    # Firestoreからの復元は上記の理由でawaitせず、バックグラウンドタスクとして
+    # 起動するのみに留める(サーバーは即座にリクエスト受付可能になる)。
+    restore_task = asyncio.create_task(_run_firestore_restore_in_background())
     yield
-    # shutdown: 現時点でクリーンアップ処理は無し(将来ここに追加する)
+    # shutdown: 復元タスクが残っていればキャンセルする(コンテナ終了時に
+    # 「タスクが破棄されました」という警告ログが出るのを防ぐだけの後始末)。
+    if not restore_task.done():
+        restore_task.cancel()
 
 
 app = FastAPI(title="なぞかけディスカバリー API", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def _firestore_restore_gate(request, call_next):
+    """Firestoreからの起動時復元が完了するまで、/api/* への呼び出しを503で
+    ガードする(/api/healthは常に例外、Cloud Runの起動プローブ用)。
+
+    復元未完了の状態で/api/pending等が不完全なローカルDBへそのまま問い合わせて
+    「静かに間違った(空に近い)結果」を返すことを防ぐのが目的。復元は通常
+    数秒〜長くても数十秒で終わるため、待たせるのではなく即座に503+Retry-After
+    を返しクライアント側の再試行に委ねる設計とした(長時間のリクエスト保留は
+    Cloud Run/ブラウザ双方のタイムアウトと相性が悪いため)。
+
+    このミドルウェアはCORSMiddlewareより先(=内側)に登録することで、503応答にも
+    CORSヘッダーが正しく付与されるようにする(登録順=ミドルウェアのネスト順、
+    後から追加したものほど外側になるStarletteの挙動に合わせた配置)。
+    """
+    path = request.url.path
+    if path in _RESTORE_GATE_EXEMPT_PATHS or not path.startswith("/api"):
+        return await call_next(request)
+    if not _firestore_restore_done.is_set():
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "restoring",
+                "message": "起動時のデータ復元処理中です。数秒後に再試行してください。",
+            },
+            headers={"Retry-After": "5"},
+        )
+    return await call_next(request)
 
 app.add_middleware(
     CORSMiddleware,
@@ -191,7 +273,10 @@ app.include_router(admin_config.router, prefix="/api/admin", tags=["admin"])
 
 @app.get("/api/health")
 def healthz():
-    return {"ok": True}
+    # firestore_restore: Cloud Run起動時のFirestore復元(Phase5.5)の進捗を
+    # 運用監視から見えるようにする。restoring中でもこのエンドポイント自体は
+    # 常に200を返す(_firestore_restore_gateの対象外パスのため)。
+    return {"ok": True, "firestore_restore": _firestore_restore_status}
 
 # 2. 旧UIの静的ファイルマウント（特化パスを先に）
 app.mount("/cic", StaticFiles(directory=str(LEGACY_DIR), html=True), name="legacy")
