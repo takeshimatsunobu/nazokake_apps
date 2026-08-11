@@ -167,6 +167,64 @@ async def progressive_generate(
             )
             return False
 
+    async def process_elyza_pinch_hitter() -> None:
+        """【緊急対応】自宅ELYZAワーカーの通信回線不調により、Cloud Run本番でも
+        オンデマンドジョブキュー(経路B、workers/ondemand_elyza_worker.py)を
+        待たず、その場でGemini Flash Liteに代打生成させる。
+
+        ELYZA枠(llmjp_*)のフィールド形状はそのまま流用しつつ、実際に生成した
+        モデルをllmjp_model_id/llmjp_is_pinch_hitterへ正確に記録する(「ELYZA」
+        という虚偽のデータをどのカラムにも書き込まない)。ペルソナ・温度は
+        本来ELYZAが使う予定だったものをそのまま引き継ぐ。
+        """
+        pinch_hitter_model_id = "gemini-3.5-flash-lite"
+        try:
+            raw_result_l = await generate_via_gemini(
+                odai, persona_prompt, temperature, model_id=pinch_hitter_model_id
+            )
+            validated_result_l = _validate_result_with_fallback(
+                raw_result_l, "生成結果の検証に失敗しました"
+            )
+            text_l = _compose_text(odai, validated_result_l)
+            await async_upsert_item(
+                {
+                    "doc_id": doc_id,
+                    "result_llmjp": validated_result_l,
+                    "nazokake_text_llmjp": text_l,
+                    "llmjp_status": "generated",
+                    "llmjp_model_id": pinch_hitter_model_id,
+                    "llmjp_is_pinch_hitter": True,
+                    "message": "代打Geminiが作品を採点中...",
+                    "dpo_pair_id": pair_id,
+                }
+            )
+            ev_l = await run_evaluation(odai, text_l)
+            await async_record_evaluation_score(
+                "live_evaluation_elyza", ev_l["s_total"]
+            )
+            validated_scores_l = _validate_scores_with_fallback(ev_l["scores"])
+            await async_upsert_item(
+                {
+                    "doc_id": doc_id,
+                    "scores_llmjp": validated_scores_l,
+                    "s_total_llmjp": ev_l["s_total"],
+                    "axis_comments_llmjp": ev_l["axis_comments"],
+                    "overall_llmjp": ev_l["overall"],
+                    "llmjp_status": "completed",
+                }
+            )
+        except Exception as e:
+            logger.exception(f"[{doc_id}] Gemini代打パスで致命的エラー発生: {e}")
+            await async_upsert_item(
+                {
+                    "doc_id": doc_id,
+                    "llmjp_status": "failed",
+                    "llmjp_model_id": pinch_hitter_model_id,
+                    "llmjp_is_pinch_hitter": True,
+                    "message": "代打生成中にエラーが発生しました",
+                }
+            )
+
     async def process_elyza() -> None:
         """おまけパス: 生成→本文先行→評価→スコア。失敗は graceful に llmjp_status:failed。
 
@@ -174,17 +232,17 @@ async def progressive_generate(
         CF_CLIENT_ID等のトンネル設定が存在せず(cloudbuild.yaml確認済み)、
         デフォルトのlocalhost:11434は構造的に到達不能(instructions/257で実測確認)。
         K_SERVICE(Cloud Run自身が注入する環境変数。main.pyのログ初期化と同じ検出規約)
-        が設定されている場合はこの直接呼び出し自体を試みず、generate_ai()が既に
-        書き込み済みのelyza_job_status="pending"を経由するinstructions/250の
-        オンデマンドジョブキュー(workers/ondemand_elyza_worker.py)のみに委ねる
-        (無駄な接続タイムアウトを避ける)。ローカル開発(K_SERVICE未設定)では
-        従来通りこの直接呼び出しを試みる。
+        が設定されている場合、【緊急対応: 自宅ワーカー回線不調】オンデマンドジョブ
+        キュー(経路B)を待たず、process_elyza_pinch_hitter()でその場にGemini Flash
+        Liteの代打生成へ切り替える。ローカル開発(K_SERVICE未設定)では従来通り
+        直接Ollama呼び出し(経路A)を試みる。
         """
         if os.getenv("K_SERVICE"):
             logger.info(
-                f"[{doc_id}] ℹ️ Cloud Run環境のため直接ELYZA呼び出し(経路A)をスキップし、"
-                "オンデマンドジョブキュー(経路B)に委ねます。"
+                f"[{doc_id}] ℹ️ Cloud Run環境のため、Gemini Flash Lite代打モードで生成します"
+                "(自宅ELYZAワーカーの通信回線不調に伴う緊急対応)。"
             )
+            await process_elyza_pinch_hitter()
             return
         try:
             raw_result_l = await generate_via_llmjp(odai, persona_prompt, temperature)
@@ -439,6 +497,10 @@ async def get_status(doc_id: str):
         "overall_llmjp": data.get("overall_llmjp") or "",
         "axis_comments_llmjp": data.get("axis_comments_llmjp") or {},
         "s_total_llmjp": data.get("s_total_llmjp") or 0.0,
+        # 【緊急対応: Gemini Flash Lite代打モード】フロントエンド(result.js)が
+        # 「純国産AI ELYZA」表記を代打表記へ切り替えるための判定に使う。
+        "llmjp_model_id": data.get("llmjp_model_id"),
+        "llmjp_is_pinch_hitter": bool(data.get("llmjp_is_pinch_hitter")),
     }
 
 

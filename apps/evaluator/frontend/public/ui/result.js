@@ -155,7 +155,8 @@ function _genModelCard(opts) {
                 </p>
                 <p class="text-xs text-gray-500 mt-2">そのこころは、</p>
                 <p class="font-bold text-[#902A19] mt-1 text-lg">${esc(r.kokoro || '')}</p>
-                ${r.persona_comment ? `<p class="text-xs text-gray-500 italic mt-3">💬 ${esc(r.persona_comment)}</p>` : ''}`;
+                ${r.persona_comment ? `<p class="text-xs text-gray-500 italic mt-3">💬 ${esc(r.persona_comment)}</p>` : ''}
+                ${opts.pinchHitterNote ? `<p class="text-[10px] text-gray-400 italic mt-2">${esc(opts.pinchHitterNote)}</p>` : ''}`;
     } else {
         body = `<div class="py-6 text-center text-gray-400 text-sm"><div class="animate-spin inline-block rounded-full h-6 w-6 border-b-2 border-[#C5B358] mb-2"></div><br>生成中...</div>`;
     }
@@ -259,11 +260,24 @@ export function uiRenderGenResult(data, taskId, pollFailed = false) {
         scoreData: { scores: data.scores, overall: data.overall, axis_comments: data.axis_comments, s_total: data.s_total },
         pollFailed,
     });
+    // 【緊急対応】自宅ELYZAワーカーの通信回線不調時、Gemini Flash Liteが代打で
+    // 生成することがある(llmjp_is_pinch_hitter、apps/evaluator/backend/api/routers
+    // /generate.py::process_elyza_pinch_hitter参照)。「純国産AI ELYZA」のまま表示すると
+    // 誤認を招くため、タイトル・アクセントカラーをGeminiカードと揃え、謝罪の注記を添える。
+    const isPinchHitter = !!data.llmjp_is_pinch_hitter;
     const elyzaCard = _genModelCard({
-        key: 'elyza', label: 'ELYZA', title: '🏠 純国産AI ELYZA', accent: 'border-[#5B8124]', badge: 'bg-[#5B8124]/20 text-[#5B8124]', odai: odai,
+        key: 'elyza',
+        label: 'ELYZA',
+        title: isPinchHitter ? '☁️🙇 Gemini Flash Lite(代打)' : '🏠 純国産AI ELYZA',
+        accent: isPinchHitter ? 'border-[#C5B358]' : 'border-[#5B8124]',
+        badge: isPinchHitter ? 'bg-[#C5B358]/20 text-[#902A19]' : 'bg-[#5B8124]/20 text-[#5B8124]',
+        odai: odai,
         result: data.result_llmjp,
         scoreData: { scores: data.scores_llmjp, overall: data.overall_llmjp, axis_comments: data.axis_comments_llmjp, s_total: data.s_total_llmjp },
         failed: data.llmjp_status === 'failed',
+        pinchHitterNote: isPinchHitter
+            ? '※現在、自宅PCの通信回線が不安定なため、Gemini Flash Liteが代打で作成しました。申し訳ありません🙇'
+            : null,
         pollFailed,
     });
     document.getElementById('gen-cards-grid').innerHTML = geminiCard + elyzaCard;

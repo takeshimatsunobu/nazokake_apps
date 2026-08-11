@@ -247,6 +247,15 @@ class NazokakeItemORM(Base):
     # elyza_job_retry_count: このジョブの連続失敗回数。mark_sync_failed()のポイズンピル
     # 判定と同じ考え方で、上限到達時に"dead_letter"へ隔離し無限リトライを防ぐ。
     elyza_job_retry_count: Mapped[int] = mapped_column(Integer, default=0)
+    # --- 緊急対応: 自宅ワーカー回線不調時のGemini Flash Lite代打モード ---
+    # ELYZA枠(llmjp_*)が実際にはローカルELYZAではなくGemini Flash Liteによって
+    # 生成された場合、その事実を正確に記録する。「ELYZA」という虚偽のデータが
+    # どのカラムにも入らないようにするための専用フィールド。両方nullable(NOT NULL
+    # 制約を付けない)にしているのは、Phase5.5の起動時リストアで
+    # is_fewshot_selected(NOT NULL列)が_NAZOKAKE_ITEM_BULK_DEFAULTSへの追記漏れで
+    # 復元処理を全滅させた実例を踏まえた、意図的な設計判断。
+    llmjp_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    llmjp_is_pinch_hitter: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
 
 
 class AuditLogORM(Base):
@@ -764,6 +773,11 @@ _NAZOKAKE_ITEM_BULK_DEFAULTS: dict[str, Any] = {
     # Phase5/6で新設したNOT NULL列。旧Firestoreドキュメントはこのキーを持たないため、
     # 「復元される既存データは全て旧世代のAI生成パイプライン由来」とみなして補う。
     "origin_type": "ai_generated",
+    # llmjp_model_id/llmjp_is_pinch_hitterはnullableのため本来このリストへの
+    # 追記は必須ではない(未指定時はNoneがそのまま許容される)が、上記の教訓を
+    # 踏まえ「意図的にNone」であることを明示するため、念のため追記しておく。
+    "llmjp_model_id": None,
+    "llmjp_is_pinch_hitter": None,
 }
 
 

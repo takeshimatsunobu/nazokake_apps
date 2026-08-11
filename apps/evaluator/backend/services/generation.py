@@ -521,8 +521,15 @@ async def generate_via_gemini(
     odai: str,
     persona_prompt: str | None = None,
     temperature_override: float | None = None,
+    model_id: str = "gemini-3.5-flash",
 ) -> dict:
-    """【即時・主軸】Gemini 3.5 Flash で構造化生成（GEN_SCHEMA＋3回リトライ）。失敗時は例外送出。"""
+    """【即時・主軸】Gemini で構造化生成（GEN_SCHEMA＋3回リトライ）。失敗時は例外送出。
+
+    model_id: 既定は現行の主力モデル"gemini-3.5-flash"(既存呼び出し元は無改修で
+    従来通り動作する)。緊急対応(自宅ELYZAワーカー回線不調時のGemini Flash Lite
+    代打モード、apps/evaluator/backend/api/routers/generate.py::process_elyza参照)
+    のため、呼び出し元が任意のGeminiモデルIDを指定できるよう引数化した。
+    """
     api_key = get_gemini_api_key() or ""
     if not api_key:
         # 【instructions/247】キー欠落時、Firestoreからのプロンプト構築やGemini SDKの
@@ -536,7 +543,7 @@ async def generate_via_gemini(
     sys_prompt, user_prompt, dyn_temp = await _build_gen_prompts(
         odai, persona_prompt, temperature_override
     )
-    fallback_model = "gemini-3.5-flash"
+    fallback_model = model_id
 
     last_err = None
     for attempt in range(3):
