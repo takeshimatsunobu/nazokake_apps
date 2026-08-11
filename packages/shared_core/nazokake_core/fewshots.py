@@ -5,11 +5,22 @@ Few-shot例文プールの共有アクセス基盤(Phase5/6: フィードバッ�
 
 管理コクピット(Ⅱペイン)で review_status="golden" と評価され、かつFew-shot採用
 タグ(fewshot_axis_tag)が確定したなぞかけを、apps/evaluator/backend側が
-Firestoreの nazokake_fewshots コレクションへPushする(services/generation.py
+Firestoreの FEWSHOT_COLLECTION コレクションへPushする(services/generation.py
 から呼ぶ側ではなくapi/routers/admin_review.pyが書き手)。実際にプロンプトへ
 注入する側(apps/persona_router、およびapps/evaluator/backend自身の生成
 パイプライン)は、本モジュールの get_fewshot_pool(db) 経由でTTLキャッシュ付きに
 読む。
+
+【instructions/Phase5-6 デプロイ後の実機障害で発覚・修正】当初 FEWSHOT_COLLECTION は
+"nazokake_fewshots" という名前を使っていたが、これは既に別機能(埋め込みベクトル
+{content, metadata, embedding} を持つ、本モジュールとは無関係なRAG/ベクトル検索系の
+既存コレクション、firestore.indexes.jsonのnazokake_fewshots用ベクトルインデックスは
+その機能のもの)が使用中だった。本モジュールがこの名前を「空いている」と誤認して
+読み取りを共有してしまい、生成リクエストが既存ドキュメントを拾うたびに
+`json.dumps()`がFirestoreの`Vector`型(JSON非対応)でTypeErrorを起こし本番で
+500エラーを引き起こした(実機ログで確認済み)。他機能と衝突しない専用の
+コレクション名へ変更し、かつ読み取り時に既知キーのみを抽出することで、
+今後どのような想定外ドキュメントが紛れ込んでも構造的にクラッシュしないようにする。
 
 nazokake_core/personas.py の get_personas()/persona_overrides と全く同じ設計
 (Firestoreをホットパスで直接叩かない、TTL遅延評価、失敗時は直前のキャッシュまたは
@@ -35,7 +46,13 @@ import time
 from datetime import datetime, timezone
 from typing import Any
 
-FEWSHOT_COLLECTION = "nazokake_fewshots"
+FEWSHOT_COLLECTION = "nazokake_golden_fewshots"
+
+# Firestoreドキュメントから安全に取り出すキーのホワイトリスト(admin_review.py::
+# update_fewshot_selectionが実際に書き込むキーと一致させる)。ここに無いキーは
+# 読み取り時に無視する(json.dumps()に非対応の型が将来紛れ込んでも、生成の
+# ホットパスをクラッシュさせない構造的な防御)。
+_FEWSHOT_ENTRY_KEYS = ("odai", "toku", "kokoro", "nazokake_text", "fewshot_axis_tag")
 
 # 5分(既定)ごとにしかFirestoreへ問い合わせない。環境変数で調整可能
 # (nazokake_core.personas.PERSONA_CACHE_TTL_SECONDSと同じ設計)。
@@ -73,11 +90,20 @@ def remove_fewshot_entry_sync(db, doc_id: str) -> None:
 
 
 def fetch_fewshot_pool_sync(db) -> list[dict[str, Any]]:
-    """nazokake_fewshotsコレクションの全ドキュメントを取得する(キャッシュを経由
-    しない、常に最新のFirestore読み取り)。同期API(呼び出し元でスレッド化すること)。
+    """FEWSHOT_COLLECTIONの全ドキュメントを取得する(キャッシュを経由しない、常に
+    最新のFirestore読み取り)。同期API(呼び出し元でスレッド化すること)。
+
+    _FEWSHOT_ENTRY_KEYSにあるキーのみを抽出して返す(想定外の型を持つ未知の
+    キーが混入していても、json.dumps()で落ちない安全な辞書へ正規化する)。
     """
     docs = db.collection(FEWSHOT_COLLECTION).limit(_FEWSHOT_POOL_LIMIT).stream()
-    return [d.to_dict() or {} for d in docs]
+    pool = []
+    for d in docs:
+        data = d.to_dict() or {}
+        entry = {k: data[k] for k in _FEWSHOT_ENTRY_KEYS if k in data}
+        if entry.get("toku") and entry.get("kokoro"):
+            pool.append(entry)
+    return pool
 
 
 _cache: list[dict[str, Any]] | None = None
