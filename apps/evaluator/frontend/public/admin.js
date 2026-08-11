@@ -212,12 +212,45 @@ export async function logout() {
     setTimeout(() => location.reload(), 1000);
 }
 
-export async function authFetch(url, options = {}) {
+// 【Phase5.5】evaluator/backend起動直後はFirestoreからのデータ復元待ちで
+// /api/*が503(Retry-After付き)を返す(main.py::_firestore_restore_gate参照)。
+// これを通信エラーとして即座にユーザーへ見せるのではなく、ここで透過的に
+// リトライすることで、画面上は「読み込みが数秒長い」だけの体験にする。
+const AUTH_FETCH_MAX_RETRIES = 3;
+const AUTH_FETCH_DEFAULT_RETRY_AFTER_SEC = 4; // Retry-Afterヘッダーが無い場合の既定待機秒数(3〜5秒の中間)。
+
+function _sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+export async function authFetch(url, options = {}, _retryCount = 0) {
     const user = firebase.auth().currentUser;
     if (!user) throw new Error("ログインしていません");
     const token = await user.getIdToken();
     const headers = { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` };
     const res = await fetch(url, { ...options, headers });
+
+    if (res.status === 503) {
+        if (_retryCount < AUTH_FETCH_MAX_RETRIES) {
+            const retryAfterHeader = res.headers.get('Retry-After');
+            const retryAfterSec = retryAfterHeader ? parseFloat(retryAfterHeader) : NaN;
+            const waitSec = Number.isFinite(retryAfterSec) && retryAfterSec > 0
+                ? retryAfterSec
+                : AUTH_FETCH_DEFAULT_RETRY_AFTER_SEC;
+            await _sleep(waitSec * 1000);
+            return authFetch(url, options, _retryCount + 1);
+        }
+        // リトライ上限に達した場合のみ、ここで初めてエラーとしてユーザーへ見せる。
+        let detail = "サーバーの起動処理(データ復元)が長引いています。しばらくしてから再読み込みしてください。";
+        try {
+            const body = await res.json();
+            detail = body.message || body.detail || detail;
+        } catch (e) {
+            // レスポンスボディがJSONでない場合は既定文言のまま。
+        }
+        throw new Error(detail);
+    }
+
     if (!res.ok) {
         if (res.status === 401) { logout(); throw new Error("認証切れ"); }
         // バックエンド(HTTPException)の detail をできる限り拾う
