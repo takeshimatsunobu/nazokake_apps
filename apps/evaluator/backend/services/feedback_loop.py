@@ -8,7 +8,7 @@ generate_via_llmjp)は本モジュールを呼び出さない限り一切影響�
 
 import asyncio
 
-from nazokake_core.database import async_get_item
+from nazokake_core.database import async_get_fewshot_curated_items, async_get_item
 
 HIGH_RATING_THRESHOLD = 4
 
@@ -71,5 +71,27 @@ async def build_high_rated_fewshot_entries(db, limit: int = 200) -> list:
     for doc_id in doc_ids:
         entry = await _fetch_fewshot_entry(doc_id)
         if entry:
+            entries.append(entry)
+    return entries
+
+
+async def build_curated_fewshot_entries() -> list:
+    """管理コクピットの「⭐ Few-shot採用」(Phase2)で管理者が明示的に選んだ
+    nazokake_itemsから、Few-shotプール互換の辞書リストを組み立てる(Phase4)。
+
+    build_high_rated_fewshot_entries()(ユーザー評価スコア起点、Firestore
+    user_feedbacksを参照)とは信号源が異なる: こちらはSQLite
+    (nazokake_items.is_fewshot_selected、管理者の明示判断)のみを起点とするため
+    Firestoreクライアント(db引数)を必要としない。
+    """
+    curated_items = await async_get_fewshot_curated_items()
+    entries = []
+    for item in curated_items:
+        entry = await _fetch_fewshot_entry(item["doc_id"])
+        if entry:
+            # 元の思考プロセス辞書に、採用時の評価軸タグを追加情報として乗せる
+            # (_sample_fewshot_block()はdictを丸ごとJSON化するだけなので、
+            # 未知のキーが増えても既存の描画・生成ロジックには影響しない)。
+            entry["fewshot_axis_tag"] = item.get("fewshot_axis_tag")
             entries.append(entry)
     return entries

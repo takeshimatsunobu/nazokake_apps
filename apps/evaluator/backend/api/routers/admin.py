@@ -1,4 +1,7 @@
-# ... (既存コード)
+# api/routers/admin.py
+# Ⅱ レビュー系(/action, /pending)・デプロイ(/deploy)・監査証跡(/audit_logs)。
+# 【Phase1】DLQ(/dlq, /dlq/action)はⅠ稼働チェックへ属するため
+# api/routers/admin_health.py へ移設した(ロジックは無改変)。
 
 import asyncio
 from datetime import datetime, timezone
@@ -10,20 +13,14 @@ from models.schemas import (
     AdminActionResponse,
     AdminDeployResponse,
     AuditLogListResponse,
-    DlqActionRequest,
-    DlqActionResponse,
-    DlqListResponse,
     ErrorEnvelope,
     HumanActionRequest,
     PendingListResponse,
 )
 from nazokake_core.database import (
-    async_discard_dlq_item,
     async_get_audit_logs,
-    async_get_dlq_items,
     async_get_item,
     async_get_pending_items,
-    async_retry_dlq_item,
     async_upsert_item,
 )
 from nazokake_core.firestore_sync import sync_once_safe
@@ -121,44 +118,6 @@ async def apply_human_action(
     # ネストして明確に分離する(旧実装は {"status": "success", **doc} のスプレッドで
     # ドキュメント側のstatusがsuccessを上書きしてしまうバグを内包していた)。
     return {"status": "success", "data": ui_updated}
-
-
-@router.get("/dlq", response_model=Union[DlqListResponse, ErrorEnvelope])
-@handle_exceptions
-async def get_dlq_items(admin_token: dict = Depends(verify_admin_token)):
-    """DLQ(sync_status=="fatal"、ポイズンピル隔離済み)の一覧を取得する。
-
-    last_sync_error(隔離理由)とretry_countを含めて返す。
-    """
-    items = await async_get_dlq_items()
-    return {"items": items}
-
-
-@router.post("/dlq/action", response_model=Union[DlqActionResponse, ErrorEnvelope])
-@handle_exceptions
-async def apply_dlq_action(
-    req: DlqActionRequest,
-    admin_token: dict = Depends(verify_admin_token),
-):
-    """DLQに隔離されたアイテムへ「再試行」または「破棄」を適用する。
-
-    対象が存在しない、または既にfatal(隔離中)でない場合は404。操作が成功した場合、
-    直後に既存データを一切破壊しない追記専用の監査証跡(Audit Trail)を記録する。
-    """
-    reason_dict = {"requested_action": req.action}
-    if req.action == "retry":
-        found = await async_retry_dlq_item(
-            req.doc_id, actor="admin", reason_dict=reason_dict
-        )
-    else:
-        found = await async_discard_dlq_item(
-            req.doc_id, actor="admin", reason_dict=reason_dict
-        )
-
-    if not found:
-        raise HTTPException(status_code=404, detail="対象のDLQアイテムが見つかりません")
-
-    return {"status": "success", "doc_id": req.doc_id, "action": req.action}
 
 
 @router.get("/pending", response_model=Union[PendingListResponse, ErrorEnvelope])

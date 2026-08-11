@@ -24,6 +24,8 @@ except ImportError:
 import firebase_admin
 from firebase_admin import firestore
 
+from nazokake_core.training_filter import is_valid_for_training
+
 try:
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
@@ -243,9 +245,16 @@ def main(
         docs_golden = (
             db.collection("nazokake_items").where("is_golden_data", "==", True).stream()
         )
+        # 【修正】batch/main.py・batch/run_matrix.py はGemini生成物を"batch_factory_gemini"、
+        # ELYZA(Ollama)生成物を"batch_factory_local"としてsourceに書き分ける
+        # (dpo_pair_idで同じペアに紐付けつつ、別ドキュメントとして保存する設計)。
+        # 以前はここが"batch_factory_gemini"のみを対象にしており、"batch_factory_local"
+        # (ELYZA側)のドキュメントが一切フェッチされていなかった。DPOペア抽出は同一
+        # dpo_pair_id配下に2件(chosen/rejected)揃って初めて成立する(build_pairs()参照)ため、
+        # 相方が常に欠落し、batch_factory由来のDPOペアが実質1件も生成されない状態だった。
         docs_batch = (
             db.collection("nazokake_items")
-            .where("source", "==", "batch_factory_gemini")
+            .where("source", "in", ["batch_factory_gemini", "batch_factory_local"])
             .stream()
         )
 
@@ -254,10 +263,17 @@ def main(
                 doc_id = doc.id
                 item = doc.to_dict() or {}
 
+                # 【毒入れ防止】nazokake_itemsには本フィールドが存在しないため、
+                # is_valid_for_training()は常にTrueへフォールバックし実質no-op
+                # (旧データは引き続き全件対象のまま)。nazokake_results側の
+                # 明示的なFalse除外のためにここでも一貫して適用しておく。
+                if not is_valid_for_training(item):
+                    continue
+
                 dpo_pair_id = item.get("dpo_pair_id", "")
                 is_golden_data = bool(item.get("is_golden_data", False))
 
-                if item.get("source") == "batch_factory_gemini":
+                if item.get("source") in ("batch_factory_gemini", "batch_factory_local"):
                     model_id = item.get("model_id", "unknown").lower()
                     model_key = (
                         "elyza"
@@ -315,6 +331,52 @@ def main(
                                 "data_source": "golden_direct",
                             }
                             direct_count += 1
+
+        # 【Phase4追加】apps/persona_router が書き込む nazokake_results コレクションの
+        # 直接スキャン。従来このコレクションはどの抽出スクリプトからも参照されておらず、
+        # is_valid_for_training=false(荒らし入力を「エンタメ化」した非学習対象生成物)が
+        # 立っていても、それを見る下流処理が存在しなかった。ここで初めて接続する。
+        # スコア(s_total)は生成時点では未採点で、scripts/evaluate_persona_results.py
+        # による事後評価バッチが書き戻すまで存在しないため、未評価分は自然にスキップされる
+        # (次回の差分実行時に評価が済んでいれば拾われる)。
+        persona_results_count = 0
+        docs_persona_results = db.collection("nazokake_results").stream()
+        for doc in docs_persona_results:
+            doc_id = doc.id
+            item = doc.to_dict() or {}
+
+            if not is_valid_for_training(item):
+                continue
+
+            text = (item.get("nazokake_text") or "").strip()
+            score = to_score(item.get("s_total"))
+            if not text or score is None:
+                continue
+
+            model_id = (item.get("generator_model_id") or "gemini").lower()
+            model_key = "gemini" if "gemini" in model_id else model_id
+
+            final_records[(doc_id, model_key)] = {
+                "odai": item.get("odai", ""),
+                "model": item.get("generator_model_id", "unknown"),
+                "model_key": model_key,
+                "text": text,
+                "score": score,
+                "score_type": "ai_eval",
+                "human_comment": None,
+                "user_slug": "persona_router",
+                "doc_id": doc_id,
+                "system_prompt": system_prompt,
+                # persona_router側にdpo_pair_idの概念は無い(1お題=1回生成、対になる
+                # rejected応答が存在しない)ため空文字とする。DPO用の選好ペアは
+                # 代わりにPhase3の添削(corrections)データ(元AI応答=rejected /
+                # 添削後=chosen)から別途構成する設計とする。
+                "dpo_pair_id": "",
+                "is_golden_data": False,
+                "data_source": "persona_router",
+            }
+            persona_results_count += 1
+        print(f"📥 nazokake_results からの直接スキャン: {persona_results_count} 件")
     except Exception as e:
         print(
             f"⚠️ 直接スキャン中にエラー発生（インデックスが必要な場合があります）: {e}"

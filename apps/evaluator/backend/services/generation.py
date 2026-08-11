@@ -245,25 +245,36 @@ _FEWSHOT_POOL = _load_fewshot_pool()
 
 
 async def refresh_fewshot_pool_from_feedback(db, limit: int = 200) -> int:
-    """Phase4 Lv.1: ユーザー高評価データ(user_feedbacks)をFew-shotプールの先頭に優先的にマージする(土台実装)。
+    """Phase4: ユーザー高評価データ(user_feedbacks)+管理者の明示採用(Phase2の
+    「⭐ Few-shot採用」)の両方をFew-shotプールの先頭に優先的にマージする。
 
-    既存の静的プールは保持したまま高評価エントリを先頭に追加するマージ方式とし、
+    既存の静的プールは保持したまま両エントリ群を先頭に追加するマージ方式とし、
     generate_via_gemini / generate_via_llmjp の既存挙動を壊さない(呼び出さない限り無関係)。
-    呼び出し元(オーケストレーター等)が任意のタイミング(バッチ/定期実行)で発火する想定。
+    呼び出し元(POST /admin/feedbacks/refresh-fewshot Webhook)が任意のタイミングで
+    発火する想定。
+
+    【Phase2で保留していたFew-shotの動的配線(Phase4で解消)】管理コクピットの
+    「⭐ Few-shot採用」は判断の永続化(nazokake_items.is_fewshot_selected)のみを
+    行い、実際の生成プロンプトへの組み込みはここで初めて行われる。
+    build_curated_fewshot_entries()はSQLiteのみを参照するためdb(Firestore)を
+    必要としないが、引数を揃えるため関数シグネチャはそのままにしている。
     """
     global _FEWSHOT_POOL
-    from .feedback_loop import build_high_rated_fewshot_entries
+    from .feedback_loop import build_curated_fewshot_entries, build_high_rated_fewshot_entries
 
     try:
         high_rated = await build_high_rated_fewshot_entries(db, limit)
-        if high_rated:
-            _FEWSHOT_POOL = high_rated + _FEWSHOT_POOL
+        curated = await build_curated_fewshot_entries()
+        added = high_rated + curated
+        if added:
+            _FEWSHOT_POOL = added + _FEWSHOT_POOL
             print(
-                f"🔁 Few-shotプールを高評価データで強化: +{len(high_rated)}件 (合計 {len(_FEWSHOT_POOL)}件)"
+                f"🔁 Few-shotプールを強化: 高評価+{len(high_rated)}件 / 管理者採用+{len(curated)}件 "
+                f"(合計 {len(_FEWSHOT_POOL)}件)"
             )
-        return len(high_rated)
+        return len(added)
     except Exception as e:
-        print(f"⚠️ Few-shotプールの高評価強化に失敗(既存プールを維持): {e}")
+        print(f"⚠️ Few-shotプールの強化に失敗(既存プールを維持): {e}")
         return 0
 
 
@@ -465,8 +476,13 @@ async def _log_generation_cost(
     input_tokens: int = 0,
     output_tokens: int = 0,
     execution_time_sec: float = 0.0,
+    success: bool = True,
 ) -> None:
-    """生成コストをsystem_costsへ非同期記録する(失敗してもなぞかけ生成自体は継続する)。"""
+    """生成コストをsystem_costsへ非同期記録する(失敗してもなぞかけ生成自体は継続する)。
+
+    【Phase1追加】success引数はGemini/Ollama呼び出しそのものが成功したかを表す。
+    管理コクピットの「APIエラー率」タイルの集計対象になる。
+    """
     try:
         from nazokake_core.cost_calculator import async_log_system_cost
 
@@ -477,6 +493,7 @@ async def _log_generation_cost(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             execution_time_sec=execution_time_sec,
+            success=success,
         )
     except Exception as e:
         print(f"⚠️ コストログ記録に失敗しました(生成処理には影響なし): {e}")
@@ -597,6 +614,10 @@ async def generate_via_gemini(
         except Exception as e:
             last_err = e
             print(f"⚠️ Gemini生成エラー (試行 {attempt + 1}/3): {e}")
+            # 【Phase1】試行が例外で失敗した場合のみsuccess=Falseで計装する
+            # (検証失敗で継続するケースは、その後の試行で成功すれば全体としては
+            # 成功なので、ここではAPI呼び出し自体が失敗したケースのみを対象にする)。
+            await _log_generation_cost(fallback_model, success=False)
         await asyncio.sleep(0.8)
 
     if _is_gemini_auth_error(last_err):

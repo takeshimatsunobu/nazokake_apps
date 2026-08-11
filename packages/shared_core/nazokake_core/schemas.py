@@ -39,6 +39,12 @@ class Scores(BaseModel):
     S_cm: float = Field(..., ge=0.0, le=1.0)
     S_prosody: float = Field(..., ge=0.0, le=1.0)
     S_nat: float = Field(..., ge=0.0, le=1.0)
+    # 【Phase4追加】persona_router向けに新設した2軸。default=0.5とすることで、これらの
+    # 軸を採点しない旧来の書き込み元(batch_factory/batch/gemini_evaluator.py等)が
+    # 何も変更せずに済む後方互換を保つ(apps/evaluator/backend/api/routers/generate.py:76の
+    # Scores(**raw)呼び出しでも欠損時は自動的にこの既定値が使われる)。
+    S_persona: float = Field(0.5, ge=0.0, le=1.0)
+    S_aufheben: float = Field(0.5, ge=0.0, le=1.0)
 
 class Result(BaseModel):
     hint: str = ""
@@ -141,6 +147,10 @@ class SystemCostLog(BaseModel):
     output_tokens: int = 0
     execution_time_sec: float = 0.0
     calculated_cost_jpy: float = 0.0
+    # 【Phase1追加】API稼働状況(エラー率)の計装用。呼び出しが失敗した場合も
+    # async_log_system_cost(success=False)で記録することで、管理コクピットの
+    # 「APIエラー率」タイルがCloud Logging等の追加インフラ無しに算出できる。
+    success: bool = True
 
 # ------------------------------------------------------------
 # instructions/231: 「なぞかけ研究所」記事データ基盤のスキーマ契約

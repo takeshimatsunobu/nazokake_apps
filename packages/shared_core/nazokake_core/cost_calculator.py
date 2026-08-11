@@ -80,6 +80,7 @@ async def async_log_system_cost(
     input_tokens: int = 0,
     output_tokens: int = 0,
     execution_time_sec: float = 0.0,
+    success: bool = True,
 ) -> SystemCostLog:
     """コストを計算し、SystemCostLogとしてバリデーションした上でFirestoreへ非同期保存する。
 
@@ -87,6 +88,11 @@ async def async_log_system_cost(
     (calculate_server_cost_jpy)、それ以外(Claude/Gemini等のAPIモデル名)であれば
     トークン単価ベースの課金額(calculate_token_cost_jpy)で算出する。
     db の Firestore 書き込み自体は同期APIのため、asyncio.to_thread でイベントループを塞がない。
+
+    【Phase1追加】success=False で呼ぶと「試行はしたが失敗した」呼び出しとして
+    記録される(通常はトークン数不明のため0のまま、コストは掛からなかったものと
+    して0円になる)。管理コクピットの「APIエラー率」タイルはこのフィールドを
+    集計するだけで、Cloud Logging等の追加インフラ無しにエラー率を算出できる。
     """
     if service_type.lower() in LOCAL_SERVICE_TYPES:
         cost_jpy = calculate_server_cost_jpy(execution_time_sec)
@@ -98,6 +104,7 @@ async def async_log_system_cost(
         output_tokens=output_tokens,
         execution_time_sec=execution_time_sec,
         calculated_cost_jpy=cost_jpy,
+        success=success,
     )
     await asyncio.to_thread(db.collection("system_costs").add, log.model_dump())
     return log

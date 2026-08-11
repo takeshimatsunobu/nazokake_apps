@@ -56,8 +56,12 @@ from fastapi import FastAPI
 # ディレクトリのためimportは変わらず解決できる)。
 from api.routers import (
     admin,
+    admin_auth,
+    admin_config,
     admin_costs,
     admin_feedbacks,
+    admin_health,
+    admin_review,
     board,
     feed,
     feedback,
@@ -105,6 +109,13 @@ app.add_middleware(
         # localhost:8000で開いた場合はオリジンが食い違いCORSプリフライトが必要になる)。
         "http://localhost:8000",
         "http://127.0.0.1:8000",
+        # admin.html(管理コクピット)をリポジトリ既定のdev_server.py(port 7300)以外の
+        # 汎用静的サーバー(例: `npx serve`/`python -m http.server 3000`等、port 3000で
+        # 提供するツール)経由でローカル確認する場合に使う。CORSMiddlewareは許可オリジンに
+        # 完全一致(スキーム+ホスト+ポート)を要求するため、未列挙のオリジンからの
+        # プリフライト(OPTIONS)は400で拒否される(今回の障害の直接原因)。
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
         # 現行のCloud Runサービス(nazokake-api)自身のURL。config.jsのAPI_BASEを相対パス
         # "/api"化した(firebase.jsonのCloud Runリライトと合わせ、Firebase Hosting経由・
         # Cloud Run直アクセスのいずれも同一オリジンになるため、この一覧は本来この2URLに
@@ -173,6 +184,10 @@ app.include_router(board.router, prefix="/api/board", tags=["board"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(admin_costs.router, prefix="/api/admin", tags=["admin"])
 app.include_router(admin_feedbacks.router, prefix="/api/admin", tags=["admin"])
+app.include_router(admin_auth.router, prefix="/api/admin", tags=["admin"])
+app.include_router(admin_health.router, prefix="/api/admin", tags=["admin"])
+app.include_router(admin_review.router, prefix="/api/admin", tags=["admin"])
+app.include_router(admin_config.router, prefix="/api/admin", tags=["admin"])
 
 @app.get("/api/health")
 def healthz():

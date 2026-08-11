@@ -21,30 +21,44 @@
 
     <!-- 【instructions/295】index.htmlと同じキャッシュバスティング対策。この
          import mapはindex.htmlのものと同一構成のため、バージョン文字列も同一の
-         値で揃える(更新時は両ファイルを必ず同時に更新すること)。 -->
+         値で揃える(更新時は両ファイルを必ず同時に更新すること)。
+         【Phase 0】5タブ化にあたり ui/tabs(既存の uiSwitchTab)を新たに使用するため
+         バージョン文字列を更新した。 -->
     <script type="importmap">
     {
         "imports": {
-            "config": "/config.js?v=20260810c",
-            "state": "/state.js?v=20260810c",
-            "api": "/api.js?v=20260810c",
-            "app": "/app.js?v=20260810c",
-            "admin": "/admin.js?v=20260810c",
-            "firebase-config": "/firebase-config.js?v=20260810c",
-            "ui/auth": "/ui/auth.js?v=20260810c",
-            "ui/toast": "/ui/toast.js?v=20260810c",
-            "ui/tabs": "/ui/tabs.js?v=20260810c",
-            "ui/feed": "/ui/feed.js?v=20260810c",
-            "ui/board": "/ui/board.js?v=20260810c",
-            "ui/form": "/ui/form.js?v=20260810c",
-            "ui/result": "/ui/result.js?v=20260810c",
-            "ui/feedback": "/ui/feedback.js?v=20260810c",
+            "config": "/config.js?v=20260811a",
+            "state": "/state.js?v=20260811a",
+            "api": "/api.js?v=20260811a",
+            "app": "/app.js?v=20260811a",
+            "admin": "/admin.js?v=20260811a",
+            "firebase-config": "/firebase-config.js?v=20260811a",
+            "ui/auth": "/ui/auth.js?v=20260811a",
+            "ui/toast": "/ui/toast.js?v=20260811a",
+            "ui/tabs": "/ui/tabs.js?v=20260811a",
+            "ui/feed": "/ui/feed.js?v=20260811a",
+            "ui/board": "/ui/board.js?v=20260811a",
+            "ui/form": "/ui/form.js?v=20260811a",
+            "ui/result": "/ui/result.js?v=20260811a",
+            "ui/feedback": "/ui/feedback.js?v=20260811a",
             "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
             "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
         }
     }
     </script>
-    <script type="module" src="/main_admin.js?v=20260810c"></script>
+    <style>
+        /* 5ペイン切り替え(index.htmlの.tab-btn/.view-sectionと同一の流儀。
+           ui/tabs.js::uiSwitchTab()がこのクラス名・ID命名(view-{id}/tab-{id})に
+           依存しているため、変更する場合は両方合わせること)。 */
+        .tab-btn { transition: all 0.2s; }
+        .tab-btn.active {
+            background-color: #1e3a8a;
+            color: #ffffff !important;
+        }
+        .view-section { display: none; }
+        .view-section.active { display: block; }
+    </style>
+    <script type="module" src="/main_admin.js?v=20260811a"></script>
 </head>
 <body class="bg-gray-100 text-gray-800 p-4 md:p-8 font-sans">
     <div id="toast-container" class="fixed top-5 left-1/2 transform -translate-x-1/2 z-[100] flex flex-col gap-2 pointer-events-none"></div>
@@ -55,11 +69,30 @@
         <div id="firebaseui-auth-container"></div>
     </div>
 
+    <!-- 【Phase 0新設】完全招待制: ログイン(Firebase Auth)には成功したが、
+         admin_users.status=="approved"ではない(=招待されていない、または
+         承認待ち)場合に表示する画面。ここではAPIエラー(403)の中身を区別せず、
+         「アクセスできません」という一枚岩の文言にしている(招待されていない人に
+         対して「あなたは承認待ちです」と誤解させる情報を与えないための配慮)。 -->
+    <div id="pending-approval-screen" class="hidden max-w-md mx-auto mt-20 bg-white p-8 rounded-xl shadow-md text-center">
+        <p class="text-4xl mb-3">🔒</p>
+        <h2 class="text-xl font-bold text-gray-800 mb-3">アクセスできません</h2>
+        <p id="pending-approval-message" class="text-gray-600 text-sm mb-6">
+            このアカウントはまだ管理コクピットへのアクセスが許可されていません。
+            招待メールのリンクからアクセスした場合は、メイン管理者の承認をお待ちください。
+        </p>
+        <button data-action="logout" class="bg-gray-100 hover:bg-gray-200 text-gray-700 px-4 py-2 rounded font-bold text-sm transition">
+            🚪 ログアウト
+        </button>
+    </div>
+
     <div id="admin-screen" class="max-w-[1000px] mx-auto hidden">
-        <header class="mb-8 flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-200">
+        <header class="mb-4 flex justify-between items-center bg-white p-4 rounded-xl shadow-sm border border-gray-200">
             <div>
                 <h1 class="text-2xl font-bold text-[#902A19] flex items-center gap-2">
                     <span class="text-3xl">🛠️</span> RLHF データセット管理コックピット
+                    <!-- 【Phase1新設】グローバルお知らせバッジ。0件なら非表示(admin.js::_updateBadge)。 -->
+                    <span id="global-action-badge" class="hidden text-xs font-black bg-rose-600 text-white rounded-full min-w-[22px] h-[22px] px-1.5 flex items-center justify-center">0</span>
                 </h1>
                 <p class="text-xs text-gray-500 mt-1">※取扱注意：ここでの操作は本番AIモデルとDBに直結しています。</p>
             </div>
@@ -68,207 +101,442 @@
             </button>
         </header>
 
-        <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-blue-600">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-bold text-blue-800 flex items-center gap-2">
-                    <span>📊</span> アプリ利用状況 (テレメトリ)
-                </h2>
-                <button id="app-usage-reload-btn" class="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100 transition border border-blue-200">
-                    🔄 データを最新化
-                </button>
-            </div>
-            
-            <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
-                <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm">
-                    <p class="text-xs text-gray-500 font-bold">総ページ閲覧数 (PV)</p>
-                    <p id="adm-pv" class="text-3xl font-black text-blue-700 mt-1">0</p>
+        <!-- 【Phase 0新設】5ペインのタブバー。中身の並べ替えは後続フェーズで継続する
+             (今回はタブ切り替え機構と認証フローの確立を優先し、既存コンポーネントは
+             最も近いペインへそのまま移設するに留める)。 -->
+        <nav class="mb-6 bg-white p-2 rounded-xl shadow-sm border border-gray-200 flex flex-wrap gap-1">
+            <button data-action="switchTab" data-arg="1" id="tab-1" class="tab-btn active flex-1 min-w-[110px] text-xs font-bold px-3 py-2 rounded-lg text-gray-600">
+                Ⅰ 稼働チェック<span id="tab-badge-1" class="hidden ml-1 text-[10px] font-black bg-rose-600 text-white rounded-full px-1.5 py-0.5"></span>
+            </button>
+            <button data-action="switchTab" data-arg="2" id="tab-2" class="tab-btn flex-1 min-w-[110px] text-xs font-bold px-3 py-2 rounded-lg text-gray-600">
+                Ⅱ レビュー<span id="tab-badge-2" class="hidden ml-1 text-[10px] font-black bg-rose-600 text-white rounded-full px-1.5 py-0.5"></span>
+            </button>
+            <button data-action="switchTab" data-arg="3" id="tab-3" class="tab-btn flex-1 min-w-[110px] text-xs font-bold px-3 py-2 rounded-lg text-gray-600">
+                Ⅲ コスト
+            </button>
+            <button data-action="switchTab" data-arg="4" id="tab-4" class="tab-btn flex-1 min-w-[110px] text-xs font-bold px-3 py-2 rounded-lg text-gray-600">
+                Ⅳ 生成設定
+            </button>
+            <button data-action="switchTab" data-arg="5" id="tab-5" class="tab-btn flex-1 min-w-[110px] text-xs font-bold px-3 py-2 rounded-lg text-gray-600">
+                Ⅴ 運用基盤<span id="tab-badge-5" class="hidden ml-1 text-[10px] font-black bg-rose-600 text-white rounded-full px-1.5 py-0.5"></span>
+            </button>
+        </nav>
+
+        <!-- ============================================================ -->
+        <!-- Ⅰ 現状のシステム/インフラ稼働チェック -->
+        <!-- ============================================================ -->
+        <section id="view-1" class="view-section active">
+
+            <!-- 【Phase1新設】APIエラー率。system_costs(SystemCostLog.success)を集計するだけで、
+                 Cloud Logging/Cloud Monitoring等の追加インフラ無しに算出する
+                 (api/routers/admin_health.py::get_api_error_rate参照)。 -->
+            <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-orange-500">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-orange-700 flex items-center gap-2">
+                        <span>🚨</span> APIエラー率
+                    </h2>
                 </div>
-                <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm">
-                    <p class="text-xs text-gray-500 font-bold">総訪問者数 (UU)</p>
-                    <p id="adm-uu" class="text-3xl font-black text-emerald-600 mt-1">0</p>
-                </div>
-                <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm col-span-2 sm:col-span-1">
-                    <p class="text-xs text-gray-500 font-bold">平均滞在時間</p>
-                    <p id="adm-dur" class="text-2xl font-black text-gray-800 mt-1.5">0<span class="text-xs font-normal text-gray-500">秒</span></p>
-                </div>
-            </div>
-
-            <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-inner">
-                <h3 class="text-sm font-bold text-gray-700 mb-3 border-b pb-2">🎯 ユーザーアクション統計</h3>
-                <div class="space-y-3 text-sm" id="adm-events-container">
-                    <p class="text-gray-400 text-center py-2">データを読み込んでいます...</p>
-                </div>
-            </div>
-        </section>
-
-        <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-teal-600">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-bold text-teal-800 flex items-center gap-2">
-                    <span>🫀</span> mlops-scheduler 稼働状況
-                </h2>
-            </div>
-            <!-- 【instructions/169】SSH接続無しでのデーモン生存監視。
-                 tools/export_daemon_heartbeat.pyが書き出すdaemon_heartbeat.jsonを
-                 静的fetchするのみ(バックエンドAPIに依存しない)。 -->
-            <div id="daemon-heartbeat-container" class="flex items-center gap-3">
-                <span id="daemon-heartbeat-dot" class="inline-block w-3 h-3 rounded-full bg-gray-300 flex-shrink-0"></span>
-                <p id="daemon-heartbeat-text" class="text-sm text-gray-500">読み込んでいます...</p>
-            </div>
-        </section>
-
-        <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-gray-800">
-            <div class="flex justify-between items-center mb-4">
-                <h2 class="text-xl font-bold text-gray-900 flex items-center gap-2">
-                    <span>🚀</span> ワンタッチ本番デプロイ
-                </h2>
-                <button id="deploy-btn" data-action="deployToProduction"
-                    class="bg-gray-900 text-white text-sm font-bold px-4 py-2 rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
-                    本番デプロイ実行
-                </button>
-            </div>
-            <!-- 【instructions/172: 1-Click Deploy】POST /api/admin/deploy が
-                 tools/deploy/run_verification_server.ps1 をバックグラウンドで起動する。
-                 その標準出力/標準エラー出力はdeploy.logへ追記され、admin.jsが
-                 定期的にfetchしてこのターミナル風エリアへストリーミング表示する
-                 (SSH接続・ターミナル操作を一切必要としない)。 -->
-            <p class="text-xs text-gray-500 mb-2">
-                作業ツリーの保留中の変更を自動コミットした上で、検証サーバーへの
-                プロビジョニング・デプロイをバックグラウンドで実行します。
-            </p>
-            <textarea id="deploy-log-terminal" readonly rows="14"
-                class="w-full bg-black text-green-400 font-mono text-xs p-3 rounded-lg resize-none"
-                placeholder="デプロイ実行時にログがここへストリーミング表示されます..."></textarea>
-        </section>
-
-        <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-purple-600">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-bold text-purple-800 flex items-center gap-2">
-                    <span>📈</span> MLOps推移ダッシュボード
-                </h2>
-            </div>
-            <div id="mlops-chart-container">
-                <canvas id="mlops-chart" height="120"></canvas>
-                <p id="mlops-chart-empty" class="text-center py-10 text-gray-400 text-sm hidden">
-                    まだMLOpsパイプラインの実行履歴がありません
-                </p>
-                <p id="mlops-chart-error" class="text-center py-10 text-red-500 text-sm hidden"></p>
-            </div>
-        </section>
-
-        <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-[#902A19]">
-            <h2 class="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
-                <span>🎛️</span> AI生成エンジン 操縦パネル
-            </h2>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <div>
-                    <label class="block text-sm font-bold text-gray-700 mb-2">Temperature (温度: 0.0 〜 2.0)</label>
-                    <input type="range" id="config-temp" min="0" max="2.0" step="0.1" value="0.8" class="w-full accent-[#902A19]">
-                    <div class="flex justify-between text-xs text-gray-500 mt-1">
-                        <span>カタイ(0.0)</span><span id="temp-val-display" class="font-bold text-[#902A19]">0.8</span><span>ブッ飛ぶ(2.0)</span>
+                <div class="grid grid-cols-3 gap-4 mb-2">
+                    <div class="bg-orange-50/50 p-4 rounded-lg border border-orange-100 text-center shadow-sm">
+                        <p class="text-xs text-gray-500 font-bold">エラー率</p>
+                        <p id="api-error-rate-value" class="text-3xl font-black text-orange-600 mt-1">-</p>
+                    </div>
+                    <div class="bg-orange-50/50 p-4 rounded-lg border border-orange-100 text-center shadow-sm">
+                        <p class="text-xs text-gray-500 font-bold">失敗件数</p>
+                        <p id="api-error-rate-failed" class="text-2xl font-black text-gray-800 mt-1.5">-</p>
+                    </div>
+                    <div class="bg-orange-50/50 p-4 rounded-lg border border-orange-100 text-center shadow-sm">
+                        <p class="text-xs text-gray-500 font-bold">集計対象件数</p>
+                        <p id="api-error-rate-total" class="text-2xl font-black text-gray-800 mt-1.5">-</p>
                     </div>
                 </div>
-                <div>
-                                        <label class="block text-sm font-bold text-gray-700 mb-2">生成モデル (ボケ役LLM)</label>
-                    <select id="config-model" class="w-full p-2 border border-gray-300 rounded focus:ring-[#902A19] focus:border-[#902A19] outline-none font-bold text-[#902A19]">
-                        <option value="elyza:8b">ELYZA 8B (🏠 純国産ローカル)</option>
-                        <option value="gemini-3.5-flash">Gemini 3.5 Flash (☁️ クラウド高速)</option>
-                        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (☁️ クラウド高品質)</option>
-                    </select>
+                <div id="api-error-rate-by-service" class="text-xs text-gray-500 space-y-1 mt-3"></div>
+            </section>
+
+            <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-teal-600">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-teal-800 flex items-center gap-2">
+                        <span>🫀</span> mlops-scheduler 稼働状況
+                    </h2>
                 </div>
-                <div class="md:col-span-2">
-                    <label class="block text-sm font-bold text-gray-700 mb-2">評価モデル (審査員LLM)</label>
-                    <select id="config-evaluator" class="w-full p-2 border border-gray-300 rounded focus:ring-[#5B8124] focus:border-[#5B8124] outline-none font-bold text-[#5B8124]">
-                        <option value="gemini-3.1-pro-preview">Gemini 3.1 Pro (☁️ クラウド厳格審査)</option>
-                        <option value="gemini-3.5-flash">Gemini 3.5 Flash (☁️ クラウド高速審査)</option>
-                    </select>
+                <!-- 【instructions/169】SSH接続無しでのデーモン生存監視。
+                     tools/export_daemon_heartbeat.pyが書き出すdaemon_heartbeat.jsonを
+                     静的fetchするのみ(バックエンドAPIに依存しない)。 -->
+                <div id="daemon-heartbeat-container" class="flex items-center gap-3">
+                    <span id="daemon-heartbeat-dot" class="inline-block w-3 h-3 rounded-full bg-gray-300 flex-shrink-0"></span>
+                    <p id="daemon-heartbeat-text" class="text-sm text-gray-500">読み込んでいます...</p>
                 </div>
-                <div class="md:col-span-2">
-                    <label class="block text-sm font-bold text-gray-700 mb-2">システムプロンプト (微調整)</label>
-                    <textarea id="config-prompt" rows="3" class="w-full p-3 border border-gray-300 rounded text-sm focus:ring-[#902A19] focus:border-[#902A19] outline-none font-mono">あなたは前衛的な天才なぞかけ芸人です。</textarea>
+            </section>
+
+            <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-purple-600">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-purple-800 flex items-center gap-2">
+                        <span>📈</span> MLOps推移ダッシュボード
+                    </h2>
                 </div>
-            </div>
-            <div class="mt-6 flex justify-end">
-                <button class="bg-[#902A19] hover:bg-[#7a2315] text-white px-6 py-2 rounded font-bold shadow-md transition transform hover:-translate-y-0.5">
-                    💾 エンジン設定をバックエンドに反映
-                </button>
-            </div>
+                <div id="mlops-chart-container">
+                    <canvas id="mlops-chart" height="120"></canvas>
+                    <p id="mlops-chart-empty" class="text-center py-10 text-gray-400 text-sm hidden">
+                        まだMLOpsパイプラインの実行履歴がありません
+                    </p>
+                    <p id="mlops-chart-error" class="text-center py-10 text-red-500 text-sm hidden"></p>
+                </div>
+            </section>
+
+            <section class="bg-white p-6 rounded-xl shadow-md border-t-4 border-red-600">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-red-700 flex items-center gap-2">
+                        <span>☠️</span> デッドレター（エラー隔離）
+                    </h2>
+                    <button id="dlq-reload-btn" class="text-xs bg-red-50 text-red-600 px-3 py-1 rounded hover:bg-red-100 transition border border-red-200">
+                        🔄 リロード
+                    </button>
+                </div>
+                <div id="dlq-container" class="space-y-4">
+                    <div class="text-center py-10 text-gray-500">データを読み込んでいます...</div>
+                </div>
+            </section>
+
         </section>
 
-        <section class="bg-white p-6 rounded-xl shadow-md border-t-4 border-[#5B8124]">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    <span>📋</span> 承認待ちデータ (ユーザー評価済)
-                </h2>
-                <button id="pending-reload-btn" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded transition border border-gray-200">
-                    🔄 リロード
-                </button>
-            </div>
-            <div id="pending-container" class="space-y-4">
-                <div class="text-center py-10 text-gray-500">データを読み込んでいます...</div>
-            </div>
+        <!-- ============================================================ -->
+        <!-- Ⅱ ユーザーの投稿に基づく評価・承認 -->
+        <!-- ============================================================ -->
+        <section id="view-2" class="view-section">
 
-            <!-- 直近の処理済みデータ（スマホ考慮で承認待ちの直下・縦配置）。最大10件・新しい順。 -->
-            <div class="mt-8 pt-6 border-t border-gray-200">
-                <h3 class="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2"><span>✅</span> 直近の処理済みデータ（最新10件）</h3>
-                <div id="resolved-container" class="space-y-4 opacity-90">
-                    <div class="resolved-empty text-center py-6 text-gray-400 text-sm">まだ処理済みのデータはありません</div>
+            <!-- 【Phase2新設】直談判レビュー。「犯行現場(offending_odai/offending_text)」と
+                 「言い訳(message)」を併記し、赦す/リセット/却下の3アクションを提供する。 -->
+            <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-pink-500">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-pink-700 flex items-center gap-2">
+                        <span>🙏</span> 直談判レビュー
+                    </h2>
+                    <button id="unlock-requests-reload-btn" class="text-xs bg-pink-50 text-pink-600 px-3 py-1 rounded hover:bg-pink-100 transition border border-pink-200">
+                        🔄 リロード
+                    </button>
+                </div>
+                <div id="unlock-requests-container" class="space-y-4">
+                    <div class="text-center py-10 text-gray-500">データを読み込んでいます...</div>
+                </div>
+            </section>
+
+            <section class="bg-white p-6 rounded-xl shadow-md border-t-4 border-[#5B8124]">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <span>📋</span> 承認待ちデータ (ユーザー評価済)
+                    </h2>
+                    <button id="pending-reload-btn" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded transition border border-gray-200">
+                        🔄 リロード
+                    </button>
+                </div>
+                <div id="pending-container" class="space-y-4">
+                    <div class="text-center py-10 text-gray-500">データを読み込んでいます...</div>
+                </div>
+
+                <!-- 直近の処理済みデータ（スマホ考慮で承認待ちの直下・縦配置）。最大10件・新しい順。 -->
+                <div class="mt-8 pt-6 border-t border-gray-200">
+                    <h3 class="text-sm font-bold text-gray-700 mb-3 flex items-center gap-2"><span>✅</span> 直近の処理済みデータ（最新10件）</h3>
+                    <div id="resolved-container" class="space-y-4 opacity-90">
+                        <div class="resolved-empty text-center py-6 text-gray-400 text-sm">まだ処理済みのデータはありません</div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-white p-6 rounded-xl shadow-md mt-8 border-t-4 border-[#C5B358]">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <span>🧪</span> RLHFレビュー（モデル別 人間評価＋コメント）
+                    </h2>
+                    <button id="model-feedback-reload-btn" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded transition border border-gray-200">
+                        🔄 リロード
+                    </button>
+                </div>
+                <div id="model-feedback-container" class="space-y-3">
+                    <div class="text-center py-10 text-gray-500">データを読み込んでいます...</div>
+                </div>
+            </section>
+
+            <!-- 【Phase 2以降で実装予定】直談判レビュー(unlock_requests一覧+赦す/リセット/却下)は
+                 apps/persona_router側のバックエンド実装が済み次第このペインへ追加する。 -->
+
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- Ⅲ コスト管理 -->
+        <!-- ============================================================ -->
+        <section id="view-3" class="view-section">
+
+            <!-- ① API/LLMトークンコスト(既存 GET /admin/costs、system_costs自己ログ) -->
+            <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-blue-600">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-blue-800 flex items-center gap-2">
+                        <span>🤖</span> ① API/LLM トークンコスト
+                    </h2>
+                    <button id="api-costs-reload-btn" class="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100 transition border border-blue-200">
+                        🔄 リロード
+                    </button>
+                </div>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm">
+                        <p class="text-xs text-gray-500 font-bold">直近合計コスト</p>
+                        <p id="api-costs-total" class="text-3xl font-black text-blue-700 mt-1">-</p>
+                    </div>
+                    <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm">
+                        <p class="text-xs text-gray-500 font-bold">当月予算消化率</p>
+                        <p id="api-costs-budget" class="text-3xl font-black text-gray-800 mt-1">-</p>
+                    </div>
+                </div>
+                <div class="mb-4">
+                    <canvas id="api-costs-chart" height="90"></canvas>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead>
+                            <tr class="text-gray-500 border-b border-gray-200">
+                                <th class="py-2 pr-4">service_type</th>
+                                <th class="py-2 pr-4">件数</th>
+                                <th class="py-2 pr-4">失敗</th>
+                                <th class="py-2 pr-4">入力トークン</th>
+                                <th class="py-2 pr-4">出力トークン</th>
+                                <th class="py-2 pr-4">コスト(円)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="api-costs-table-body">
+                            <tr><td colspan="6" class="text-center py-10 text-gray-500">データを読み込んでいます...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
+            <!-- ② GCPインフラコスト(新規 GET /admin/gcp-costs、BigQuery Billing Export日次バッチの結果) -->
+            <section class="bg-white p-6 rounded-xl shadow-md border-t-4 border-teal-600">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-teal-800 flex items-center gap-2">
+                        <span>☁️</span> ② GCPインフラコスト
+                    </h2>
+                    <button id="gcp-costs-reload-btn" class="text-xs bg-teal-50 text-teal-600 px-3 py-1 rounded hover:bg-teal-100 transition border border-teal-200">
+                        🔄 リロード
+                    </button>
+                </div>
+                <p id="gcp-costs-empty-note" class="hidden text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-4">
+                    まだ日次バッチ(POST /admin/jobs/sync-gcp-costs)が一度も実行されていません。
+                    Cloud Scheduler等から定期実行するよう設定してください。
+                </p>
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="bg-teal-50/50 p-4 rounded-lg border border-teal-100 text-center shadow-sm">
+                        <p class="text-xs text-gray-500 font-bold">集計対象日</p>
+                        <p id="gcp-costs-date" class="text-2xl font-black text-gray-800 mt-1">-</p>
+                    </div>
+                    <div class="bg-teal-50/50 p-4 rounded-lg border border-teal-100 text-center shadow-sm">
+                        <p class="text-xs text-gray-500 font-bold">合計コスト</p>
+                        <p id="gcp-costs-total" class="text-3xl font-black text-teal-700 mt-1">-</p>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead>
+                            <tr class="text-gray-500 border-b border-gray-200">
+                                <th class="py-2 pr-4">GCPサービス</th>
+                                <th class="py-2 pr-4">コスト</th>
+                            </tr>
+                        </thead>
+                        <tbody id="gcp-costs-table-body">
+                            <tr><td colspan="2" class="text-center py-10 text-gray-500">データを読み込んでいます...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p id="gcp-costs-generated-at" class="text-[10px] text-gray-400 text-right mt-2"></p>
+            </section>
+
+        </section>
+
+        <!-- ============================================================ -->
+        <!-- Ⅳ 生成部分のデフォルト設定 -->
+        <!-- ============================================================ -->
+        <section id="view-4" class="view-section">
+
+            <!-- 【Phase4新設】ペルソナ管理。旧「AI生成エンジン操縦パネル」(バックエンド
+                 未結線の死んだUIだったため撤去)を置き換える。 -->
+            <section class="bg-white p-6 rounded-xl shadow-md border-t-4 border-[#902A19]">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <span>🎭</span> ペルソナ管理
+                    </h2>
+                    <button id="personas-reload-btn" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded transition border border-gray-200">
+                        🔄 リロード
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 mb-4">
+                    「登録」= 一時的な時限適用(期限が過ぎると自動的にハードコード初期値へ戻ります)。
+                    「上書き」= 恒久適用。「クリア」= 上書きを削除し初期値へ戻します。
+                </p>
+                <div id="personas-container" class="space-y-3">
+                    <div class="text-center py-10 text-gray-500">データを読み込んでいます...</div>
+                </div>
+            </section>
+
+        </section>
+
+        <!-- 【Phase4新設】ペルソナ編集モーダル -->
+        <div id="persona-edit-modal" class="hidden fixed inset-0 z-[95] bg-black/50 flex items-center justify-center p-4">
+            <div class="bg-white rounded-xl shadow-2xl max-w-[600px] w-full my-8">
+                <div class="flex justify-between items-center p-4 border-b border-gray-200">
+                    <h3 class="font-bold text-[#902A19]" id="persona-edit-title">ペルソナを編集</h3>
+                    <button id="persona-edit-close" class="text-gray-400 hover:text-gray-700 text-2xl leading-none font-bold">&times;</button>
+                </div>
+                <div class="p-5">
+                    <input type="hidden" id="persona-edit-id">
+                    <label class="block text-sm font-bold text-gray-700 mb-2">名前</label>
+                    <input type="text" id="persona-edit-name" class="w-full p-2 border border-gray-300 rounded text-sm mb-4 focus:ring-[#902A19] focus:border-[#902A19] outline-none">
+
+                    <label class="block text-sm font-bold text-gray-700 mb-2">プロンプト(キャラクター設定)</label>
+                    <textarea id="persona-edit-prompt" rows="8" class="w-full p-3 border border-gray-300 rounded text-sm font-mono mb-4 focus:ring-[#902A19] focus:border-[#902A19] outline-none"></textarea>
+
+                    <label class="block text-sm font-bold text-gray-700 mb-2">適用モード</label>
+                    <div class="flex flex-col gap-2 mb-6 text-sm">
+                        <label class="flex items-center gap-2">
+                            <input type="radio" name="persona-edit-duration" value="24h" checked> ① 登録(24時間だけ時限適用)
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="radio" name="persona-edit-duration" value="3d"> ① 登録(3日間だけ時限適用)
+                        </label>
+                        <label class="flex items-center gap-2">
+                            <input type="radio" name="persona-edit-duration" value="permanent"> ② 上書き(恒久適用)
+                        </label>
+                    </div>
+
+                    <div class="flex justify-end gap-2">
+                        <button id="persona-edit-save" data-action="savePersonaConfig"
+                            class="text-sm font-bold text-white bg-[#902A19] hover:bg-[#7a2315] px-5 py-2 rounded-lg transition">
+                            保存
+                        </button>
+                    </div>
                 </div>
             </div>
-        </section>
+        </div>
 
-        <section class="bg-white p-6 rounded-xl shadow-md mt-8 border-t-4 border-[#C5B358]">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    <span>🧪</span> RLHFレビュー（モデル別 人間評価＋コメント）
-                </h2>
-                <button id="model-feedback-reload-btn" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded transition border border-gray-200">
-                    🔄 リロード
-                </button>
-            </div>
-            <div id="model-feedback-container" class="space-y-3">
-                <div class="text-center py-10 text-gray-500">データを読み込んでいます...</div>
-            </div>
-        </section>
+        <!-- ============================================================ -->
+        <!-- Ⅴ その他（運用・セキュリティ基盤） -->
+        <!-- ============================================================ -->
+        <section id="view-5" class="view-section">
 
-        <section class="bg-white p-6 rounded-xl shadow-md mt-8 border-t-4 border-red-600">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-bold text-red-700 flex items-center gap-2">
-                    <span>☠️</span> デッドレター（エラー隔離）
-                </h2>
-                <button id="dlq-reload-btn" class="text-xs bg-red-50 text-red-600 px-3 py-1 rounded hover:bg-red-100 transition border border-red-200">
-                    🔄 リロード
-                </button>
-            </div>
-            <div id="dlq-container" class="space-y-4">
-                <div class="text-center py-10 text-gray-500">データを読み込んでいます...</div>
-            </div>
-        </section>
+            <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-blue-600">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-blue-800 flex items-center gap-2">
+                        <span>📊</span> アプリ利用状況 (テレメトリ)
+                    </h2>
+                    <button id="app-usage-reload-btn" class="text-xs bg-blue-50 text-blue-600 px-3 py-1 rounded hover:bg-blue-100 transition border border-blue-200">
+                        🔄 データを最新化
+                    </button>
+                </div>
 
-        <section class="bg-white p-6 rounded-xl shadow-md mt-8 border-t-4 border-gray-500">
-            <div class="flex justify-between items-center mb-6">
-                <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
-                    <span>🧾</span> 監査証跡（Audit Logs）
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-4 mb-6">
+                    <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm">
+                        <p class="text-xs text-gray-500 font-bold">総ページ閲覧数 (PV)</p>
+                        <p id="adm-pv" class="text-3xl font-black text-blue-700 mt-1">0</p>
+                    </div>
+                    <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm">
+                        <p class="text-xs text-gray-500 font-bold">総訪問者数 (UU)</p>
+                        <p id="adm-uu" class="text-3xl font-black text-emerald-600 mt-1">0</p>
+                    </div>
+                    <div class="bg-blue-50/50 p-4 rounded-lg border border-blue-100 text-center shadow-sm col-span-2 sm:col-span-1">
+                        <p class="text-xs text-gray-500 font-bold">平均滞在時間</p>
+                        <p id="adm-dur" class="text-2xl font-black text-gray-800 mt-1.5">0<span class="text-xs font-normal text-gray-500">秒</span></p>
+                    </div>
+                </div>
+
+                <div class="bg-gray-50 p-4 rounded-lg border border-gray-200 shadow-inner">
+                    <h3 class="text-sm font-bold text-gray-700 mb-3 border-b pb-2">🎯 ユーザーアクション統計</h3>
+                    <div class="space-y-3 text-sm" id="adm-events-container">
+                        <p class="text-gray-400 text-center py-2">データを読み込んでいます...</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-gray-800">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-gray-900 flex items-center gap-2">
+                        <span>🚀</span> ワンタッチ本番デプロイ
+                    </h2>
+                    <button id="deploy-btn" data-action="deployToProduction"
+                        class="bg-gray-900 text-white text-sm font-bold px-4 py-2 rounded-lg hover:bg-gray-700 disabled:opacity-50 disabled:cursor-not-allowed">
+                        本番デプロイ実行
+                    </button>
+                </div>
+                <!-- 【instructions/172: 1-Click Deploy】POST /api/admin/deploy が
+                     tools/deploy/run_verification_server.ps1 をバックグラウンドで起動する。
+                     その標準出力/標準エラー出力はdeploy.logへ追記され、admin.jsが
+                     定期的にfetchしてこのターミナル風エリアへストリーミング表示する
+                     (SSH接続・ターミナル操作を一切必要としない)。 -->
+                <p class="text-xs text-gray-500 mb-2">
+                    作業ツリーの保留中の変更を自動コミットした上で、検証サーバーへの
+                    プロビジョニング・デプロイをバックグラウンドで実行します。
+                </p>
+                <textarea id="deploy-log-terminal" readonly rows="14"
+                    class="w-full bg-black text-green-400 font-mono text-xs p-3 rounded-lg resize-none"
+                    placeholder="デプロイ実行時にログがここへストリーミング表示されます..."></textarea>
+            </section>
+
+            <!-- 【Phase 0新設】招待・承認ワークフロー。招待発行は承認済み管理者なら誰でも
+                 可能だが、承認そのものはオーナー(OWNER_EMAIL)のみに制限されている
+                 (api/routers/admin_auth.py参照)。オーナー以外がこのセクションを開いた
+                 場合、招待発行フォームは使えるが「承認待ち管理者」一覧は403になるため
+                 loadPendingAdminUsers()側でグレースフルにメッセージへ差し替える。 -->
+            <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-indigo-600">
+                <h2 class="text-xl font-bold text-indigo-800 flex items-center gap-2 mb-4">
+                    <span>✉️</span> 管理者を招待する
                 </h2>
-                <button id="audit-log-reload-btn" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded transition border border-gray-200">
-                    🔄 リロード
-                </button>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm text-left">
-                    <thead>
-                        <tr class="text-gray-500 border-b border-gray-200">
-                            <th class="py-2 pr-4">作成日時</th>
-                            <th class="py-2 pr-4">actor</th>
-                            <th class="py-2 pr-4">action</th>
-                            <th class="py-2 pr-4">対象ID</th>
-                            <th class="py-2 pr-4">reason</th>
-                        </tr>
-                    </thead>
-                    <tbody id="audit-log-container">
-                        <tr><td colspan="5" class="text-center py-10 text-gray-500">データを読み込んでいます...</td></tr>
-                    </tbody>
-                </table>
-            </div>
+                <div class="flex flex-col sm:flex-row gap-2">
+                    <input type="email" id="invite-email-input" placeholder="招待するGoogleアカウントのメールアドレス"
+                        class="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                    <button id="invite-submit-btn" data-action="submitInvite"
+                        class="text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-4 py-2 rounded-lg transition disabled:opacity-50">
+                        招待メールを送信
+                    </button>
+                </div>
+            </section>
+
+            <section class="bg-white p-6 rounded-xl shadow-md mb-8 border-t-4 border-indigo-400">
+                <div class="flex justify-between items-center mb-4">
+                    <h2 class="text-xl font-bold text-indigo-800 flex items-center gap-2">
+                        <span>🙋</span> 承認待ち管理者
+                    </h2>
+                    <button id="pending-admins-reload-btn" class="text-xs bg-indigo-50 text-indigo-600 px-3 py-1 rounded hover:bg-indigo-100 transition border border-indigo-200">
+                        🔄 リロード
+                    </button>
+                </div>
+                <div id="pending-admins-container" class="space-y-2">
+                    <div class="text-center py-6 text-gray-500 text-sm">データを読み込んでいます...</div>
+                </div>
+            </section>
+
+            <section class="bg-white p-6 rounded-xl shadow-md border-t-4 border-gray-500">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <span>🧾</span> 監査証跡（Audit Logs）
+                    </h2>
+                    <button id="audit-log-reload-btn" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded transition border border-gray-200">
+                        🔄 リロード
+                    </button>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm text-left">
+                        <thead>
+                            <tr class="text-gray-500 border-b border-gray-200">
+                                <th class="py-2 pr-4">作成日時</th>
+                                <th class="py-2 pr-4">actor</th>
+                                <th class="py-2 pr-4">action</th>
+                                <th class="py-2 pr-4">対象ID</th>
+                                <th class="py-2 pr-4">reason</th>
+                            </tr>
+                        </thead>
+                        <tbody id="audit-log-container">
+                            <tr><td colspan="5" class="text-center py-10 text-gray-500">データを読み込んでいます...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+
         </section>
 
     </div>
@@ -285,4 +553,3 @@
     </div>
 </body>
 </html>
-

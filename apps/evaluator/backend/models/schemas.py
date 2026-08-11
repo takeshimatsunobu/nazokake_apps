@@ -244,3 +244,208 @@ class AdminDeployResponse(BaseModel):
     message: str
     committed_files: List[str] = Field(default_factory=list)
     log_path: str
+
+
+# ------------------------------------------------------------
+# Phase 0: 招待・承認ワークフロー(api/routers/admin_auth.py)。
+# 完全招待制の管理者認証: 招待URL(トークン付き) → Googleログイン →
+# メイン管理者(オーナー)へ承認依頼メール → オーナーが承認、という流れ。
+# admin_invites/admin_users の両コレクションともFirestoreに保存する
+# (api.deps.verify_admin_token がadmin_usersのstatus=="approved"を必須化する)。
+# ------------------------------------------------------------
+class InviteCreateRequest(BaseModel):
+    email: str = Field(..., min_length=3, description="招待する相手のメールアドレス")
+
+
+class InviteCreateResponse(BaseModel):
+    status: str
+    message: str
+    invite_url: str = Field(..., description="発行された招待URL(メール送信が失敗した場合の手動共有用)")
+
+
+class InviteRedeemRequest(BaseModel):
+    token: str = Field(..., min_length=1, description="招待URLに含まれるトークン")
+
+
+class InviteRedeemResponse(BaseModel):
+    status: str
+    message: str
+
+
+class AdminApproveResponse(BaseModel):
+    status: str
+    message: str
+
+
+class PendingAdminUser(BaseModel):
+    uid: str
+    email: str
+    status: str
+    requested_at: Optional[str] = None
+
+
+class PendingAdminUsersResponse(BaseModel):
+    items: List[PendingAdminUser]
+
+
+# ------------------------------------------------------------
+# Phase 1: お知らせバッジ(api/routers/admin_health.py::get_action_required_summary)。
+# 「管理者がアクションを起こす必要があるタスク」に絞った件数集計の契約。
+# ------------------------------------------------------------
+class ActionRequiredCategory(BaseModel):
+    total: int = Field(..., description="現在の未処理総数(バッジの本体)")
+    new: int = Field(..., description="前回ログイン以降に新規発生した件数(🆕ハイライト用)")
+
+
+class ActionRequiredSummaryResponse(BaseModel):
+    total: int = Field(..., description="4カテゴリ合計(グローバルバッジの数字)")
+    unlock: ActionRequiredCategory
+    dlq: ActionRequiredCategory
+    review: ActionRequiredCategory
+    admin_approval: ActionRequiredCategory
+    previous_login_at: Optional[str] = Field(
+        None, description="今回の集計で基準にしたlast_login_at(ISO8601)。初回ログイン時はnull"
+    )
+    warning: Optional[str] = Field(
+        None,
+        description="いずれかのカウント集計がFirestoreクエリ失敗(複合インデックス未作成等)で"
+        "0件へ縮退した場合の警告メッセージ。正常時はnull",
+    )
+
+
+# ------------------------------------------------------------
+# Phase 1: APIエラー率(api/routers/admin_health.py::get_api_error_rate)。
+# nazokake_core.schemas.SystemCostLog.success を集計するだけで、Cloud Logging等の
+# 追加インフラ無しにエラー率を算出する。
+# ------------------------------------------------------------
+class ApiErrorRateByService(BaseModel):
+    service_type: str
+    total: int
+    failed: int
+    error_rate: float
+
+
+class ApiErrorRateResponse(BaseModel):
+    total: int
+    failed: int
+    error_rate: float
+    sample_size: int = Field(..., description="集計対象にしたsystem_costsの直近件数")
+    by_service: List[ApiErrorRateByService] = Field(default_factory=list)
+
+
+# ------------------------------------------------------------
+# Phase 2: Ⅱレビュー(api/routers/admin_review.py)。
+# ------------------------------------------------------------
+class UnlockRequestReviewItem(BaseModel):
+    request_id: str
+    client_uuid: str
+    message: str
+    blocked_until_snapshot: Optional[str] = None
+    # apps/persona_router/api/routers/unlock.py::_find_offending_generation()が
+    # 申し立て時点でnazokake_resultsから逆引き・スナップショットしたもの。
+    # 見つからなかった場合(まだ一度もルートBを引かずに直談判が送られてきた等の
+    # 想定外の経路)はどちらもnull。
+    offending_odai: Optional[str] = None
+    offending_text: Optional[str] = None
+    status: str
+    created_at: str
+
+
+class UnlockRequestListResponse(BaseModel):
+    items: List[UnlockRequestReviewItem]
+    warning: Optional[str] = Field(
+        None,
+        description="Firestoreクエリが失敗した場合の警告メッセージ(例: 複合インデックス未作成)。"
+        "正常時はnull。この場合itemsは空配列(=クラッシュではなく劣化表示)",
+    )
+
+
+class UnlockActionRequest(BaseModel):
+    action: Literal["pardon", "reset", "reject"] = Field(
+        ...,
+        description="pardon=一時ブロックのみ解除(カウント維持) / reset=カウントごと完全リセット / reject=却下(ペナルティ維持)",
+    )
+
+
+class UnlockActionResponse(BaseModel):
+    status: str
+    request_id: str
+    action: str
+
+
+class FewshotUpdateRequest(BaseModel):
+    is_fewshot_selected: bool
+    fewshot_axis_tag: Optional[str] = Field(
+        None, description="意外性(S_sur)等、評価軸コード。is_fewshot_selected=falseの場合は無視される"
+    )
+
+
+class FewshotUpdateResponse(BaseModel):
+    status: str
+    doc_id: str
+
+
+# ------------------------------------------------------------
+# Phase 3: Ⅲコスト管理 - GCPインフラコスト(BigQuery Billing Export日次集計)。
+# api/routers/admin_costs.py::sync_gcp_costs / get_gcp_costs。
+# ------------------------------------------------------------
+class GcpCostBreakdownItem(BaseModel):
+    service_description: str
+    cost: float
+
+
+class GcpCostsLatestResponse(BaseModel):
+    schema_version: str = "1.0"
+    date: Optional[str] = Field(None, description="YYYY-MM-DD。集計対象の請求日(前日分)")
+    currency: Optional[str] = Field(None, description="BigQuery Billing Exportが報告する請求通貨(例: JPY, USD)")
+    total_cost: float = 0.0
+    breakdown: List[GcpCostBreakdownItem] = Field(default_factory=list)
+    generated_at: Optional[str] = Field(None, description="このバッチが最後に実行された時刻(ISO8601)")
+
+
+class GcpCostsSyncResponse(BaseModel):
+    status: str
+    message: str
+    synced_dates: List[str] = Field(default_factory=list)
+
+
+# ------------------------------------------------------------
+# Phase 4: Ⅳ生成設定(api/routers/admin_config.py)。
+# ペルソナの3段階ライフサイクル(登録=時限/上書き=永続/クリア)。
+# ------------------------------------------------------------
+class PersonaConfigItem(BaseModel):
+    persona_id: int
+    name: str
+    prompt: str
+    mode: Literal["default", "temporary", "permanent"] = Field(
+        ...,
+        description="default=ハードコード初期値のまま(上書き無し) / temporary=時限上書き中 / permanent=永続上書き中",
+    )
+    expires_at: Optional[str] = Field(None, description="mode=='temporary'の場合のみ、失効予定時刻(ISO8601)")
+    updated_at: Optional[str] = None
+    updated_by: Optional[str] = None
+
+
+class PersonaConfigListResponse(BaseModel):
+    personas: List[PersonaConfigItem]
+
+
+class PersonaConfigUpdateRequest(BaseModel):
+    name: Optional[str] = Field(None, description="未指定時はハードコード初期値の名前を維持")
+    prompt: str = Field(..., min_length=1, max_length=4000)
+    duration_preset: Literal["24h", "3d", "permanent"] = Field(
+        ...,
+        description="24h=登録(24時間の時限適用) / 3d=登録(3日間の時限適用) / permanent=上書き(永続適用)",
+    )
+
+
+class PersonaConfigUpdateResponse(BaseModel):
+    status: str
+    persona_id: int
+    mode: str
+    expires_at: Optional[str] = None
+
+
+class PersonaConfigDeleteResponse(BaseModel):
+    status: str
+    persona_id: int

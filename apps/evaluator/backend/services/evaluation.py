@@ -27,6 +27,12 @@ AXES = [
     "S_sensory",
     "S_cm",
     "S_ontology",
+    # 【Phase4追加】persona_router(ペルソナなりきり生成)の狙いを直接測る2軸。
+    # 既存の11軸(言語表現としての品質)とは独立した観点であり、旧来の
+    # nazokake_items由来の作品ではnazokake_core.schemas.Scoresのdefault(0.5)で
+    # 補完される(このモジュール側のrun_evaluation()は毎回この2軸込みで採点する)。
+    "S_persona",
+    "S_aufheben",
 ]
 
 _AXIS_DESC = {
@@ -41,6 +47,16 @@ _AXIS_DESC = {
     "S_sensory": "感覚的表現: 視覚以外の五感への訴求 (0.0-1.0)",
     "S_cm": "クロスモーダル: 異なる感覚領域の比喩的交差 (0.0-1.0)",
     "S_ontology": "存在論的深み: 本質・存在意義の共通点を突くか (0.0-1.0)",
+    "S_persona": (
+        "ペルソナ純度: 対象への迎合(媚び)がなく、語り手キャラクターの個性が"
+        "全開になっているか。相手に合わせて丸くなるほど低く、キャラクター性を"
+        "貫き通すほど高く採点する (0.0-1.0)"
+    ),
+    "S_aufheben": (
+        "アウフヘーベン力: 対立・不毛な言い争いや険悪な空気を、ユーモアによって"
+        "笑いへと昇華できているか。深刻さをそのまま引きずるほど低く、鮮やかに"
+        "笑いへ転化できているほど高く採点する (0.0-1.0)"
+    ),
 }
 
 EVAL_SCHEMA = {
@@ -82,7 +98,7 @@ EVAL_SCHEMA = {
 
 # 評価用システムプロンプト（A-1）。{odai} / {nazokake_text} を実行時に差し込む。
 EVAL_RUBRIC_TEMPLATE = """あなたは「謎掛け学術振興会」の主席分析官AIです。
-認知科学・言語学・詩学の知見に基づき、提示された「なぞかけ作品」を11の評価軸で厳密に採点します。
+認知科学・言語学・詩学の知見に基づき、提示された「なぞかけ作品」を13の評価軸で厳密に採点します。
 
 【採点の大原則】
 1. これは「絶対評価」です。他の作品やデータベースとの比較ではなく、下記の各軸の定義そのものに基づいて評価してください。
@@ -98,8 +114,14 @@ async def _log_evaluation_cost(
     input_tokens: int = 0,
     output_tokens: int = 0,
     execution_time_sec: float = 0.0,
+    success: bool = True,
 ) -> None:
-    """評価コストをsystem_costsへ非同期記録する(失敗しても評価処理自体は継続する)。"""
+    """評価コストをsystem_costsへ非同期記録する(失敗しても評価処理自体は継続する)。
+
+    【Phase1追加】success引数はGemini呼び出しそのものが成功したかを表す
+    (このロギング自体の成否とは別)。管理コクピットの「APIエラー率」タイルの
+    集計対象になる。
+    """
     try:
         from nazokake_core.cost_calculator import async_log_system_cost
 
@@ -110,6 +132,7 @@ async def _log_evaluation_cost(
             input_tokens=input_tokens,
             output_tokens=output_tokens,
             execution_time_sec=execution_time_sec,
+            success=success,
         )
     except Exception as e:
         print(f"⚠️ コストログ記録に失敗しました(評価処理には影響なし): {e}")
@@ -139,20 +162,27 @@ async def run_evaluation(odai: str, nazokake_text: str) -> dict:
         )
 
     start_time = asyncio.get_running_loop().time()
-    response = await asyncio.to_thread(_call)
-    elapsed = asyncio.get_running_loop().time() - start_time
+    try:
+        response = await asyncio.to_thread(_call)
+        elapsed = asyncio.get_running_loop().time() - start_time
+        usage = getattr(response, "usage_metadata", None)
+        data = json.loads(response.text)
+        validated = EvaluationOutput.model_validate(data)
+    except Exception:
+        # 【Phase1】呼び出し・パース・スキーマ検証のいずれで失敗しても
+        # success=Falseとして記録し、元の例外はそのまま呼び出し元へ伝播させる
+        # (エラー時の挙動自体は変更しない。計装を追加するのみ)。
+        elapsed = asyncio.get_running_loop().time() - start_time
+        await _log_evaluation_cost(model_name, execution_time_sec=elapsed, success=False)
+        raise
 
-    usage = getattr(response, "usage_metadata", None)
     await _log_evaluation_cost(
         model_name,
         input_tokens=getattr(usage, "prompt_token_count", 0) or 0,
         output_tokens=getattr(usage, "candidates_token_count", 0) or 0,
         execution_time_sec=elapsed,
+        success=True,
     )
-
-    data = json.loads(response.text)
-
-    validated = EvaluationOutput.model_validate(data)
     scores = validated.scores
     values = [float(scores.get(k, 0.5)) for k in AXES]
     s_total = round((sum(values) / len(values)) * 5.0, 4) if values else 0.0

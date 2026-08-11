@@ -20,6 +20,8 @@ import firebase_admin
 from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
+from nazokake_core.training_filter import is_valid_for_training
+
 try:
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
@@ -112,6 +114,10 @@ def main(dry_run: bool = False, out_path: str = OUTPUT_PATH):
             seen_doc_ids.add(doc.id)
 
             item = doc.to_dict() or {}
+            # 🛡️ 毒入れ防止(Phase4): nazokake_itemsには本フィールドが存在しない
+            # ため実質no-op(旧データは引き続き全件対象)。
+            if not is_valid_for_training(item):
+                continue
             # 🛡️ 防弾: 旧キー名(A_TITLE)への安全なフォールバック
             odai_raw = item.get("odai") or item.get("A_TITLE") or ""
             odai = str(odai_raw).strip()
@@ -154,6 +160,39 @@ def main(dry_run: bool = False, out_path: str = OUTPUT_PATH):
                         ]
                     }
                 )
+
+    # 【Phase4追加】apps/persona_router が書き込む nazokake_results コレクションも
+    # SFT抽出の対象に含める。is_golden_data/is_approved/statusの概念がこのコレクションには
+    # 存在しないため、自動昇格パス(THRESHOLD_AUTO以上)相当の単一ゲートのみを適用する。
+    # 未評価(s_totalが無い)ドキュメントはscripts/evaluate_persona_results.pyによる
+    # 事後評価バッチが走るまで自然にスキップされる。
+    print("⏳ 「nazokake_results (persona_router版)」をスキャン中...")
+    persona_sft_count = 0
+    for doc in db.collection("nazokake_results").stream():
+        item = doc.to_dict() or {}
+        if not is_valid_for_training(item):
+            continue
+
+        odai = str(item.get("odai") or "").strip()
+        text = (item.get("nazokake_text") or "").strip()
+        score = to_score(item.get("s_total"))
+        if not odai or not text or score is None or score < THRESHOLD_AUTO:
+            continue
+
+        sft_samples.append(
+            {
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {
+                        "role": "user",
+                        "content": f"お題「{odai}」でなぞかけを作成してください。",
+                    },
+                    {"role": "assistant", "content": text},
+                ]
+            }
+        )
+        persona_sft_count += 1
+    print(f"📥 nazokake_results からの追加サンプル: {persona_sft_count} 件")
 
     print(f"📊 クオリティゲートを突破した模範解答総数: {len(sft_samples)} 件")
 

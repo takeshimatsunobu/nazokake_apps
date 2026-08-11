@@ -1,0 +1,35 @@
+[project]
+name = "nazokake-persona-router"
+version = "0.1.0"
+description = "ペルソナ推定とルーティングシステム(Step1キャッシュ + Step2生成、Cloud Run)"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi[standard]",
+    "uvicorn[standard]",
+    "pydantic",
+    "firebase-admin",
+    "google-genai",
+    "python-dotenv",
+    "nazokake-core",
+]
+
+# 【教訓(apps/batch_factory構築時): pip freezeの丸写しによるバージョン競合回避】
+# 依存を厳密な==で固定すると、nazokake-core(packages/shared_core)側が要求する
+# バージョン下限(例: opentelemetry-sdk>=1.44.0)と衝突し `uv sync` が解決不能になる
+# 事故が実際に起きた。ここでは opentelemetry 系を一切明示宣言しない(このアプリが
+# 直接importしないため)。nazokake-core経由の推移的依存としてuvの解決に委ねることで、
+# 「このプロジェクトの固定バージョン」と「nazokake-coreの要求バージョン」が
+# 構造的に衝突しようがない状態にする。他の依存もapps/evaluator/backend/pyproject.toml
+# の既存方針にならい、必要最小限のみバージョン無指定で宣言する。
+
+[tool.uv.sources]
+# editable=true: 既定(非editable)だとuv syncのたびにpackages/shared_coreの
+# スナップショットがsite-packagesへ静的コピーされ、以降そのソースへ加えた変更が
+# 反映されなくなる(apps/evaluator/backend/pyproject.toml と同じ理由)。
+nazokake-core = { path = "../../packages/shared_core", editable = true }
+
+# このディレクトリ自体はアプリケーション(main.pyをuvicornで直接起動)であり、
+# 配布用のPythonパッケージではないため、uvに自己ビルド/自己インストールを
+# 行わせない(依存関係のみをvenvへ解決させる)。
+[tool.uv]
+package = false

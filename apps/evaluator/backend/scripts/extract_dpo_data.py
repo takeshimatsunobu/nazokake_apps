@@ -19,6 +19,8 @@ import sys
 from collections import defaultdict
 import itertools
 
+from nazokake_core.training_filter import is_valid_for_training
+
 # 過学習を防ぐための、1つの(お題×評価軸)から生成するペアの最大数
 MAX_PAIRS_PER_GROUP = 5
 
@@ -59,6 +61,13 @@ def build_pairs(records):
     groups = defaultdict(lambda: defaultdict(list))
 
     for r in records:
+        # 🛡️ 毒入れ防止(Phase4・多層防御): rlhf_dataset.jsonl生成時点
+        # (extract_rlhf_dataset.py)で既にis_valid_for_training=falseのレコードは
+        # 除外済みのはずだが、jsonlを他経路で作った場合等に備えてここでも
+        # 独立に同じ判定を通す(単一の抜け穴で汚染データが混入しないようにする)。
+        if not is_valid_for_training(r):
+            continue
+
         group_key = r.get("dpo_pair_id") or r.get("doc_id")
         text = (r.get("text") or "").strip()
         score = to_score(r.get("score"))

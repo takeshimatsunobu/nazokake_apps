@@ -1,5 +1,46 @@
 import { firebaseConfig } from "firebase-config";
 import { API_BASE } from "config";
+import { uiSwitchTab } from "ui/tabs";
+
+// 【Phase 0】招待URL(?invite=<token>)のトークンをsessionStorageへ退避しておく
+// キー。ログイン前(FirebaseUIのリダイレクト/ポップアップを挟む可能性がある)の
+// タイミングでURLパラメータを読んでおき、ログイン完了後にredeemへ使う。
+const INVITE_TOKEN_STORAGE_KEY = "nazo_admin_invite_token";
+
+// 【Phase1】お知らせバッジの基準時刻(action-required-summaryが返す
+// previous_login_at)。DLQ/承認待ちデータ/承認待ち管理者の各render関数が
+// 「🆕新着」判定に使うため、モジュールスコープに保持する(loadActionRequiredSummary()
+// が initAdmin() の最初に他のload*()より先にawaitされ、この値を確定させてから
+// 各リストの描画が走る前提)。
+let _previousLoginAt = null;
+
+// 【Phase1】アイテムのタイムスタンプが_previousLoginAtより新しければ「🆕」バッジの
+// HTMLを返す(古い/不明なら空文字)。ISO8601文字列同士の比較は同一タイムゾーン
+// (UTC)である限り文字列の辞書式比較でも安全だが、ここでは明示的にDateへ変換して
+// 比較する(タイムゾーン表記の揺れに強くするため)。
+function _isNewSince(timestampIso) {
+    if (!_previousLoginAt || !timestampIso) return false;
+    const t = new Date(timestampIso).getTime();
+    const prev = new Date(_previousLoginAt).getTime();
+    if (Number.isNaN(t) || Number.isNaN(prev)) return false;
+    return t > prev;
+}
+
+// 【Phase2】評価軸コード→表示ラベル。apps/evaluator/backend/services/evaluation.pyの
+// AXES(13軸)と対応させる(persona_router/frontend側のresult.jsのuiAxisLabelsと同じ
+// 役割だが、S_persona/S_aufhebenを含む最新13軸版)。Few-shot採用時の評価軸タグ選択に使う。
+const AXIS_LABELS = {
+    S_nat: '自然さ', S_tech: '技巧', S_rhy: 'リズム', S_prosody: '韻律',
+    S_sur: '意外性', S_emo: '論理/納得感', S_cultural: '文化',
+    S_visual: '視覚', S_sensory: '感覚', S_cm: 'クロスモーダル', S_ontology: '存在論',
+    S_persona: 'ペルソナ純度', S_aufheben: 'アウフヘーベン力',
+};
+
+function _newBadgeHtml(timestampIso) {
+    return _isNewSince(timestampIso)
+        ? '<span class="inline-block text-[10px] font-black bg-rose-600 text-white rounded-full px-1.5 py-0.5 ml-1">🆕 新着</span>'
+        : '';
+}
 
 function showToast(msg, type='info') {
     const container = document.getElementById('toast-container'); if(!container) return;
@@ -38,17 +79,116 @@ const uiConfig = {
     privacyPolicyUrl: '<your-privacy-policy-url>'
 };
 
+// 【Phase 0】ページ読み込み時点でURLに?invite=<token>があれば、ログイン前に
+// sessionStorageへ退避しておく(FirebaseUIのポップアップサインインでも同一ページ
+// のままなので必須ではないが、将来リダイレクト方式に変えても壊れないようにする
+// 防御的な実装)。
+(function stashInviteTokenFromUrl() {
+    const params = new URLSearchParams(window.location.search);
+    const token = params.get('invite');
+    if (token) sessionStorage.setItem(INVITE_TOKEN_STORAGE_KEY, token);
+})();
+
+function _clearInviteTokenFromUrl() {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has('invite')) return;
+    url.searchParams.delete('invite');
+    window.history.replaceState({}, '', url.toString());
+}
+
+// 招待トークンをredeemする(ログイン直後に1回だけ呼ばれる)。成功/失敗いずれの
+// 場合も呼び出し元でsessionStorageのトークンを消費済みとして扱う(1回限りの
+// リダイーム試行。失敗時に無限リトライしない)。
+async function _redeemInviteIfPresent() {
+    const token = sessionStorage.getItem(INVITE_TOKEN_STORAGE_KEY);
+    if (!token) return;
+    sessionStorage.removeItem(INVITE_TOKEN_STORAGE_KEY);
+    _clearInviteTokenFromUrl();
+    try {
+        const res = await authFetch(`${API_BASE}/admin/invites/redeem`, {
+            method: 'POST',
+            body: JSON.stringify({ token }),
+        });
+        showToast(res.message || "招待を確認しました");
+    } catch (e) {
+        showToast(`招待の確認に失敗しました: ${e.message}`, "warning");
+    }
+}
+
+// verify_admin_token拡張(承認チェック)に実際に通るかどうかを、既存の軽量な
+// GETエンドポイント(監査証跡)を叩いて確認する。専用のwhoamiエンドポイントを
+// 新設せず、既にDeps(verify_admin_token)を要求している既存APIを流用することで
+// バックエンドの変更を最小限にする。
+//
+// 【障害調査で判明した設計ミスの修正】以前はここで「403以外は例外として
+// 再送出」していたが、呼び出し元(onAuthStateChanged)側はその例外を
+// catch(e){ return; } と黙って握りつぶすだけで、どの画面(login/pending/admin)
+// も表示しないまま終了していた。CORSでpreflightがブロックされた場合、
+// fetch()自体がHTTPステータスを持たない TypeError("Failed to fetch") を投げる
+// ため、この経路を通り「白画面」になっていた(今回の実際の障害の直接原因)。
+// 状態を3値("approved"/"denied"/"network_error")の戻り値にして、呼び出し元が
+// 必ずどれか1つの画面を出せるようにする(例外を投げない=呼び出し元でtry/catch
+// 漏れが起きようがない設計にする)。
+async function _checkAdminAccess() {
+    try {
+        await authFetch(`${API_BASE}/admin/audit_logs`);
+        return "approved";
+    } catch (e) {
+        if (String(e.message).includes('403')) return "denied";
+        // 401(認証切れ)はauthFetch内で既にlogout()がトリガーされ、
+        // onAuthStateChangedがuser=nullで再度firedされるので、ここでは
+        // network_error扱いにしても実害はない(すぐにログイン画面へ遷移する)。
+        console.error("🚨 [Admin Access Check] 通信エラー:", e);
+        return "network_error";
+    }
+}
+
+function _showPendingApprovalScreen(message) {
+    const pendingScreen = document.getElementById('pending-approval-screen');
+    const messageEl = document.getElementById('pending-approval-message');
+    if (messageEl && message) messageEl.textContent = message;
+    pendingScreen?.classList.remove('hidden');
+}
+
 // 🔐 Firebase Auth 状態の監視
-firebase.auth().onAuthStateChanged((user) => {
+firebase.auth().onAuthStateChanged(async (user) => {
     const loginScreen = document.getElementById('login-screen');
+    const pendingScreen = document.getElementById('pending-approval-screen');
     const adminScreen = document.getElementById('admin-screen');
+
     if (user) {
-        if(loginScreen) loginScreen.style.display = 'none';
-        if(adminScreen) adminScreen.classList.remove('hidden');
-        initAdmin();
+        if (loginScreen) loginScreen.style.display = 'none';
+        // 【絶対制約】ここから先、何が起きても最終的に必ずいずれか1画面を
+        // 表示する(pendingScreen/adminScreenのどちらも出さない「白画面」状態を
+        // 構造的に作らない)。
+        pendingScreen?.classList.add('hidden');
+        adminScreen?.classList.add('hidden');
+
+        await _redeemInviteIfPresent();
+
+        const accessState = await _checkAdminAccess();
+
+        if (accessState === "approved") {
+            adminScreen?.classList.remove('hidden');
+            initAdmin();
+        } else if (accessState === "denied") {
+            _showPendingApprovalScreen(
+                "このアカウントはまだ管理コクピットへのアクセスが許可されていません。" +
+                "招待メールのリンクからアクセスした場合は、メイン管理者の承認をお待ちください。"
+            );
+        } else {
+            // network_error: CORS設定漏れ・バックエンド未起動・ネットワーク断等。
+            // 「アクセス権が無い」と誤解させないよう、明確に別文言で通知する。
+            showToast("バックエンドとの通信に失敗しました(CORS設定またはネットワークを確認してください)", "warning");
+            _showPendingApprovalScreen(
+                "バックエンドと通信できませんでした。ネットワーク接続、またはCORS設定" +
+                "(main.pyのallow_origins)を確認し、ページを再読み込みしてください。"
+            );
+        }
     } else {
-        if(loginScreen) loginScreen.style.display = 'flex';
-        if(adminScreen) adminScreen.classList.add('hidden');
+        adminScreen?.classList.add('hidden');
+        pendingScreen?.classList.add('hidden');
+        if (loginScreen) loginScreen.style.display = 'flex';
         ui.start('#firebaseui-auth-container', uiConfig);
     }
 });
@@ -67,7 +207,16 @@ export async function authFetch(url, options = {}) {
     const res = await fetch(url, { ...options, headers });
     if (!res.ok) {
         if (res.status === 401) { logout(); throw new Error("認証切れ"); }
-        throw new Error(`APIエラー: ${res.status}`);
+        // バックエンド(HTTPException)の detail をできる限り拾う
+        // (persona_router/frontend/api.jsのfetchAPIと同じフォールバック規約)。
+        let detail = `APIエラー: ${res.status}`;
+        try {
+            const body = await res.json();
+            detail = body.detail || body.message || detail;
+        } catch (e) {
+            // レスポンスボディがJSONでない場合はHTTPステータスのみで諦める。
+        }
+        throw new Error(detail);
     }
     return res.json();
 }
@@ -117,7 +266,7 @@ function renderDlqItem(item) {
         <div class="bg-red-50/40 border border-red-200 rounded-lg p-4">
             <div class="flex justify-between items-start gap-4">
                 <div class="min-w-0">
-                    <p class="font-bold text-gray-800 truncate">${item.odai || item.doc_id}</p>
+                    <p class="font-bold text-gray-800 truncate">${item.odai || item.doc_id}${_newBadgeHtml(item.updated_at)}</p>
                     <p class="text-xs text-gray-500 mt-1">doc_id: ${item.doc_id} / retry_count: ${item.retry_count}</p>
                     <p class="text-xs text-red-700 mt-2 whitespace-pre-wrap break-all">${errText}</p>
                 </div>
@@ -162,6 +311,138 @@ export async function discardDlqItem(docId) {
         showToast("破棄しました");
         await loadDlqItems();
     } catch (e) { showToast("破棄に失敗しました", "warning"); }
+}
+
+// ------------------------------------------------------------
+// 【Phase2新設】Ⅱレビュー: 直談判(unlock_requests)。
+// バックエンド(admin_review.py)は apps/persona_router が所有する
+// unlock_requests/user_penalties コレクションを直接読み書きする
+// (共有Firestoreプロジェクト経由、cross-serviceのHTTP呼び出しは無い)。
+// ------------------------------------------------------------
+
+/**
+ * @param {import('../api').components['schemas']['UnlockRequestListResponse']} [void]
+ */
+async function fetchUnlockRequests() {
+    return authFetch(`${API_BASE}/admin/unlock-requests`);
+}
+
+function renderUnlockRequestItem(item) {
+    const odai = item.offending_odai ? _escapeHtml(item.offending_odai) : '(記録なし)';
+    const text = item.offending_text
+        ? _escapeHtml(item.offending_text)
+        : '※ このユーザーの直近のルートB(異常入力)生成物が見つかりませんでした';
+    const message = _escapeHtml(item.message || '');
+    const createdAt = item.created_at ? _formatMlopsTimestamp(item.created_at) : '';
+    return `
+        <div id="unlock-req-${_escapeHtml(item.request_id)}" class="bg-pink-50/30 border border-pink-200 rounded-lg p-4">
+            <div class="flex justify-between items-start gap-2 mb-3">
+                <p class="text-xs text-gray-400">client_uuid: ${_escapeHtml(item.client_uuid)}${createdAt ? ` / ${createdAt}` : ''}${_newBadgeHtml(item.created_at)}</p>
+            </div>
+
+            <div class="bg-white/70 border border-gray-200 rounded p-3 mb-2">
+                <p class="text-[11px] font-bold text-red-700 mb-1">🔎 犯行現場(お題「${odai}」への回答)</p>
+                <p class="text-sm text-gray-800 whitespace-pre-wrap break-all">${text}</p>
+            </div>
+
+            <div class="bg-white/70 border border-gray-200 rounded p-3 mb-3">
+                <p class="text-[11px] font-bold text-blue-700 mb-1">🗣️ 本人の言い訳</p>
+                <p class="text-sm text-gray-800 whitespace-pre-wrap break-all">${message}</p>
+            </div>
+
+            <div class="flex flex-wrap gap-2">
+                <button data-action="handleUnlockAction" data-request-id="${_escapeHtml(item.request_id)}" data-unlock-action="pardon"
+                    class="text-xs font-bold bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded hover:bg-emerald-100 transition border border-emerald-200">
+                    🙏 赦す(ブロック解除のみ)
+                </button>
+                <button data-action="handleUnlockAction" data-request-id="${_escapeHtml(item.request_id)}" data-unlock-action="reset"
+                    class="text-xs font-bold bg-amber-50 text-amber-700 px-3 py-1.5 rounded hover:bg-amber-100 transition border border-amber-200">
+                    🔄 リセット(カウントも0に)
+                </button>
+                <button data-action="handleUnlockAction" data-request-id="${_escapeHtml(item.request_id)}" data-unlock-action="reject"
+                    class="text-xs font-bold bg-gray-100 text-gray-600 px-3 py-1.5 rounded hover:bg-gray-200 transition border border-gray-200">
+                    🚫 却下
+                </button>
+            </div>
+        </div>`;
+}
+
+async function loadUnlockRequests() {
+    const container = document.getElementById('unlock-requests-container');
+    if (!container) return;
+    try {
+        const res = await fetchUnlockRequests();
+        const items = res.items || [];
+        // 【Phase3】バックエンドがFirestoreクエリ失敗(複合インデックス未作成等)を
+        // 空配列+warningへ縮退させて返すことがある(admin_review.py参照)。
+        // 「未処理の直談判はありません」という誤解を招く空表示にせず、実際に
+        // 何が起きたかをそのまま出す。
+        if (res.warning) {
+            container.innerHTML = `<div class="text-center py-10 text-amber-700 bg-amber-50 border border-amber-200 rounded-lg text-sm p-4 whitespace-pre-wrap">⚠️ ${_escapeHtml(res.warning)}</div>`;
+            showToast('直談判一覧の取得中に警告が発生しました(詳細はⅡペイン参照)', 'warning');
+            return;
+        }
+        container.innerHTML = items.length
+            ? items.map(renderUnlockRequestItem).join('')
+            : '<div class="text-center py-10 text-gray-400 text-sm">未処理の直談判はありません</div>';
+    } catch (e) {
+        container.innerHTML = '<div class="text-center py-10 text-red-500 text-sm">読み込みに失敗しました</div>';
+        showToast("直談判一覧の取得に失敗しました", "warning");
+    }
+}
+
+const UNLOCK_ACTION_LABELS = { pardon: '赦し', reset: 'リセット', reject: '却下' };
+
+export async function handleUnlockAction(requestId, action) {
+    if (action === 'reset' && !window.confirm('ペナルティ回数ごと完全にリセットします。よろしいですか?')) return;
+    try {
+        await authFetch(`${API_BASE}/admin/unlock-requests/${encodeURIComponent(requestId)}/action`, {
+            method: 'POST',
+            body: JSON.stringify({ action }),
+        });
+        showToast(`${UNLOCK_ACTION_LABELS[action] || action}しました`);
+        await loadUnlockRequests();
+        await loadActionRequiredSummary();
+    } catch (e) {
+        showToast(`操作に失敗しました: ${e.message}`, 'warning');
+    }
+}
+
+// ------------------------------------------------------------
+// 【Phase2新設】Few-shot採用(承認待ちデータ・RLHFレビューの両カードから共通で呼ぶ)。
+// ------------------------------------------------------------
+
+// window.prompt()による簡易な評価軸選択(要件で明示された「プロンプトやセレクト
+// ボックス」のうち、既存DOMへの新規モーダル追加を要さない最小実装を選んだ)。
+// 入力欄には軸コードの一覧をあらかじめ列挙し、コピー&ペーストで選べるようにする。
+function _promptFewshotAxis() {
+    const optionsText = Object.entries(AXIS_LABELS)
+        .map(([code, label]) => `${code}(${label})`)
+        .join(' / ');
+    const input = window.prompt(
+        `どの評価軸の模範例として採用しますか？ 以下のコードのいずれかを入力してください:\n${optionsText}`,
+        'S_sur'
+    );
+    if (!input) return null;
+    const code = input.trim();
+    return AXIS_LABELS[code] ? code : null;
+}
+
+export async function toggleFewshotSelection(docId) {
+    const axisTag = _promptFewshotAxis();
+    if (!axisTag) {
+        showToast('評価軸コードが正しくないため、Few-shot採用をキャンセルしました', 'warning');
+        return;
+    }
+    try {
+        await authFetch(`${API_BASE}/admin/nazokake-items/${encodeURIComponent(docId)}/fewshot`, {
+            method: 'POST',
+            body: JSON.stringify({ is_fewshot_selected: true, fewshot_axis_tag: axisTag }),
+        });
+        showToast(`⭐ Few-shot採用しました(${AXIS_LABELS[axisTag]})`);
+    } catch (e) {
+        showToast(`Few-shot採用に失敗しました: ${e.message}`, 'warning');
+    }
 }
 
 // MLOps推移ダッシュボード(CQRSに基づく静的JSONダンプ方式)。
@@ -469,6 +750,10 @@ function renderModelFeedbackItem(item) {
                     </div>
                     <p class="text-xs text-gray-500">doc_id: ${item.doc_id || '(不明)'}</p>
                     <p class="text-sm text-gray-800 mt-2 whitespace-pre-wrap break-all">${comment}</p>
+                    ${item.doc_id ? `<button data-action="toggleFewshotSelection" data-doc-id="${item.doc_id}"
+                        class="mt-2 text-xs font-bold bg-yellow-50 text-yellow-700 px-3 py-1 rounded hover:bg-yellow-100 transition border border-yellow-200">
+                        ⭐ Few-shot採用
+                    </button>` : ''}
                 </div>
                 <p class="text-xs text-gray-400 shrink-0">${createdAt}</p>
             </div>
@@ -664,7 +949,7 @@ function renderPendingItem(item) {
     const createdAt = item.created_at ? _formatMlopsTimestamp(item.created_at) : '';
     return `
         <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-            <p class="font-bold text-gray-800">${odai}</p>
+            <p class="font-bold text-gray-800">${odai}${_newBadgeHtml(item.created_at)}</p>
             <p class="text-xs text-gray-400 mt-1">doc_id: ${item.doc_id}${createdAt ? ` / ${createdAt}` : ''}</p>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                 <div class="bg-blue-50/40 border border-blue-100 rounded p-3">
@@ -677,6 +962,12 @@ function renderPendingItem(item) {
                     <p class="text-sm text-gray-700 whitespace-pre-wrap break-all">${elyzaText}</p>
                     ${item.elyza_status === 'pending' ? _renderPendingActionButtons(item.doc_id, 'elyza') : ''}
                 </div>
+            </div>
+            <div class="mt-3 pt-3 border-t border-gray-100">
+                <button data-action="toggleFewshotSelection" data-doc-id="${item.doc_id}"
+                    class="text-xs font-bold bg-yellow-50 text-yellow-700 px-3 py-1.5 rounded hover:bg-yellow-100 transition border border-yellow-200">
+                    ⭐ Few-shot採用
+                </button>
             </div>
         </div>`;
 }
@@ -696,6 +987,429 @@ async function loadPendingItems() {
     }
 }
 
+// ------------------------------------------------------------
+// 【Phase 0新設】Ⅴ運用基盤: 招待発行・承認待ち管理者一覧(admin_auth.py)。
+// ------------------------------------------------------------
+
+function _escapeHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// 招待メール送信フォーム(data-action="submitInvite"、main_admin.js経由で呼ばれる)。
+export async function submitInvite() {
+    const input = /** @type {HTMLInputElement | null} */ (document.getElementById('invite-email-input'));
+    const email = (input?.value || '').trim();
+    if (!email) {
+        showToast('招待するメールアドレスを入力してください', 'warning');
+        return;
+    }
+    const btn = /** @type {HTMLButtonElement | null} */ (document.getElementById('invite-submit-btn'));
+    if (btn) btn.disabled = true;
+    try {
+        const res = await authFetch(`${API_BASE}/admin/invites`, {
+            method: 'POST',
+            body: JSON.stringify({ email }),
+        });
+        showToast(res.message || '招待メールを送信しました');
+        if (input) input.value = '';
+    } catch (e) {
+        showToast(`招待の発行に失敗しました: ${e.message}`, 'warning');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
+
+function _renderPendingAdminItem(item) {
+    return `
+        <div class="flex justify-between items-center bg-indigo-50/40 border border-indigo-100 rounded-lg p-3">
+            <div class="min-w-0">
+                <p class="font-bold text-gray-800 text-sm truncate">${_escapeHtml(item.email)}${_newBadgeHtml(item.requested_at)}</p>
+                <p class="text-xs text-gray-400">uid: ${_escapeHtml(item.uid)}${item.requested_at ? ` / 申請日時: ${_escapeHtml(item.requested_at)}` : ''}</p>
+            </div>
+            <button data-action="approveAdminUser" data-uid="${_escapeHtml(item.uid)}"
+                class="shrink-0 text-xs font-bold bg-emerald-50 text-emerald-700 px-3 py-1.5 rounded hover:bg-emerald-100 transition border border-emerald-200">
+                ✅ 承認
+            </button>
+        </div>`;
+}
+
+async function loadPendingAdminUsers() {
+    const container = document.getElementById('pending-admins-container');
+    if (!container) return;
+    try {
+        const res = await authFetch(`${API_BASE}/admin/pending-admins`);
+        const items = res.items || [];
+        container.innerHTML = items.length
+            ? items.map(_renderPendingAdminItem).join('')
+            : '<div class="text-center py-6 text-gray-400 text-sm">承認待ちの管理者はいません</div>';
+    } catch (e) {
+        // オーナー以外がこのペインを開いた場合は403になる想定内のケースなので、
+        // エラートーストは出さずメッセージ表示のみに留める。
+        container.innerHTML = `<div class="text-center py-6 text-gray-400 text-sm">${_escapeHtml(e.message)}</div>`;
+    }
+}
+
+export async function approveAdminUser(uid) {
+    try {
+        await authFetch(`${API_BASE}/admin/users/${encodeURIComponent(uid)}/approve`, { method: 'POST' });
+        showToast('承認しました');
+        await loadPendingAdminUsers();
+    } catch (e) {
+        showToast(`承認に失敗しました: ${e.message}`, 'warning');
+    }
+}
+
+// ------------------------------------------------------------
+// 【Phase3新設】Ⅲコストペイン: ①API/LLMトークンコスト。
+// GET /admin/costs(system_costs自己ログ、最大100件)をservice_type別に
+// 集計してテーブル+棒グラフで表示する。/admin/costs/dashboard(サーバー
+// レンダリング版)はBearerトークンをAuthorizationヘッダで送れない素朴な
+// window.open()とは両立しない(Phase1でverify_admin_tokenを付与したため)
+// ので、埋め込み表示(fetchベース)へ全面的に置き換えた。
+// ------------------------------------------------------------
+
+let _apiCostsChart = null;
+
+function _aggregateApiCostsByService(costs) {
+    const byService = new Map();
+    for (const c of costs) {
+        const key = c.service_type || '(不明)';
+        const bucket = byService.get(key) || {
+            service_type: key, count: 0, failed: 0,
+            input_tokens: 0, output_tokens: 0, cost_jpy: 0,
+        };
+        bucket.count += 1;
+        if (c.success === false) bucket.failed += 1;
+        bucket.input_tokens += c.input_tokens || 0;
+        bucket.output_tokens += c.output_tokens || 0;
+        bucket.cost_jpy += c.calculated_cost_jpy || 0;
+        byService.set(key, bucket);
+    }
+    return [...byService.values()].sort((a, b) => b.cost_jpy - a.cost_jpy);
+}
+
+function _renderApiCostsTable(rows) {
+    const tbody = document.getElementById('api-costs-table-body');
+    if (!tbody) return;
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-10 text-gray-400 text-sm">コストログはまだありません</td></tr>';
+        return;
+    }
+    tbody.innerHTML = rows.map((r) => `
+        <tr class="border-b border-gray-100">
+            <td class="py-2 pr-4 font-bold">${_escapeHtml(r.service_type)}</td>
+            <td class="py-2 pr-4">${r.count}</td>
+            <td class="py-2 pr-4 ${r.failed ? 'text-red-600 font-bold' : ''}">${r.failed}</td>
+            <td class="py-2 pr-4">${r.input_tokens.toLocaleString()}</td>
+            <td class="py-2 pr-4">${r.output_tokens.toLocaleString()}</td>
+            <td class="py-2 pr-4 font-bold">¥${r.cost_jpy.toFixed(2)}</td>
+        </tr>`).join('');
+}
+
+function _renderApiCostsChart(rows) {
+    const canvas = /** @type {HTMLCanvasElement | null} */ (document.getElementById('api-costs-chart'));
+    if (!canvas) return;
+    if (_apiCostsChart) _apiCostsChart.destroy();
+    if (!rows.length) return;
+    _apiCostsChart = new Chart(canvas.getContext('2d'), {
+        type: 'bar',
+        data: {
+            labels: rows.map((r) => r.service_type),
+            datasets: [{
+                label: 'コスト(円)',
+                data: rows.map((r) => r.cost_jpy),
+                backgroundColor: 'rgba(37, 99, 235, 0.5)',
+                borderColor: 'rgba(37, 99, 235, 1)',
+                borderWidth: 1,
+            }],
+        },
+        options: { responsive: true, plugins: { legend: { display: false } } },
+    });
+}
+
+async function loadApiCosts() {
+    const totalEl = document.getElementById('api-costs-total');
+    const budgetEl = document.getElementById('api-costs-budget');
+    try {
+        const costs = await authFetch(`${API_BASE}/admin/costs`);
+        const rows = _aggregateApiCostsByService(costs);
+        const totalJpy = rows.reduce((sum, r) => sum + r.cost_jpy, 0);
+        if (totalEl) totalEl.textContent = `¥${totalJpy.toFixed(2)}`;
+        // 予算消化率はサーバーレンダリング版(costs_dashboard.html)と同じ
+        // MONTHLY_BUDGET_JPYを前提にした概算をここでは省略し、合計金額のみを
+        // 一次情報として表示する(予算上限値はサーバー側の環境変数でしか
+        // 分からないため、フロントで二重管理・値のズレを起こさないための判断)。
+        if (budgetEl) budgetEl.textContent = costs.length ? `${costs.length}件` : '0件';
+        _renderApiCostsTable(rows);
+        _renderApiCostsChart(rows);
+    } catch (e) {
+        if (totalEl) totalEl.textContent = '—';
+        if (budgetEl) budgetEl.textContent = '—';
+        const tbody = document.getElementById('api-costs-table-body');
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-center py-10 text-red-500 text-sm">読み込みに失敗しました</td></tr>';
+        showToast('APIコストの取得に失敗しました', 'warning');
+    }
+}
+
+// ------------------------------------------------------------
+// 【Phase3新設】Ⅲコストペイン: ②GCPインフラコスト。
+// GET /admin/gcp-costs(system_gcp_costs/latestの薄いラッパー)を表示するだけ。
+// BigQueryへは一切触れない(集計はサーバー側の日次バッチ
+// POST /admin/jobs/sync-gcp-costsが別途行う)。
+// ------------------------------------------------------------
+
+async function loadGcpCosts() {
+    const dateEl = document.getElementById('gcp-costs-date');
+    const totalEl = document.getElementById('gcp-costs-total');
+    const tbody = document.getElementById('gcp-costs-table-body');
+    const emptyNote = document.getElementById('gcp-costs-empty-note');
+    const generatedAtEl = document.getElementById('gcp-costs-generated-at');
+    try {
+        const res = await authFetch(`${API_BASE}/admin/gcp-costs`);
+        const hasData = !!res.date;
+        emptyNote?.classList.toggle('hidden', hasData);
+
+        if (dateEl) dateEl.textContent = res.date || '(未実行)';
+        if (totalEl) totalEl.textContent = hasData ? `${(res.currency || '')} ${res.total_cost.toFixed(2)}`.trim() : '-';
+        if (generatedAtEl) generatedAtEl.textContent = res.generated_at ? `最終集計: ${_formatMlopsTimestamp(res.generated_at)}` : '';
+
+        const breakdown = res.breakdown || [];
+        if (tbody) {
+            tbody.innerHTML = breakdown.length
+                ? breakdown.map((b) => `
+                    <tr class="border-b border-gray-100">
+                        <td class="py-2 pr-4">${_escapeHtml(b.service_description)}</td>
+                        <td class="py-2 pr-4 font-bold">${(res.currency || '')} ${b.cost.toFixed(2)}</td>
+                    </tr>`).join('')
+                : '<tr><td colspan="2" class="text-center py-10 text-gray-400 text-sm">内訳データはありません</td></tr>';
+        }
+    } catch (e) {
+        if (dateEl) dateEl.textContent = '—';
+        if (totalEl) totalEl.textContent = '—';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="2" class="text-center py-10 text-red-500 text-sm">読み込みに失敗しました</td></tr>';
+        showToast('GCPインフラコストの取得に失敗しました', 'warning');
+    }
+}
+
+// ------------------------------------------------------------
+// 【Phase1新設】お知らせバッジ(action-required-summary)。
+// ------------------------------------------------------------
+
+function _updateBadge(elId, count) {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    if (!count) {
+        el.classList.add('hidden');
+        el.textContent = '';
+        return;
+    }
+    el.textContent = String(count);
+    el.classList.remove('hidden');
+}
+
+async function loadActionRequiredSummary() {
+    try {
+        const res = await authFetch(`${API_BASE}/admin/action-required-summary`);
+        // 以降のload*()(DLQ/承認待ちデータ/承認待ち管理者)が🆕判定に使う基準時刻。
+        // initAdmin()側でこの関数を他のload*()より先にawaitすることで、
+        // レンダリング時には必ず確定済みの状態にしている。
+        _previousLoginAt = res.previous_login_at || null;
+
+        _updateBadge('global-action-badge', res.total);
+        // Ⅰ: DLQ。Ⅱ: レビュー(承認待ちデータ)+直談判(準備中、現時点ではunlock分を合算)。
+        // Ⅴ: 承認待ち管理者。
+        _updateBadge('tab-badge-1', res.dlq.total);
+        _updateBadge('tab-badge-2', res.review.total + res.unlock.total);
+        _updateBadge('tab-badge-5', res.admin_approval.total);
+
+        // 【Phase3】Firestore側カウント(直談判/承認待ち管理者)の一部がインデックス
+        // 未作成等で0件へ縮退した場合、バッジの数字を鵜呑みにさせないよう警告する
+        // (admin_health.py::get_action_required_summary参照)。
+        if (res.warning) {
+            console.warn('⚠️ お知らせバッジの一部集計に失敗しました:', res.warning);
+            showToast('一部のお知らせ件数が正しく取得できていません(詳細はコンソール参照)', 'warning');
+        }
+    } catch (e) {
+        // お知らせバッジはあくまで付加情報であり、取得失敗が画面全体を止める
+        // 理由にはならない(既存のload*()群と同じグレースフルデグラデーション方針)。
+        console.warn('⚠️ お知らせバッジの取得に失敗しました:', e);
+    }
+}
+
+// ------------------------------------------------------------
+// 【Phase1新設】APIエラー率
+// ------------------------------------------------------------
+
+function _renderApiErrorRateByService(byService) {
+    const container = document.getElementById('api-error-rate-by-service');
+    if (!container) return;
+    if (!byService || !byService.length) {
+        container.textContent = '';
+        return;
+    }
+    container.innerHTML = byService
+        .map((s) => `<div>${s.service_type}: ${(s.error_rate * 100).toFixed(1)}% (${s.failed}/${s.total}件)</div>`)
+        .join('');
+}
+
+async function loadApiErrorRate() {
+    const valueEl = document.getElementById('api-error-rate-value');
+    const failedEl = document.getElementById('api-error-rate-failed');
+    const totalEl = document.getElementById('api-error-rate-total');
+    try {
+        const res = await authFetch(`${API_BASE}/admin/api-error-rate`);
+        if (valueEl) valueEl.textContent = `${(res.error_rate * 100).toFixed(1)}%`;
+        if (failedEl) failedEl.textContent = String(res.failed);
+        if (totalEl) totalEl.textContent = String(res.total);
+        _renderApiErrorRateByService(res.by_service);
+    } catch (e) {
+        if (valueEl) valueEl.textContent = '—';
+        if (failedEl) failedEl.textContent = '—';
+        if (totalEl) totalEl.textContent = '—';
+        console.warn('⚠️ APIエラー率の取得に失敗しました:', e);
+    }
+}
+
+// ------------------------------------------------------------
+// 【Phase4新設】Ⅳ生成設定: ペルソナ管理(3段階ライフサイクル)。
+// ------------------------------------------------------------
+
+const PERSONA_MODE_LABELS = {
+    default: { text: 'デフォルト', badge: 'bg-gray-100 text-gray-500 border-gray-200' },
+    permanent: { text: '永続上書き中', badge: 'bg-indigo-100 text-indigo-700 border-indigo-300' },
+    temporary: { text: '時限上書き中', badge: 'bg-amber-100 text-amber-700 border-amber-300' },
+};
+
+// 直談判ブロック画面(apps/persona_router/frontend/app.js::formatRemaining)と
+// 同じ考え方の残り時間フォーマッタ(このファイル内で完結させる、共有モジュール化は
+// 別サービスをまたぐため見送る)。
+function _formatPersonaRemaining(expiresAtIso) {
+    const diffMs = new Date(expiresAtIso).getTime() - Date.now();
+    if (diffMs <= 0) return 'まもなく失効';
+    const totalMinutes = Math.ceil(diffMs / 60000);
+    const hours = Math.floor(totalMinutes / 60);
+    const minutes = totalMinutes % 60;
+    if (hours > 0) return `残り${hours}時間${minutes}分`;
+    return `残り${minutes}分`;
+}
+
+function _personaStatusBadgeHtml(item) {
+    const info = PERSONA_MODE_LABELS[item.mode] || PERSONA_MODE_LABELS.default;
+    const suffix = item.mode === 'temporary' && item.expires_at
+        ? `(${_formatPersonaRemaining(item.expires_at)})`
+        : '';
+    return `<span class="inline-block text-[11px] font-bold px-2 py-0.5 rounded-full border ${info.badge}">${info.text}${suffix}</span>`;
+}
+
+function renderPersonaConfigItem(item) {
+    const promptPreview = item.prompt.length > 80 ? `${item.prompt.slice(0, 80)}…` : item.prompt;
+    return `
+        <div class="border border-gray-200 rounded-lg p-4" id="persona-row-${item.persona_id}">
+            <div class="flex justify-between items-start gap-3 mb-2">
+                <div class="min-w-0">
+                    <p class="font-bold text-gray-800">#${item.persona_id} ${_escapeHtml(item.name)}</p>
+                    <div class="mt-1">${_personaStatusBadgeHtml(item)}</div>
+                </div>
+                <div class="flex gap-2 shrink-0">
+                    <button data-action="openPersonaEditModal" data-persona-id="${item.persona_id}"
+                        class="text-xs font-bold bg-gray-100 hover:bg-gray-200 text-gray-700 px-3 py-1.5 rounded transition border border-gray-200">
+                        ✏️ 編集
+                    </button>
+                    <button data-action="clearPersonaConfig" data-persona-id="${item.persona_id}"
+                        ${item.mode === 'default' ? 'disabled' : ''}
+                        class="text-xs font-bold px-3 py-1.5 rounded transition border ${item.mode === 'default' ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-not-allowed' : 'bg-red-50 hover:bg-red-100 text-red-600 border-red-200'}">
+                        🧹 クリア
+                    </button>
+                </div>
+            </div>
+            <p class="text-xs text-gray-500 whitespace-pre-wrap">${_escapeHtml(promptPreview)}</p>
+        </div>`;
+}
+
+// 編集モーダルを開く際、最新のプロンプト本文を参照できるようメモリに保持しておく
+// (一覧はプレビュー(80文字)しか表示しないため)。
+let _personaConfigsCache = [];
+
+async function loadPersonaConfigs() {
+    const container = document.getElementById('personas-container');
+    if (!container) return;
+    try {
+        const res = await authFetch(`${API_BASE}/admin/personas`);
+        _personaConfigsCache = res.personas || [];
+        container.innerHTML = _personaConfigsCache.length
+            ? _personaConfigsCache.map(renderPersonaConfigItem).join('')
+            : '<div class="text-center py-10 text-gray-400 text-sm">ペルソナが見つかりません</div>';
+    } catch (e) {
+        container.innerHTML = '<div class="text-center py-10 text-red-500 text-sm">読み込みに失敗しました</div>';
+        showToast('ペルソナ一覧の取得に失敗しました', 'warning');
+    }
+}
+
+export function openPersonaEditModal(personaId) {
+    const item = _personaConfigsCache.find((p) => p.persona_id === Number(personaId));
+    if (!item) return;
+
+    document.getElementById('persona-edit-id').value = item.persona_id;
+    document.getElementById('persona-edit-title').textContent = `#${item.persona_id} ${item.name} を編集`;
+    document.getElementById('persona-edit-name').value = item.name;
+    document.getElementById('persona-edit-prompt').value = item.prompt;
+
+    // 現在時限適用中なら「24時間」を初期選択にしておく等の細かい親切機能は持たず、
+    // 常に「① 登録(24時間)」を既定選択にする(誤操作で恒久適用してしまう事故を
+    // 防ぐ、保守的なデフォルト)。
+    const radios = document.querySelectorAll('input[name="persona-edit-duration"]');
+    radios.forEach((r) => { r.checked = r.value === '24h'; });
+
+    document.getElementById('persona-edit-modal')?.classList.remove('hidden');
+}
+
+export function closePersonaEditModal() {
+    document.getElementById('persona-edit-modal')?.classList.add('hidden');
+}
+
+export async function savePersonaConfig() {
+    const personaId = document.getElementById('persona-edit-id').value;
+    const name = document.getElementById('persona-edit-name').value.trim();
+    const prompt = document.getElementById('persona-edit-prompt').value.trim();
+    const durationPreset = document.querySelector('input[name="persona-edit-duration"]:checked')?.value || '24h';
+
+    if (!prompt) {
+        showToast('プロンプトを入力してください', 'warning');
+        return;
+    }
+
+    const saveBtn = document.getElementById('persona-edit-save');
+    if (saveBtn) saveBtn.disabled = true;
+    try {
+        await authFetch(`${API_BASE}/admin/personas/${encodeURIComponent(personaId)}`, {
+            method: 'PUT',
+            body: JSON.stringify({ name: name || null, prompt, duration_preset: durationPreset }),
+        });
+        showToast('ペルソナ設定を保存しました');
+        closePersonaEditModal();
+        await loadPersonaConfigs();
+    } catch (e) {
+        showToast(`保存に失敗しました: ${e.message}`, 'warning');
+    } finally {
+        if (saveBtn) saveBtn.disabled = false;
+    }
+}
+
+export async function clearPersonaConfig(personaId) {
+    if (!window.confirm('上書き設定をクリアし、初期値へ戻します。よろしいですか?')) return;
+    try {
+        await authFetch(`${API_BASE}/admin/personas/${encodeURIComponent(personaId)}`, {
+            method: 'DELETE',
+        });
+        showToast('初期値へ戻しました');
+        await loadPersonaConfigs();
+    } catch (e) {
+        showToast(`クリアに失敗しました: ${e.message}`, 'warning');
+    }
+}
+
 // 管理画面初期化フック。091のDDD再編でパージされた「アプリ利用状況」
 // 「承認待ちデータ」は、対応するバックエンドAPI(/api/metrics/summary,
 // /api/admin/pending)をmain.py/metrics.py/admin.pyへ新設した上で読込を再実装した。
@@ -705,6 +1419,18 @@ async function initAdmin() {
     document.getElementById('model-feedback-reload-btn')?.addEventListener('click', () => loadModelFeedback());
     document.getElementById('app-usage-reload-btn')?.addEventListener('click', () => loadAppUsage());
     document.getElementById('pending-reload-btn')?.addEventListener('click', () => loadPendingItems());
+    document.getElementById('pending-admins-reload-btn')?.addEventListener('click', () => loadPendingAdminUsers());
+    document.getElementById('unlock-requests-reload-btn')?.addEventListener('click', () => loadUnlockRequests());
+    document.getElementById('api-costs-reload-btn')?.addEventListener('click', () => loadApiCosts());
+    document.getElementById('gcp-costs-reload-btn')?.addEventListener('click', () => loadGcpCosts());
+    document.getElementById('personas-reload-btn')?.addEventListener('click', () => loadPersonaConfigs());
+    document.getElementById('persona-edit-close')?.addEventListener('click', () => closePersonaEditModal());
+
+    // 【重要】バッジ集計(_previousLoginAtの確定)を他のload*()より先に完了させる。
+    // これより後のload*()群(DLQ/承認待ちデータ/承認待ち管理者)は_previousLoginAtを
+    // 参照して🆕バッジを描画するため、並列実行(Promise.allSettled)に混ぜてしまうと
+    // レースコンディションで🆕が付いたり付かなかったりする不安定な挙動になる。
+    await loadActionRequiredSummary();
 
     // 各読込は独立した非同期処理のため Promise.allSettled で実行する。
     // load*()内部は個別にtry/catchしフォールバック表示するため通常rejectしないが、
@@ -719,5 +1445,11 @@ async function initAdmin() {
         loadModelFeedback(),
         loadAppUsage(),
         loadPendingItems(),
+        loadPendingAdminUsers(),
+        loadApiErrorRate(),
+        loadUnlockRequests(),
+        loadApiCosts(),
+        loadGcpCosts(),
+        loadPersonaConfigs(),
     ]);
 }

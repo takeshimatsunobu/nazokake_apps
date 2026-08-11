@@ -39,6 +39,7 @@ from sqlalchemy import (
     and_,
     case,
     event,
+    func,
     or_,
     select,
     update,
@@ -172,6 +173,14 @@ class NazokakeItemORM(Base):
     is_user_edited: Mapped[bool] = mapped_column(Boolean, default=False)
     is_golden_data: Mapped[bool] = mapped_column(Boolean, default=False)
     is_approved: Mapped[bool] = mapped_column(Boolean, default=False)
+    # --- Phase2: 管理コクピット「⭐ Few-shot採用」キュレーション ---
+    # services.generation._FEWSHOT_POOL(静的リスト)への動的な組み込み自体は
+    # Phase4(ペルソナ/生成デフォルト設定の動的化・キャッシュ基盤)でまとめて配線する
+    # 予定であり、本フェーズでは「管理者がどの作品をどの評価軸の模範例として選んだか」
+    # という判断そのものを永続化するに留める(is_golden_data/is_approvedと同じ、
+    # 判断の記録とその後の消費ロジックを分離する設計)。
+    is_fewshot_selected: Mapped[bool] = mapped_column(Boolean, default=False)
+    fewshot_axis_tag: Mapped[str | None] = mapped_column(String, nullable=True)
     random_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
     gemini_status: Mapped[str | None] = mapped_column(String, nullable=True)
     elyza_status: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -490,18 +499,24 @@ async def mark_synced(doc_id: str, expected_updated_at: str | None) -> None:
             )
 
 
-async def mark_sync_failed(doc_id: str, error_message: str) -> None:
+async def mark_sync_failed(doc_id: str, error_message: str) -> bool:
     """Firestoreへの同期に失敗した行のretry_countを+1し、失敗理由を残す。
 
     retry_countがMAX_SYNC_RETRIESに達した場合はsync_status="fatal"へ隔離し
     (ポイズンピル判定)、次回以降のget_pending_sync_batch()の対象から完全に外す。
     未満の場合は"error"(次回の同期ワーカー実行時にリトライ対象として拾われる)。
     updated_atは書き換えない(ローカル内容自体は変化していないため)。
+
+    戻り値: この呼び出しでsync_status="fatal"へ遷移した(=ポイズンピル隔離が発生した)場合True。
+    new_retry_countはSQL式(NazokakeItemORM.retry_count + 1)でありPython側の値ではないため、
+    判定結果を知るにはRETURNING句で実際に書き込まれたsync_statusを読み戻す必要がある
+    (claim_pending_trend()と同じパターン)。呼び出し元(firestore_sync.sync_once)が
+    「今回何件を恒久的に見捨てたか」を可観測にするために使う。
     """
     async with get_session() as session:
         async with session.begin():
             new_retry_count = NazokakeItemORM.retry_count + 1
-            await session.execute(
+            result = await session.execute(
                 update(NazokakeItemORM)
                 .where(NazokakeItemORM.doc_id == doc_id)
                 .values(
@@ -512,7 +527,10 @@ async def mark_sync_failed(doc_id: str, error_message: str) -> None:
                         else_="error",
                     ),
                 )
+                .returning(NazokakeItemORM.sync_status)
             )
+            new_status = result.scalar_one_or_none()
+            return new_status == "fatal"
 
 
 # ------------------------------------------------------------------
@@ -639,8 +657,8 @@ def sync_mark_synced(doc_id: str, expected_updated_at: str | None) -> None:
     _serialized_writer.submit(lambda: mark_synced(doc_id, expected_updated_at))
 
 
-def sync_mark_sync_failed(doc_id: str, error_message: str) -> None:
-    _serialized_writer.submit(lambda: mark_sync_failed(doc_id, error_message))
+def sync_mark_sync_failed(doc_id: str, error_message: str) -> bool:
+    return _serialized_writer.submit(lambda: mark_sync_failed(doc_id, error_message))
 
 
 # ------------------------------------------------------------------
@@ -794,6 +812,38 @@ async def async_get_dlq_items() -> list[dict[str, Any]]:
         ]
 
 
+async def async_count_dlq_items() -> int:
+    """DLQ(sync_status=="fatal")の件数のみを取得する(管理コクピットのお知らせ
+    バッジ用。async_get_dlq_items()と違い行本体は取得しないため、DLQが大量に
+    溜まっていても軽量に呼べる)。
+    """
+    async with get_session() as session:
+        result = await session.execute(
+            select(func.count())
+            .select_from(NazokakeItemORM)
+            .where(NazokakeItemORM.sync_status == "fatal")
+        )
+        return result.scalar_one()
+
+
+async def async_count_dlq_items_since(since_iso: str) -> int:
+    """DLQ(sync_status=="fatal")のうち、updated_at(fatalへ隔離された時刻の近似)が
+    since_iso より新しいものの件数。お知らせバッジの「🆕新着」内訳用。
+    """
+    async with get_session() as session:
+        result = await session.execute(
+            select(func.count())
+            .select_from(NazokakeItemORM)
+            .where(
+                and_(
+                    NazokakeItemORM.sync_status == "fatal",
+                    NazokakeItemORM.updated_at > since_iso,
+                )
+            )
+        )
+        return result.scalar_one()
+
+
 async def async_get_audit_logs(limit: int = 100) -> list[dict[str, Any]]:
     """audit_logsテーブルの監査証跡を、created_at降順(新しい順)で最大limit件取得する。
 
@@ -837,6 +887,60 @@ async def async_get_pending_items() -> list[dict[str, Any]]:
         )
         rows = (await session.execute(stmt)).scalars().all()
         return [_row_to_ui_dict(row) for row in rows]
+
+
+# Few-shotプールを肥大化させすぎないための上限(Phase4)。
+_FEWSHOT_CURATED_LIMIT = 100
+
+
+async def async_get_fewshot_curated_items() -> list[dict[str, Any]]:
+    """管理コクピットの「⭐ Few-shot採用」(Phase2、admin_review.py::update_fewshot_selection)
+    で is_fewshot_selected=True が付与された行を、doc_id/fewshot_axis_tagのみ
+    軽量に取得する(services/feedback_loop.py::build_curated_fewshot_entries()が
+    doc_idごとに本文を追加取得するため、ここでは全カラムを取得しない)。
+    """
+    async with get_session() as session:
+        stmt = (
+            select(NazokakeItemORM.doc_id, NazokakeItemORM.fewshot_axis_tag)
+            .where(NazokakeItemORM.is_fewshot_selected.is_(True))
+            .order_by(NazokakeItemORM.updated_at.desc())
+            .limit(_FEWSHOT_CURATED_LIMIT)
+        )
+        rows = (await session.execute(stmt)).all()
+        return [{"doc_id": r[0], "fewshot_axis_tag": r[1]} for r in rows]
+
+
+async def async_count_pending_items() -> int:
+    """レビュー待ち(gemini_status/elyza_statusのいずれかが"pending")の件数のみを
+    取得する(管理コクピットのお知らせバッジ用)。
+    """
+    async with get_session() as session:
+        pending_filter = or_(
+            NazokakeItemORM.gemini_status == "pending",
+            NazokakeItemORM.elyza_status == "pending",
+        )
+        result = await session.execute(
+            select(func.count()).select_from(NazokakeItemORM).where(pending_filter)
+        )
+        return result.scalar_one()
+
+
+async def async_count_pending_items_since(since_iso: str) -> int:
+    """レビュー待ちのうち、created_atがsince_isoより新しいものの件数。
+    お知らせバッジの「🆕新着」内訳用。
+    """
+    async with get_session() as session:
+        pending_filter = and_(
+            or_(
+                NazokakeItemORM.gemini_status == "pending",
+                NazokakeItemORM.elyza_status == "pending",
+            ),
+            NazokakeItemORM.created_at > since_iso,
+        )
+        result = await session.execute(
+            select(func.count()).select_from(NazokakeItemORM).where(pending_filter)
+        )
+        return result.scalar_one()
 
 
 async def async_retry_dlq_item(

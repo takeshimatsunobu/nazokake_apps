@@ -1,0 +1,28 @@
+{
+  "hosting": {
+    "target": "persona-router",
+    "public": "frontend",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**",
+      "dev_server.py"
+    ],
+    "rewrites": [
+      {
+        "source": "/v1/**",
+        "run": {
+          "serviceId": "nazokake-persona-router",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/healthz",
+        "run": {
+          "serviceId": "nazokake-persona-router",
+          "region": "asia-northeast1"
+        }
+      }
+    ]
+  }
+}

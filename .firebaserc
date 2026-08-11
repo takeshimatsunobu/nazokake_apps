@@ -1,0 +1,15 @@
+{
+  "projects": {
+    "default": "nazokakeapp-137e5"
+  },
+  "targets": {
+    "nazokakeapp-137e5": {
+      "hosting": {
+        "persona-router": [
+          "nazokake-persona-router"
+        ]
+      }
+    }
+  },
+  "etags": {}
+}

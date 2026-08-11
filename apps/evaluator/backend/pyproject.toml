@@ -9,6 +9,7 @@ dependencies = [
     "pydantic",
     "firebase-admin",
     "google-cloud-firestore",
+    "google-cloud-bigquery",
     "google-genai",
     "httpx",
     "python-dotenv",

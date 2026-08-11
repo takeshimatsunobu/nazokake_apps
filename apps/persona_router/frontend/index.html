@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#4338CA">
+    <title>なぞかけ道場 (Persona Router)</title>
+    <meta name="description" content="AIペルソナと一緒になぞかけを作る、モバイルファーストな公開タイムライン。">
+    <link rel="icon" href="data:,">
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- 【instructions/295相当】ビルド/デプロイフローが無い素のJS配信のため、
+         ローカルJSの解決先に静的なバージョンクエリ(?v=YYYYMMDD)を付与し、ブラウザ
+         キャッシュにこのHTMLが更新されるたびに新しいURLとして再フェッチさせる
+         (apps/evaluator/frontend/public/index.html と同じ対策)。次回このHTMLへ
+         変更を加える際はこのバージョン文字列を更新すること(全エントリで統一)。 -->
+    <script type="importmap">
+    {
+        "imports": {
+            "config": "/config.js?v=20260811b",
+            "state": "/state.js?v=20260811b",
+            "api": "/api.js?v=20260811b",
+            "app": "/app.js?v=20260811b"
+        }
+    }
+    </script>
+
+    <style>
+        html, body { height: 100%; }
+        body { height: 100dvh; overscroll-behavior-y: none; }
+        /* iOSのホームインジケーター/ノッチとフォームが重ならないための余白。 */
+        #generator-area { padding-bottom: max(0.75rem, env(safe-area-inset-bottom)); }
+        #persona-chips { -ms-overflow-style: none; scrollbar-width: none; }
+        #persona-chips::-webkit-scrollbar { display: none; }
+    </style>
+</head>
+<body class="bg-slate-100 flex flex-col overflow-hidden">
+
+    <!-- トースト通知(画面上部・中央寄せ) -->
+    <div id="toast-container" class="fixed top-3 inset-x-0 z-50 flex flex-col items-center gap-2 pointer-events-none px-4"></div>
+
+    <!-- ヘッダー(最小限。モバイルファーストのため縦幅を極力使わない) -->
+    <header class="shrink-0 bg-indigo-700 text-white px-4 py-2.5 flex items-center justify-between shadow-md z-10">
+        <h1 class="text-sm font-black tracking-wide">🎭 なぞかけ道場</h1>
+        <span class="text-[10px] text-indigo-200">匿名でOK・すぐ作れます</span>
+    </header>
+
+    <!-- Step1: 上段・公開タイムライン領域(スクロール可能) -->
+    <main id="timeline-area" class="relative flex-1 overflow-y-auto px-3 pt-3 pb-4">
+        <button id="new-items-pill" type="button"
+            class="hidden sticky top-0 z-20 mx-auto mb-3 block text-xs font-bold text-white bg-indigo-600 px-4 py-1.5 rounded-full shadow-lg active:scale-95">
+            🆕 新着があります
+        </button>
+
+        <div id="timeline-list" class="flex flex-col gap-3">
+            <p class="text-center text-sm text-slate-400 py-10">読み込み中...</p>
+        </div>
+
+        <button id="load-more-btn" type="button"
+            class="hidden w-full mt-3 text-xs font-bold text-slate-500 bg-white border border-slate-200 rounded-full py-2 active:scale-95">
+            もっと読み込む
+        </button>
+    </main>
+
+    <!-- Step2: 下段・同期生成UI領域(固定フッター) -->
+    <footer id="generator-area" class="shrink-0 bg-white border-t border-slate-200 px-3 pt-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] z-10">
+        <!-- ペルソナ選択チップ(横スクロール) -->
+        <div id="persona-chips" class="flex gap-1.5 overflow-x-auto pb-2 -mx-0.5 px-0.5">
+            <p class="text-xs text-slate-400 py-1.5">ペルソナを読み込み中...</p>
+        </div>
+
+        <!-- 段階的ローディング表示(生成中のみ表示) -->
+        <div id="loading-wrap" class="hidden flex items-center gap-2 text-xs font-bold text-indigo-600 pb-2">
+            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
+                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+            </svg>
+            <span id="loading-stage">🔍 お題を解析中...</span>
+        </div>
+
+        <form id="generate-form" class="flex items-center gap-2 pb-3">
+            <input id="odai-input" type="text" required maxlength="200" placeholder="お題を入力(例: 猛暑日のかき氷)"
+                class="flex-1 min-w-0 text-sm border border-slate-300 rounded-full px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+            <button id="generate-btn" type="submit"
+                class="shrink-0 text-sm font-bold text-white bg-indigo-600 rounded-full px-5 py-2.5 disabled:opacity-50 disabled:pointer-events-none active:scale-95">
+                作る
+            </button>
+        </form>
+    </footer>
+
+    <!-- 段階的ブロック: 「ユーモアの充電期間」オーバーレイ。否定的な語彙(禁止・
+         ブロック等)は使わず前向きに、しかし操作は厳格に制限する(裏側を触れなく
+         する透明な全画面オーバーレイとして実装。閉じるボタンは意図的に置かない)。 -->
+    <div id="block-overlay" class="hidden fixed inset-0 z-40 bg-indigo-950/95 backdrop-blur-sm flex flex-col items-center justify-center px-5 py-8 overflow-y-auto">
+        <div class="w-full max-w-sm bg-white rounded-2xl shadow-2xl p-5 text-center">
+            <p class="text-3xl mb-1">🔋</p>
+            <h2 class="text-base font-black text-indigo-900 mb-1">ユーモアの充電期間中です</h2>
+            <p id="block-remaining" class="text-xs font-bold text-indigo-500 mb-4">計測中...</p>
+
+            <div class="bg-indigo-50 rounded-xl p-3 mb-4 text-left">
+                <p id="block-odai" class="text-[11px] text-slate-400 mb-1"></p>
+                <p id="block-nazokake-text" class="text-sm leading-relaxed text-slate-800 whitespace-pre-wrap"></p>
+            </div>
+
+            <div id="block-unlock-section">
+                <button id="block-unlock-toggle" type="button" class="text-xs font-bold text-indigo-600 underline">
+                    🙏 運営へ直談判する
+                </button>
+                <div id="block-unlock-form" class="hidden mt-3 text-left">
+                    <textarea id="block-unlock-message" rows="3" maxlength="1000" placeholder="言い訳・反省文をどうぞ(運営が読みます)"
+                        class="w-full text-xs border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea>
+                    <button id="block-unlock-submit" type="button"
+                        class="mt-2 w-full text-xs font-bold text-white bg-indigo-600 rounded-full py-2 active:scale-95">
+                        直談判を送る
+                    </button>
+                </div>
+                <p id="block-unlock-sent" class="hidden mt-3 text-xs font-bold text-emerald-600">
+                    ✅ 直談判を受け付けました。運営の判断をお待ちください。
+                </p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase3: 「赤ペン」添削モーダル(ペンネーム登録 → 添削入力 → ハッカーライクな送信ログ演出) -->
+    <div id="redpen-modal" class="hidden fixed inset-0 z-40 bg-black/60 flex items-end sm:items-center justify-center">
+        <div class="w-full sm:max-w-sm bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl p-4 max-h-[85vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-black text-rose-700">🖊️ 赤ペン添削</h2>
+                <button id="redpen-close" type="button" class="text-slate-400 text-xl leading-none px-1">&times;</button>
+            </div>
+
+            <!-- ペンネーム未登録時のみ表示 -->
+            <div id="redpen-penname-step">
+                <p class="text-xs text-slate-500 mb-2">添削には署名(ペンネーム)が必要です。まず名乗ってください。</p>
+                <input id="redpen-penname-input" type="text" maxlength="30" placeholder="例: 通りすがりの添削マン"
+                    class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 mb-2 focus:outline-none focus:ring-2 focus:ring-rose-400">
+                <button id="redpen-penname-submit" type="button"
+                    class="w-full text-sm font-bold text-white bg-rose-600 rounded-full py-2 active:scale-95">
+                    この名前で名乗る
+                </button>
+            </div>
+
+            <!-- 添削入力ステップ -->
+            <div id="redpen-form-step" class="hidden">
+                <p class="text-[11px] text-slate-400 mb-1">元の解答</p>
+                <p id="redpen-original" class="text-xs text-slate-600 bg-slate-50 rounded-lg p-2 mb-3 whitespace-pre-wrap"></p>
+
+                <label class="text-[11px] font-bold text-slate-500">添削後の「解き」</label>
+                <input id="redpen-toku" type="text" maxlength="200"
+                    class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 mb-2 focus:outline-none focus:ring-2 focus:ring-rose-400">
+
+                <label class="text-[11px] font-bold text-slate-500">添削後の「その心は」</label>
+                <textarea id="redpen-kokoro" rows="3" maxlength="400"
+                    class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-rose-400"></textarea>
+
+                <button id="redpen-submit" type="button"
+                    class="w-full text-sm font-bold text-white bg-rose-600 rounded-full py-2.5 active:scale-95">
+                    添削を届ける
+                </button>
+            </div>
+
+            <!-- ハッカーライクな送信ログ演出 -->
+            <div id="redpen-hacker-log" class="hidden bg-black rounded-lg p-3 font-mono text-[11px] text-emerald-400 leading-relaxed h-48 overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <script type="module" src="/app.js?v=20260811b"></script>
+</body>
+</html>

@@ -72,21 +72,23 @@ document.addEventListener('DOMContentLoaded', () => {
     initTemperatureDescription();
 });
 
-// Service Worker登録(旧index.html末尾のインラインscriptから移設、ロジックは無改変)。
-// SW機能は無効化済み(sw.js.disabled)のため登録呼び出しも停止(MIME type text/htmlエラー対策)。
-// if ('serviceWorker' in navigator) {
-//     window.addEventListener('load', () => {
-//         navigator.serviceWorker.register('sw.js').then(reg => {
-//             console.log('ServiceWorker registration successful!');
-//         }).catch(err => console.error('ServiceWorker registration failed: ', err));
-//     });
-// }
-
-// SW機能は上記の通り無効化済みだが、それ以前にこのオリジンへアクセス済みのブラウザには
-// 過去のService Worker登録が残ったままになっている場合がある(register()を呼ばなくなった
-// だけでは既存の登録は自動解除されない)。古いSWがfetchをインターセプトし続け、バックエンド
-// 修正後も「現在オフラインです」等の古いキャッシュ画面から抜け出せない実害が確認された
-// (ユーザーからの報告)ため、残存登録があれば毎回自動的に解除する安全策を恒久的に入れる。
+// 【Service Worker キルスイッチ】このアプリはService Workerによるキャッシュ機能を
+// 意図的に使わない方針のため、通常のregister()は行わない(そのロジックは
+// unregister()を強制実行するロジックへ書き換え済み。以前ここにあった
+// register('sw.js')の呼び出し(コメントアウト状態で放置されていた死んだコード)は
+// 削除した)。
+//
+// 【なぜunregister()だけでなくsw.js自体もキルスイッチ版として復活させたか】
+// 以前このオリジンへアクセス済みのブラウザには、過去のService Worker登録が
+// 残ったままになっている場合がある(register()を呼ばなくなっただけでは既存の
+// 登録は自動解除されない)。古いSWがfetchをインターセプトし続け、バックエンド
+// 修正後も「現在オフラインです」等の古いキャッシュ画面から抜け出せない実害が
+// 確認された(ユーザーからの報告)。そこで二重の安全策にしている:
+//   1) このページを開いた時点で残存登録があれば、以下のコードが即座にunregister()する。
+//   2) 万一(1)より前にブラウザの裏側でSWの定期更新チェックが走った場合でも、
+//      apps/evaluator/frontend/public/sw.js は「インストールされたら即座に全
+//      Cache Storageを削除して自己解除するキルスイッチ」に書き換え済みのため、
+//      古いSWが生きていたブラウザ側でも最終的に自壊する(sw.js側のコメント参照)。
 // 登録が無ければ何もしない(no-op)ため、通常時のコストは無視できる。
 if ('serviceWorker' in navigator) {
     navigator.serviceWorker.getRegistrations().then(regs => {

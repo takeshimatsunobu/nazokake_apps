@@ -278,86 +278,153 @@
                         
                         <div class="bg-red-50 text-[#902A19] text-xs p-3 rounded-lg border border-red-200 mb-6 font-bold text-center shadow-inner relative z-10">※当サイトは「ねづっち」氏および所属事務所とは一切関係のない、非公認の学術的AIプロジェクトです。</div>
                         
-                        <div class="space-y-4 text-sm text-gray-800 relative z-10">
-                            <!-- 序の巻 -->
-                            <div class="bg-gradient-to-br from-[#FAF8F5] to-white p-5 rounded-xl border border-[#C5B358]/50 shadow-sm hover:shadow-md transition-all duration-300 transform hover:-translate-y-0.5">
-                                <h3 class="font-bold text-[#902A19] mb-3 flex items-center gap-2 text-base">
-                                    <span class="text-2xl drop-shadow-sm">🔰</span>
-                                    序の巻：基本の遊び方
-                                </h3>
-                                <p class="mb-2 leading-relaxed text-gray-700">まずは「<span class="font-bold text-[#C5B358]">⚙️ からくり生成</span>」タブで、好きなお題を入力してみてください。最新のAIが瞬時になぞかけを作ります。</p>
-                                <p class="leading-relaxed text-gray-700">また、「<span class="font-bold text-[#5B8124]">🖌️ 自作鑑定</span>」タブでは、あなたが考えたなぞかけをAI分析官が容赦なく本格採点します！</p>
-                            </div>
+                        <div class="space-y-3 mt-6 relative z-10">
+  <!-- ① 課題認識 -->
+  <details class="group bg-gray-50 rounded-md border border-gray-200 overflow-hidden">
+    <summary class="p-3 font-semibold cursor-pointer hover:bg-gray-100 transition-colors text-gray-800">
+      ① 課題認識（なぜこのアプリを作るのか？）
+    </summary>
+    <div class="p-4 bg-white border-t border-gray-200 text-sm text-gray-700 space-y-4">
+      <p>現代の社会とテクノロジーには、大きく2つの「言葉の課題」があります。</p>
+      <div>
+        <strong class="block text-gray-900 mb-1">ギスギスしたSNSと、不毛な対立</strong>
+        <p>SNSを開けば、毎日のように誰かが誰かを攻撃し、言い争いが起きています。言葉が「相手を論破して傷つけるためのナイフ」として使われ、誰もが日々のタイムラインに少し疲れています。</p>
+      </div>
+      <div>
+        <strong class="block text-gray-900 mb-1">AIの進化による「言葉の無菌化（つまらなさ）」</strong>
+        <p>ChatGPTやGeminiのような優秀な「生成AI（※1）」が登場し、誰もが正しい文章を簡単に書けるようになりました。しかし、AIは基本的に「安全で、予測可能で、誰も傷つけない言葉」を選びます。これが行き過ぎると、日本語が古くから持っていた「ひとつの言葉に複数の意味を持たせる（ダブルミーニング）」や「上手い皮肉」といった、人間特有の「言葉のゆらぎ（遊び心）」がAIによって排除され、言葉がどんどん無菌室のように綺麗でつまらないものになってしまうという強烈な危機感があります。</p>
+      </div>
+    </div>
+  </details>
 
-                            <!-- 破の巻 -->
-                            <details class="group bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300">
-                                <summary class="font-bold text-[#5B8124] flex justify-between items-center cursor-pointer list-none outline-none text-base">
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-2xl drop-shadow-sm">⚔️</span>
-                                        破の巻：デュアルAIの仕組み
-                                    </div>
-                                    <span class="transition-transform duration-300 group-open:rotate-180 text-[#5B8124] font-black">▼</span>
-                                </summary>
-                                <div class="mt-4 pt-4 border-t border-gray-100 text-gray-600 leading-relaxed text-sm">
-                                    <p class="mb-3">当システムは、なぞかけを考案する<span class="font-bold text-[#902A19]">「生成AI（ボケ役）」</span>と、それを11の評価軸で厳しく採点する<span class="font-bold text-[#5B8124]">「評価AI（審査員役）」</span>の、2つの頭脳（デュアルAI）が連携しています。</p>
-                                    <div class="bg-gray-50 p-3 rounded-lg border border-gray-200 mb-3 text-xs shadow-inner">
-                                        <p class="mb-2">💡 <span class="font-bold">しかし、AIにも弱点があります。</span><br>論理的な計算は得意でも、人間特有の「笑いのツボ」や「言葉の絶妙なニュアンス」はまだ完璧には理解できていません。</p>
-                                        <p>そこで、「📜 道場破り」タブの出番です。あなたがAIの作品に「星評価」を下し、しっくりこない部分を「赤ペン先生」として添削すると、それが<span class="font-bold text-[#C5B358]">『人間が本当に面白いと感じる模範解答』</span>として蓄積されます。</p>
-                                    </div>
-                                    <p class="text-xs">皆様からのフィードバックを「新しい教科書」として再学習させ、AIを真の天才なぞかけ芸人へと進化させる学術的プロジェクトです。</p>
-                                </div>
-                            </details>
+  <!-- ② 課題解決 of 方向性 -->
+  <details class="group bg-gray-50 rounded-md border border-gray-200 overflow-hidden">
+    <summary class="p-3 font-semibold cursor-pointer hover:bg-gray-100 transition-colors text-gray-800">
+      ② 課題解決の方向性（どうやって解決するのか？）
+    </summary>
+    <div class="p-4 bg-white border-t border-gray-200 text-sm text-gray-700 space-y-4">
+      <p>この息苦しい世界と、AIの「正しすぎる言葉」に立ち向かう武器として私たちが選んだのが、日本の伝統的な言葉遊びである「なぞかけ」です。</p>
+      <blockquote class="border-l-4 border-indigo-500 pl-3 py-1 bg-indigo-50 text-indigo-900 font-medium">
+        「Aとかけて、Bと解く。その心はC」
+      </blockquote>
+      <p>一見まったく関係のないAとBを、Cという「同じ音だけど違う意味の言葉（同音異義語）」で強引に結びつける。このお笑いのテクニックは、超優秀なAIから見れば「文脈に合わない間違った言葉の使い方」であり、日本のトップクラスのAI研究機関でも生成ロジックを作るのに苦戦した「超・難問」です。</p>
+      <p>私たちは、「あえて最新のAI技術を全力で無駄遣いして、このバカバカしくて高度な言葉遊びをAIに徹底的に教え込む」という壮大な実験に挑みます。 日常のイライラや社会のギスギスを直接ぶつけ合うのではなく、なぞかけというフィルターを通してクスッと笑えるユーモアに変換します（これを心理学の言葉で昇華※2と呼びます）。一発のギャグで終わるのではなく、人々に「ほんわかした癒やし」を届ける道具として長く愛されるアプリを目指します。</p>
+    </div>
+  </details>
 
-                            <!-- 急の巻 -->
-                            <details class="group bg-white p-5 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-all duration-300" open>
-                                <summary class="font-bold text-[#C5B358] flex justify-between items-center cursor-pointer list-none outline-none text-base">
-                                    <div class="flex items-center gap-2">
-                                        <span class="text-2xl drop-shadow-sm">🕸️</span>
-                                        急の巻：11の評価軸（学術的探求）
-                                    </div>
-                                    <span class="transition-transform duration-300 group-open:rotate-180 text-[#C5B358] font-black">▼</span>
-                                </summary>
-                                <div class="mt-4 pt-4 border-t border-gray-100 text-gray-600 leading-relaxed">
-                                    <p class="mb-4 text-sm font-bold text-gray-700">当システムの分析官AIは、単なる言葉遊びの枠を超え、認知科学や言語学などの学術的背景に基づいた「11の評価軸」で作品を本格採点しています。</p>
-                                    
-                                    <div class="space-y-3 mb-5">
-                                        <div class="bg-gray-50 p-3 rounded-lg border-l-4 border-[#5B8124] shadow-sm hover:shadow-md transition-shadow">
-                                            <h4 class="font-bold text-[#5B8124] mb-1 flex justify-between items-end">
-                                                <span>【第1の柱：言語と技巧】</span>
-                                                <span class="font-normal text-[10px] text-gray-500">職人としての基礎</span>
-                                            </h4>
-                                            <p class="text-xs text-gray-600">自然さ / 技巧性 / リズム / 韻律</p>
-                                        </div>
-                                        <div class="bg-gray-50 p-3 rounded-lg border-l-4 border-[#902A19] shadow-sm hover:shadow-md transition-shadow">
-                                            <h4 class="font-bold text-[#902A19] mb-1 flex justify-between items-end">
-                                                <span>【第2の柱：論理と共感】</span>
-                                                <span class="font-normal text-[10px] text-gray-500">笑いと感情のコア</span>
-                                            </h4>
-                                            <p class="text-xs text-gray-600">意外性 / 論理・納得感 / 文化的背景</p>
-                                        </div>
-                                        <div class="bg-gray-50 p-3 rounded-lg border-l-4 border-[#C5B358] shadow-sm hover:shadow-md transition-shadow">
-                                            <h4 class="font-bold text-[#C5B358] mb-1 flex justify-between items-end">
-                                                <span>【第3の柱：芸術性と深み】</span>
-                                                <span class="font-normal text-[10px] text-gray-500">芸術的評価の真骨頂</span>
-                                            </h4>
-                                            <p class="text-xs text-gray-600">視覚的喚起力 / 感覚的表現 / クロスモーダル / <span class="font-bold text-[#902A19]">存在論的深み</span></p>
-                                        </div>
-                                    </div>
+  <!-- ③ コアバリュー -->
+  <details class="group bg-gray-50 rounded-md border border-gray-200 overflow-hidden">
+    <summary class="p-3 font-semibold cursor-pointer hover:bg-gray-100 transition-colors text-gray-800">
+      ③ コアバリュー（このなぞかけアプリ独自の価値）
+    </summary>
+    <div class="p-4 bg-white border-t border-gray-200 text-sm text-gray-700 space-y-4">
+      <p>世の中にある多くのAIアプリは、「便利な答えを自動で出してくれる自販機」です。しかし、このアプリでは、人間の面白いと感じる心を理解できないAIに、あなたが『先生（プロデューサー）』になって、言葉を育ててください。</p>
+      <p>アプリの裏側には、2つのAIがいます。</p>
+      <ul class="list-disc pl-5 space-y-2">
+        <li><strong>優等生の「Gemini（ジェミニ）」：</strong> 最新技術の塊。人間が驚くほど完璧ななぞかけを瞬時に作ってくれます（お手本役）。</li>
+        <li><strong>生徒役の「ELYZA（イライザ）」：</strong> 日本生まれのローカルAI。頑張ってなぞかけを作りますが、たまに論理が飛躍したり、変なボケ方をしたりするポンコツな一面があります（育成対象）。</li>
+      </ul>
+      <p>人間は、最初から完璧なものを与えられるより、自分が少し手間をかけて育てたものに強い愛情を感じます（これをIKEA効果※3と呼びます）。 「ELYZA、その解き方は惜しい！ ここをこう直せば完璧ななぞかけになるぞ！」と、ユーザー自身が赤ペン先生になってAIの回答を添削（修正）する。ただAIを使う「お客さん」ではなく、「自分がAIの先生になる」という知的な育成ゲーム体験こそが、他のどんなAIアプリにも真似できない独自の価値です。</p>
+    </div>
+  </details>
 
-                                    <div class="bg-gradient-to-br from-[#FAF8F5] to-white p-6 rounded-2xl border-2 border-[#C5B358]/40 text-center shadow-lg relative overflow-hidden group/link mt-2">
-                                        <div class="absolute inset-0 bg-[#C5B358] opacity-0 group-hover/link:opacity-5 transition-opacity duration-500"></div>
-                                        <div class="absolute -right-4 -top-4 text-7xl opacity-10 group-hover/link:scale-110 transition-transform duration-500">⚗️</div>
-                                        <p class="text-sm md:text-base text-[#902A19] mb-4 font-bold relative z-10">🎓 「なぞかけのメカニズム」を深く知りたい方へ</p>
-                                        <a href="research.html" class="relative z-10 inline-flex items-center justify-center gap-3 bg-[#2C3539] text-[#C5B358] hover:bg-gray-800 font-bold py-3.5 px-8 rounded-full text-sm md:text-base transition-all duration-300 shadow-[0_4px_15px_rgba(197,179,88,0.3)] hover:shadow-[0_6px_20px_rgba(197,179,88,0.5)] hover:-translate-y-1 w-full sm:w-auto">
-                                            <span class="text-xl group-hover/link:animate-bounce">⚗️</span>
-                                            なぞかけ研究所へ向かう
-                                        </a>
-                                    </div>
+  <!-- ④ UXデザインのコンセプト -->
+  <details class="group bg-gray-50 rounded-md border border-gray-200 overflow-hidden">
+    <summary class="p-3 font-semibold cursor-pointer hover:bg-gray-100 transition-colors text-gray-800">
+      ④ UXデザインのコンセプト（ユーザー体験の設計）
+    </summary>
+    <div class="p-4 bg-white border-t border-gray-200 text-sm text-gray-700 space-y-4">
+      <p>どれだけ立派な理念があっても、使うのが面倒くさいアプリは誰にも開いてもらえません。「癒やされたい」という気持ちと「頭を使って面白いお題を考える」という行動は矛盾しているからです。 そこで、ユーザーの「その日の疲れ具合」に合わせて、3つの段階で遊べるように「段階的開示※4」という優しいデザインを採用しました。</p>
+      
+      <div class="space-y-3">
+        <div class="bg-blue-50 p-3 rounded">
+          <strong class="block text-blue-900 mb-1">Step 1：ただ眺めて笑う（認知負荷※5 ゼロ）</strong>
+          <p class="text-blue-800">アプリを開くと、最初にお題を考えさせるようなことはしません。画面には「タイムライン」があり、「ギャル」や「中2病男子」などのAIキャラクターたちが作ったなぞかけが、SNSのように次々と流れてきます。ユーザーは疲れた頭を空っぽにして、それをスクロールして読み、面白いと思ったら「座布団（いいね）」のボタンを押すだけ。究極の受動的な暇つぶしです。</p>
+        </div>
+        <div class="bg-green-50 p-3 rounded">
+          <strong class="block text-green-900 mb-1">Step 2：スキマを見つけてツッコミを入れる（認知負荷 中）</strong>
+          <p class="text-green-800">自分からAIに「お題」を出してなぞかけを作らせてみた時や、タイムラインのなぞかけを見ていて「なんだこのAI、変なこと言ってるぞ！」とツッコミを入れたくなった時は、気が向いた時だけ「赤ペン」のボタンを押して、言葉を美しく整えて（添削して）あげます。</p>
+        </div>
+        <div class="bg-purple-50 p-3 rounded">
+          <strong class="block text-purple-900 mb-1">Step 3：密かに名前を刻むハッカー体験（認知負荷 高）</strong>
+          <p class="text-purple-800">赤ペンを送信すると、子供っぽいアニメーションではなく「あなたの添削データが次期アップデート用データとして受理されました」という、カッコいいシステム画面（コミットログ）が表示されます。そこに「AIのチューナー（調整者）」として自分のペンネームを刻むことで、「自分の知性が最新のAIを進化させた」という最高の満足感と承認欲求を満たすことができます。</p>
+        </div>
+      </div>
+    </div>
+  </details>
 
-                                    <p class="mt-5 p-3 bg-red-50 text-[#902A19] rounded-lg border border-red-100 text-xs font-bold text-center">※分析官の講評は学問的基準に照らし合わせるため時に厳しくなりますが、どうか気に病まず、笑い飛ばしてください！</p>
-                                </div>
-                            </details>
-                        </div>
+  <!-- ⑤ それらを支える技術的要素 -->
+  <details class="group bg-gray-50 rounded-md border border-gray-200 overflow-hidden">
+    <summary class="p-3 font-semibold cursor-pointer hover:bg-gray-100 transition-colors text-gray-800">
+      ⑤ それらを支える技術的要素（裏側で動くスゴい仕組み）
+    </summary>
+    <div class="p-4 bg-white border-t border-gray-200 text-sm text-gray-700 space-y-4">
+      <p>この「ほんわかした言葉遊び」の裏側では、最新のAI技術が無駄遣いと言えるほど贅沢に動いています。</p>
+      <ul class="space-y-3">
+        <li>
+          <strong class="block text-gray-900">10人の狂気的な「語り手ペルソナ（キャラクター）」</strong>
+          「すべてを物理法則で解決しようとする中2男子」「絶望的な状況も愛で全肯定する超ポジティブなギャル」「日常の愚痴をビジネス用語で語る起業家」など、10人の極端なAIキャラが設定されています。どんな悩み（お題）が来ても、彼らは自分のキャラ設定を100%守って、予想外の角度からなぞかけを返してきます。ユーザーはスライダーを使って、AIの「狂気度（暴走具合）」を自由に調整して遊ぶこともできます。
+        </li>
+        <li>
+          <strong class="block text-gray-900">一瞬で空気を読む「ペルソナ推定サブシステム」</strong>
+          ユーザーがお題（単語や短い文章）を入力した瞬間、別の超高速AIがたった0.3秒で「これは学校の話題だな」「少し難しい言葉だな」と分析し、JSON（ジェイソン※6）というデータに変換して次へパスを出します。これにより、相手の空気に合わせたベストな返し方を自動で判断します。
+        </li>
+        <li>
+          <strong class="block text-gray-900">キャラ崩壊を防ぐルーティングと、異常入力へのエンタメ対応</strong>
+          もしユーザーが「ああああ」のような意味不明な言葉をお題に入力しても、システムは「エラーです」と止まりません。「なんだその言葉は！」とAIがキャラクターのままツッコミを入れてきたり、音の響きだけで強引になぞかけを作ったりする「裏ルート」が用意されており、絶対にエンターテインメントを止めません。
+        </li>
+        <li>
+          <strong class="block text-gray-900">「データ・フライホイール※7」と「毒入れ防止※8」</strong>
+          ユーザーがタイムラインで「座布団」を押したり、赤ペンで「添削」したデータは、AI（ELYZA）が人間のユーモアを学ぶための最高級の教科書データとして裏側で蓄積され、AIがどんどん賢くなっていきます。 ただし、「ああああ」などの意味不明な言葉で作ったボケ回答が混ざるとAIがおかしな学習をしてしまうため、システムが自動で悪いデータを弾き出す「強力な安全装置（フィルター）」も完璧に備わっています。
+        </li>
+      </ul>
+    </div>
+  </details>
+
+  <!-- ⑥ 目指す方向性 -->
+  <details class="group bg-gray-50 rounded-md border border-gray-200 overflow-hidden">
+    <summary class="p-3 font-semibold cursor-pointer hover:bg-gray-100 transition-colors text-gray-800">
+      ⑥ 目指す方向性（この実験がたどり着く、優しくてタフな未来）
+    </summary>
+    <div class="p-4 bg-white border-t border-gray-200 text-sm text-gray-700 space-y-4">
+      <p>私たちがこのアプリの最終目的地として掲げるのは、決して「他人を論破して考えを変えさせる」ことではありません。どれほど正しい言葉を使っても、他人の心を直接ねじ曲げることは誰にもできないからです。</p>
+      <p>私たちが目指すのは、世の中のバチバチとした対立構造に対して、白黒つけるのではなく「別の角度から見たらクスッとくるね」と、「対立構造を笑いに変換する視点」を持つことです。 一見まったく関係のない「A」と「B」から、共通のオチ「C」を見つけ出して結びつける。このなぞかけの思考プロセスは、実は物事を多角的に捉え、感情的な衝突から一歩引くための非常に高度な頭の体操です。</p>
+      <p>ユーザーはAIの「先生」として、ポンコツな回答に赤ペンを入れていきます。それは決して毎日歯を食いしばってこなすノルマではなく、「今日はどんな面白いオチを見つけてやろうか」という、知的な遊びであり「楽しい修行」です。 この修行を面白がって続けるうちに、現実の理不尽やギスギスした空気に直面しても、真正面からぶつからずにユーモアでフワッと受け流す「しなやかな強さ」が、自然と身についていきます。</p>
+      <p>これからの正解のない時代をサバイブしていくすべての人にとって、この「対立を笑いに変換し、自分の心と場の空気を守る」という姿勢は、最強の「生き抜くためのOS（※9）」になります。</p>
+      <p>このアプリは、私たち開発者だけで完成させるものではありません。少し不器用なAIと、それを「しょうがないな」と面白がって育ててくれるユーザーの皆様、そして私たち。みんなで一緒に言葉の遊び心を育て、昨日よりも少しだけ優しくてタフな、笑える未来を作っていきませんか。</p>
+    </div>
+  </details>
+
+  <!-- 💡 専門用語のツッコミ解説 -->
+  <details class="group bg-gray-50 rounded-md border border-gray-200 overflow-hidden">
+    <summary class="p-3 font-semibold cursor-pointer hover:bg-gray-100 transition-colors text-gray-800">
+      💡 専門用語のツッコミ解説（注釈）
+    </summary>
+    <div class="p-4 bg-white border-t border-gray-200 text-sm text-gray-600">
+      <ul class="space-y-2">
+        <li><strong>(※1) 生成AI：</strong> 人間の言葉を理解し、文章や画像を自動で作ってくれる人工知能（GeminiやChatGPTなど）のこと。</li>
+        <li><strong>(※2) 昇華（しょうか）：</strong> 心の中のモヤモヤや攻撃的な感情を、そのまま外に出すのではなく、笑いや芸術などのポジティブで価値のある形に変換すること（心理学の用語）。</li>
+        <li><strong>(※3) IKEA（イケア）効果：</strong> 最初から完成している高級な家具よりも、自分で少し苦労して組み立てた家具（IKEAの家具など）の方に、人は強い愛着や価値を感じるという心理学の法則。</li>
+        <li><strong>(※4) 段階的開示：</strong> 最初はシンプルで簡単なものだけを見せ、ユーザーが慣れてきたり興味を持ったりしたタイミングで、少しずつ複雑な機能を見せていくアプリの設計テクニック。</li>
+        <li><strong>(※5) 認知負荷（にんちふか）：</strong> 脳にかかるストレスや情報処理の重さのこと。「真っ白な画面に、何か面白いお題を入力してください」と言われると、人はどうしていいか分からず「認知負荷が高い（疲れる）」と感じる。</li>
+        <li><strong>(※6) JSON（ジェイソン）：</strong> コンピュータのプログラム同士が、「これはこういうデータだよ」と情報をやり取りするために使う、世界共通 of データ形式のこと。</li>
+        <li><strong>(※7) データ・フライホイール：</strong> ユーザーがアプリを使えば使うほどデータが貯まり、そのデータでAIが賢くなり、もっとアプリが面白くなってまたユーザーが増える…という「止められない成長のループ」のこと。</li>
+        <li><strong>(※8) データ・ポイズニング（毒入れ）：</strong> AIを育てるためのデータベースに、わざとデタラメな情報や悪い情報を混ぜて、AIをポンコツにしたり悪い言葉を吐くようにしてしまうサイバー攻撃や現象のこと。</li>
+        <li><strong>(※9) OS（オーエス）：</strong> パソコンやスマホを動かすための「一番の土台となるシステム」のこと。ここでは「厳しい社会を生き抜くための、根本的な考え方や姿勢」という意味。</li>
+      </ul>
+    </div>
+  </details>
+
+  <!-- 【総括】 -->
+  <details class="group bg-indigo-50 rounded-md border border-indigo-200 overflow-hidden">
+    <summary class="p-3 font-bold cursor-pointer hover:bg-indigo-100 transition-colors text-indigo-900">
+      【総括】
+    </summary>
+    <div class="p-4 bg-white border-t border-indigo-200 text-sm text-indigo-900 font-medium">
+      このアプリの表の顔は、「少し不器用なAIを育てて遊ぶ、ほんわかした暇つぶしアプリ」です。 しかしその裏側には、「最新テクノロジーを全力で無駄遣いして、AIの『正しさ』に抗（あらが）い、日本語の豊かな遊び心を未来へ残す」という、極めて壮大でハッカー的なロマンが隠されています。
+    </div>
+  </details>
+</div>
                     </div>
                 </section>
                 <section id="view-feedback" class="view-section">

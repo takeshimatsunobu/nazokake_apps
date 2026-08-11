@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+
+# --- シークレット漏洩の再発防止(instructions/184と同じ方針) ---
+.env
+.env.*
+*.key
+*.pem
+serviceAccountKey.json

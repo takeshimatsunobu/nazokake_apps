@@ -151,7 +151,7 @@ async def sync_once(batch_size: int = 20) -> dict[str, int]:
     collection = _resolve_collection()
 
     rows = await get_pending_sync_batch(limit=batch_size)
-    stats = {"pushed": 0, "skipped_stale": 0, "failed": 0, "total": len(rows)}
+    stats = {"pushed": 0, "skipped_stale": 0, "failed": 0, "fatal": 0, "total": len(rows)}
 
     for row in rows:
         doc_id = row["doc_id"]
@@ -163,8 +163,13 @@ async def sync_once(batch_size: int = 20) -> dict[str, int]:
             sys.stderr.write(
                 f"[firestore_sync][DEAD-LETTER] doc_id={doc_id} の同期に失敗しました: {e}\n"
             )
-            await mark_sync_failed(doc_id, str(e))
+            # "failed" は今回の試行が失敗した件数(次回リトライされ得る"error"含む)、
+            # "fatal" はそのうちMAX_SYNC_RETRIES到達でポイズンピル隔離("fatal"、
+            # 二度とリトライ対象にならない)された件数のみを数える内数。
+            became_fatal = await mark_sync_failed(doc_id, str(e))
             stats["failed"] += 1
+            if became_fatal:
+                stats["fatal"] += 1
 
     return stats
 

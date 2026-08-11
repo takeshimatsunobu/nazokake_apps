@@ -4,7 +4,12 @@
 // onAuthStateChanged監視を自己実行する)をimportし、クリックイベントの委譲ディスパッチを
 // 一元的に設定する。
 
-import { logout, deployToProduction, modelAction, retryDlqItem, discardDlqItem } from "admin";
+import {
+    logout, deployToProduction, modelAction, retryDlqItem, discardDlqItem,
+    submitInvite, approveAdminUser, handleUnlockAction, toggleFewshotSelection,
+    openPersonaEditModal, savePersonaConfig, clearPersonaConfig,
+} from "admin";
+import { uiSwitchTab } from "ui/tabs";
 
 // data-actionだけでなく、要素自身のdata-*属性(data-doc-id/data-model/
 // data-model-action等)も渡す必要があるハンドラ(modelAction/retryDlqItem/
@@ -16,6 +21,18 @@ const CLICK_ACTIONS = {
     modelAction: (el) => modelAction(el.dataset.docId, el.dataset.model, el.dataset.modelAction),
     retryDlqItem: (el) => retryDlqItem(el.dataset.docId),
     discardDlqItem: (el) => discardDlqItem(el.dataset.docId),
+    // 【Phase 0新設】5ペインのタブ切り替え(index.htmlのswitchTabと同じ規約、
+    // ui/tabs.js::uiSwitchTab()をそのまま流用する)。
+    switchTab: (el) => uiSwitchTab(el.dataset.arg),
+    submitInvite: () => submitInvite(),
+    approveAdminUser: (el) => approveAdminUser(el.dataset.uid),
+    // 【Phase2新設】直談判レビュー(赦す/リセット/却下)とFew-shot採用。
+    handleUnlockAction: (el) => handleUnlockAction(el.dataset.requestId, el.dataset.unlockAction),
+    toggleFewshotSelection: (el) => toggleFewshotSelection(el.dataset.docId),
+    // 【Phase4新設】ペルソナ管理(登録/上書き/クリア)。
+    openPersonaEditModal: (el) => openPersonaEditModal(el.dataset.personaId),
+    savePersonaConfig: () => savePersonaConfig(),
+    clearPersonaConfig: (el) => clearPersonaConfig(el.dataset.personaId),
 };
 
 document.addEventListener('click', (e) => {
