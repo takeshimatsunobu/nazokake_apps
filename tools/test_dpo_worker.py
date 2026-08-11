@@ -1,6 +1,10 @@
 # -*- coding: utf-8 -*-
+# 【爆速化(1発入魂アルゴリズム)対応】best-of-N(N=3並行生成→最高得点選抜)+
+# DPO選好ログの書き出しはworkers/ondemand_elyza_worker.py::_process_job()から
+# 撤去された(1回の生成のみを試みる設計へ変更、比較対象となる複数候補が存在しなく
+# なったため)。本スクリプトもそれに合わせて更新した(_mark_failure→
+# _mark_immediate_failureへのリネームも反映)。
 import asyncio
-import json
 import sys
 from pathlib import Path
 from unittest.mock import patch, AsyncMock
@@ -9,7 +13,7 @@ sys.path.insert(0, str(Path.cwd()))
 from workers.ondemand_elyza_worker import _process_job
 
 async def test_worker_dpo():
-    print("🚀 Best-of-N Worker E2E Mock Test Started...")
+    print("🚀 1発入魂 Worker E2E Mock Test Started...")
 
     dummy_job = {
         'doc_id': 'e2e_test_doc_999',
@@ -18,8 +22,6 @@ async def test_worker_dpo():
         'dpo_pair_id': 'dpo_test_pair_001'
     }
 
-    score_counter = 0
-
     async def mock_generate(*args, **kwargs):
         return {
             "toku": "常に監視を怠らないこと",
@@ -27,42 +29,26 @@ async def test_worker_dpo():
         }
 
     async def mock_evaluate(odai, text):
-        nonlocal score_counter
-        score_counter += 10
         return {
-            'scores': {'coherence': score_counter},
-            's_total': score_counter,
+            'scores': {'coherence': 10},
+            's_total': 10,
             'overall': '良い',
             'axis_comments': {'coherence': 'ロジックのコメント'}
         }
 
     print("Mocking Firestore and LLM interfaces...")
-    
+
     with patch('workers.ondemand_elyza_worker.generate_via_llmjp', new=AsyncMock(side_effect=mock_generate)), \
          patch('workers.ondemand_elyza_worker.run_evaluation', new=AsyncMock(side_effect=mock_evaluate)), \
          patch('workers.ondemand_elyza_worker._mark_job_outcome', new=AsyncMock()) as mock_mark_success, \
-         patch('workers.ondemand_elyza_worker._mark_failure', new=AsyncMock()) as mock_mark_fail:
+         patch('workers.ondemand_elyza_worker._mark_immediate_failure', new=AsyncMock()) as mock_mark_fail:
 
         await _process_job("DUMMY_DB", "DUMMY_COLLECTION", dummy_job)
 
         if mock_mark_success.called:
             print("✅ _mark_job_outcome was called safely (Firestore bypassed).")
         elif mock_mark_fail.called:
-            print("❌ _mark_failure was called.")
-
-    log_file = Path('run/audit_reports/dpo_preference_log.jsonl')
-    if log_file.exists():
-        print(f"\n📂 DPO Log found at: {log_file}")
-        lines = log_file.read_text(encoding='utf-8').strip().split('\n')
-        recent_logs = [line for line in lines if line.strip()][-3:]
-        
-        print("\n--- Latest Data Flywheel (DPO) Logs ---")
-        for line in recent_logs:
-            data = json.loads(line)
-            is_chosen = "⭐ CHOSEN" if data.get('is_chosen') else "❌ REJECTED"
-            print(f"[{data.get('doc_id')}] Score: {data.get('s_total')} | {is_chosen}")
-    else:
-        print("❌ DPO Log file not found!")
+            print("❌ _mark_immediate_failure was called.")
 
 if __name__ == '__main__':
     asyncio.run(test_worker_dpo())

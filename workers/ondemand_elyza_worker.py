@@ -73,18 +73,16 @@ from personas import PERSONAS  # noqa: E402
 from services.evaluation import run_evaluation  # noqa: E402
 from services.generation import generate_via_llmjp  # noqa: E402
 
-# 【実機計測に基づく調整】本番はCloud Run→Firestoreジョブ作成→本ワーカーの
-# ポーリング検知→生成→Firestore書き戻し→Cloud Runの再ポーリングという往復になり、
-# 直結経路(ローカル開発)だけでもELYZA側の完走に42秒程度かかることを実測済み。
-# 旧来の20秒間隔だと「ジョブに気付くまでの最大待ち時間」だけで20秒を追加消費し、
-# フロントエンドの60秒タイムアウト(app.js)を圧迫していた。Firestoreの読み取り
-# クォータを圧迫しない範囲で間隔を縮め、往復時間の余裕を確保する。
-DEFAULT_POLL_INTERVAL_SEC = 8.0
+# 【爆速化(1発入魂アルゴリズム)】本番はCloud Run→Firestoreジョブ作成→本ワーカーの
+# ポーリング検知→生成→Firestore書き戻し→Cloud Runの再ポーリングという往復になる。
+# クラウド側のタイムアウト(api/routers/generate.py::_ELYZA_WAIT_TIMEOUT_SEC)を
+# 30〜35秒程度まで短縮したことに合わせ、「ジョブに気付くまでの最大待ち時間」を
+# 極力削るためポーリング間隔も2秒まで縮めた。Firestoreの読み取りコストは増えるが、
+# オンデマンドジョブの頻度自体が低いため許容する。
+DEFAULT_POLL_INTERVAL_SEC = 2.0
 CLAIM_BATCH_SIZE = 5
 # ワーカークラッシュ等で"processing"のまま停止した場合のゾンビ回収閾値。
 STALE_PROCESSING_TIMEOUT_SEC = 900  # 15分
-# mark_sync_failed()のポイズンピル判定(MAX_SYNC_RETRIES)と同じ考え方。
-MAX_JOB_RETRIES = 3
 
 _ELYZA_JOB_SCOPED_FIELDS = frozenset(
     {
@@ -260,15 +258,11 @@ async def _mark_job_outcome(
         _write_scoped_fields_sync, db, collection, doc_id, scoped_fields
     )
 async def _process_job(db, collection: str, job: dict[str, Any]) -> None:
-    import asyncio
-    import json
     import sys
     import traceback
-    from pathlib import Path
 
     doc_id = job['doc_id']
     odai = job['odai']
-    retry_count = job['retry_count']
     dpo_pair_id = job.get('dpo_pair_id')
     # ユーザーが選択したペルソナ/Temperatureをジョブから受け取る(存在しない/不正な
     # IDはpersonas.PERSONAS.getのデフォルト(1)にフォールバックする)。
@@ -276,53 +270,25 @@ async def _process_job(db, collection: str, job: dict[str, Any]) -> None:
     temperature = job.get('temperature')
 
     if not odai:
-        _log(f'⚠️ [{doc_id}] odaiが空のため生成をスキップし、失敗として扱います。')
-        await _mark_failure(db, collection, doc_id, odai, dpo_pair_id, retry_count, 'odai is empty')
+        _log(f'⚠️ [{doc_id}] odaiが空のため生成をスキップし、即時失敗として扱います。')
+        await _mark_immediate_failure(db, collection, doc_id, odai, dpo_pair_id, 'odai is empty')
         return
 
-    N = 3
-    sem = asyncio.Semaphore(3)
-
-    async def _bounded_gen_and_eval(idx):
-        async with sem:
-            raw_result = await generate_via_llmjp(odai, persona_prompt, temperature)
-            text = _compose_text(odai, raw_result)
-            evaluation = await run_evaluation(odai, text)
-            return {
-                'idx': idx,
-                'raw_result': raw_result,
-                'text': text,
-                'evaluation': evaluation,
-                's_total': evaluation.get('s_total', 0)
-            }
-
+    # 【1発入魂アルゴリズム(爆速化)】best-of-3(N=3並行生成→最高得点選抜)を廃止し、
+    # 1回の生成のみを試みる。出力スキーマ不正時のリトライはgenerate_via_llmjp内部
+    # (_MAX_OUTPUT_RETRIES、最大3回)が担う。ここでの失敗は「1発入魂+内部リトライを
+    # 尽くしてもダメだった」ことを意味するため、次のポーリング周期への再キュー
+    # (pending化)は行わず、即座にterminal failedとして書き戻す。これにより
+    # クラウド側(process_elyza_pinch_hitter)の代打判断を速やかに発火させられる。
     try:
-        evaluated_candidates = await asyncio.gather(*[_bounded_gen_and_eval(i) for i in range(N)])
+        raw_result = await generate_via_llmjp(odai, persona_prompt, temperature)
+        text = _compose_text(odai, raw_result)
+        evaluation = await run_evaluation(odai, text)
     except Exception as e:
-        _log(f'⚠️ [{doc_id}] ELYZA生成/評価に失敗: {e}')
+        _log(f'⚠️ [{doc_id}] ELYZA生成に失敗したため、即時failedとして書き戻します: {e}')
         traceback.print_exc(file=sys.stderr)
-        await _mark_failure(db, collection, doc_id, odai, dpo_pair_id, retry_count, str(e))
+        await _mark_immediate_failure(db, collection, doc_id, odai, dpo_pair_id, str(e))
         return
-
-    best_candidate = max(evaluated_candidates, key=lambda x: x['s_total'])
-
-    try:
-        log_dir = Path('run/audit_reports')
-        log_dir.mkdir(parents=True, exist_ok=True)
-        log_file = log_dir / 'dpo_preference_log.jsonl'
-        with open(log_file, 'a', encoding='utf-8') as f:
-            for cand in evaluated_candidates:
-                cand_dict = cand.copy()
-                cand_dict['is_chosen'] = (cand['idx'] == best_candidate['idx'])
-                cand_dict['doc_id'] = doc_id
-                cand_dict['dpo_pair_id'] = dpo_pair_id
-                f.write(json.dumps(cand_dict, ensure_ascii=False) + chr(10))
-    except Exception as e:
-        _log(f'⚠️ [{doc_id}] DPOログ書き出しに失敗: {e}')
-
-    raw_result = best_candidate['raw_result']
-    text = best_candidate['text']
-    evaluation = best_candidate['evaluation']
 
     fields = {
         'result_llmjp': raw_result,
@@ -340,36 +306,31 @@ async def _process_job(db, collection: str, job: dict[str, Any]) -> None:
     _log(f'✅ [{doc_id}] ELYZA生成・評価・Firestore書き戻しが完了しました。')
 
 
-async def _mark_failure(
+async def _mark_immediate_failure(
     db,
     collection: str,
     doc_id: str,
     odai: str,
     dpo_pair_id: str | None,
-    prior_retry_count: int,
     error_message: str,
 ) -> None:
-    """指数バックオフ等の複雑な再試行は行わず、次のポーリング周期で"pending"扱いに
-    戻すだけの単純な再試行とする(instructions/250の対象は低頻度のオンデマンド
-    ジョブであり、mlops_trigger.pyのような高頻度パイプラインの再試行制御は過剰)。
-    MAX_JOB_RETRIES到達時のみ、mark_sync_failed()と同じ考え方でdead_letterへ
-    ポイズンピル隔離する(無限リトライループを防ぐ)。
-    """
-    next_retry_count = prior_retry_count + 1
-    terminal = next_retry_count >= MAX_JOB_RETRIES
-    next_status = "dead_letter" if terminal else "pending"
+    """【爆速化】1発入魂+内部リトライ(generate_via_llmjpの_MAX_OUTPUT_RETRIES)を
+    尽くしてもELYZA生成が成立しなかった場合、次のポーリング周期での"pending"再
+    キューを待たず、即座にterminal(dead_letter/failed)として書き戻す。
 
+    以前の_mark_failure()は指数バックオフ無しの単純な"pending"再キューを
+    MAX_JOB_RETRIES(3)回繰り返す設計だったが、これは「クラウド側の代打判断が
+    ワーカー側の再試行完了まで待たされる」という、今回の爆速化の目的(クラウド側
+    タイムアウトを30〜35秒へ短縮)と相反する遅延要因だった。ジョブレベルの
+    再キューを廃し、失敗はここで一度確定させる(それでもユーザー体験としては
+    クラウド側がGemini Flash Liteへ即座に代打させるため、失敗が露呈することはない)。
+    """
     fields: dict[str, Any] = {
-        "elyza_job_status": next_status,
+        "elyza_job_status": "dead_letter",
         "elyza_job_locked_at": None,
-        "elyza_job_retry_count": next_retry_count,
+        "llmjp_status": "failed",
     }
-    if terminal:
-        fields["llmjp_status"] = "failed"
-        _log(
-            f"📮 [{doc_id}] {MAX_JOB_RETRIES}回失敗したため dead_letter へ隔離しました: "
-            f"{error_message}"
-        )
+    _log(f"📮 [{doc_id}] ELYZA生成に失敗したため即時dead_letterとしました: {error_message}")
 
     await _mark_job_outcome(
         db,

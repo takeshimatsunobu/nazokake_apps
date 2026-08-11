@@ -400,13 +400,14 @@ async def _fetch_terminal_elyza_job(doc_id: str) -> dict | None:
         return None
 
 
-# 【真の代打ロジック】Cloud Run本番でオンデマンドELYZAワーカー(経路B)の完了を
-# 待つ最大秒数。フロントエンドのクライアント側デッドライン(app.js: 90秒)より
-# 確実に短くし、タイムアウト後のGemini Flash Lite代打呼び出し(数秒〜十数秒)の
-# 余地を残す。ポーリング間隔はFirestore読み取り回数を抑えつつ、ジョブが早期に
-# 終わった場合はすぐ検知できるバランス値として5秒とした。
-_ELYZA_WAIT_TIMEOUT_SEC = 65.0
-_ELYZA_WAIT_POLL_INTERVAL_SEC = 5.0
+# 【爆速化】Cloud Run本番でオンデマンドELYZAワーカー(経路B)の完了を待つ最大秒数。
+# workers/ondemand_elyza_worker.pyの1発入魂アルゴリズム化(best-of-1+内部リトライ)
+# とポーリング間隔短縮(2秒)により、ワーカー側の応答時間そのものが大幅に短縮された
+# ため、待機上限もそれに合わせて65秒から短縮した。フロントエンドのクライアント側
+# デッドライン(app.js: 90秒)より確実に短く、タイムアウト後のGemini Flash Lite
+# 代打呼び出し(数秒〜十数秒)の余地も残る。
+_ELYZA_WAIT_TIMEOUT_SEC = 32.0
+_ELYZA_WAIT_POLL_INTERVAL_SEC = 2.0
 
 
 async def _wait_for_elyza_worker_or_none(

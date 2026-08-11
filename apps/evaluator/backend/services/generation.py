@@ -598,36 +598,55 @@ async def generate_via_gemini(
     raise RuntimeError(f"Gemini生成に3回失敗しました: {last_err}")
 
 
+# 【1発入魂アルゴリズム(爆速化)】以前はbest-of-N(N=3、workers/ondemand_elyza_worker.py
+# 側で並行生成→最高得点選抜)だったが、直列化されたOllama呼び出し(_OLLAMA_SEMAPHORE)の
+# 制約下ではN=3ぶんの生成時間が単純に積み上がり、ワーカー全体の応答が遅くなる原因に
+# なっていた。1回の生成のみを試み(best-of-1)、出力スキーマ不正時のみここで
+# _MAX_OUTPUT_RETRIES回リトライする設計へ変更した。
+_MAX_OUTPUT_RETRIES = 3  # 初回1回 + 最大3回リトライ = 最大4回試行。
+# VRAM解放のためのクールダウン。以前は2.0秒固定だったが、実測では8Bモデル程度の
+# VRAM解放にそこまでの猶予は不要と判断し最小化した。
+_VRAM_COOLDOWN_SEC = 0.5
+
+
 async def generate_via_llmjp(
     odai: str,
     persona_prompt: str | None = None,
     temperature_override: float | None = None,
 ) -> dict:
-    """【遅延・おまけ】ローカル ELYZA(Ollama) で生成。VRAM 8GB防弾仕様。
+    """【1発入魂】ローカル ELYZA(Ollama) で生成。VRAM 8GB防弾仕様。
 
     接続先・モデルは env で設定: LLMJP_URL / LLMJP_MODEL。
     推論が遅いため read タイムアウトを長め(120s)に取る。
-    VRAM枯渇(OOM)を防ぐため、Semaphoreで同時実行数を1に制限し、実行前にクールダウンを挟む。
+    VRAM枯渇(OOM)を防ぐため、Semaphoreで同時実行数を1に制限し、実行前に
+    _VRAM_COOLDOWN_SEC秒のクールダウンを挟む。
 
     実行前にVRAMグローバルロック(プロセス間、tools/mlops_pipeline_*.pyと共有)の
-    非ブロッキング取得を試みる。MLOpsパイプラインが稼働中でロックを取得できない
-    場合は、ローカル推論を直ちに諦めクラウドAPI(Gemini)へシームレスにフォールバック
-    する(限られたVRAM 8GBをMLOpsの学習/評価と同時に食い合わないため)。
+    非ブロッキング取得を試みる。
+
+    【データ完全性のための変更】以前はVRAMロック取得不可時・出力スキーマ不正が
+    リトライを尽くしても解消しない時のいずれも、この関数の内部でGemini生成へ
+    黙って差し替えて返していた。これは「ELYZAの出力」として記録されるデータへ
+    実際にはGeminiが生成したものが、区別なく混入するデータ完全性の問題を
+    引き起こしていた(ELYZAタイムアウト時のGemini Flash Lite代打モード導入に伴い
+    是正)。現在はいずれの場合も例外を送出するのみとし、Gemini側への切替が必要な
+    場合は呼び出し元(api/routers/generate.py::process_elyza_pinch_hitter等)が
+    明示的に行い、llmjp_is_pinch_hitterフラグで正確に記録する設計へ統一した。
     """
     acquired = await asyncio.to_thread(_try_acquire_vram_lock)
     if not acquired:
-        print(
-            "⚠️ [VRAM排他制御] MLOpsパイプラインがVRAMロックを保持中のため、"
-            "ローカル推論(ELYZA)を諦めクラウドAPI(Gemini)へフォールバックします。"
+        raise RuntimeError(
+            "VRAMロックを取得できませんでした(他プロセスがVRAMを使用中のため、"
+            "ELYZA生成を諦めました)。"
         )
-        return await generate_via_gemini(odai, persona_prompt, temperature_override)
 
     try:
         async with _OLLAMA_SEMAPHORE:
             print(
-                "⏳ [VRAM保護] Ollamaの計算リソースをロックしました。VRAM解放のため2秒間クールダウンします..."
+                "⏳ [VRAM保護] Ollamaの計算リソースをロックしました。"
+                f"VRAM解放のため{_VRAM_COOLDOWN_SEC:.1f}秒間クールダウンします..."
             )
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(_VRAM_COOLDOWN_SEC)
 
             sys_prompt, user_prompt, dyn_temp = await _build_gen_prompts(
                 odai, persona_prompt, temperature_override
@@ -636,15 +655,12 @@ async def generate_via_llmjp(
                 "LLMJP_URL", "http://localhost:11434/v1/chat/completions"
             )
             model = os.environ.get("LLMJP_MODEL", "elyza:8b")
-            print(f"🏠 [おまけ] ローカル ELYZA で生成中... ({url}, model={model})")
+            print(f"🏠 [1発入魂] ローカル ELYZA で生成中... ({url}, model={model})")
 
             # 【出力ブレへの耐性】8Bクラスのローカルモデルは一定確率でJSONスキーマから
-            # 外れた出力(必須フィールド欠落)を返す。以前は単発の失敗でValueErrorが
-            # asyncio.gather()経由でジョブ全体(他のbest-of-N候補も道連れ)をクラッシュ
-            # させていた。同じロック保持区間内(再取得不要、安価)で少数回リトライし、
-            # それでもダメならVRAMロック取得不可時と同じフォールバック経路
-            # (generate_via_gemini)を再利用して、ジョブ全体を道連れにしない。
-            _MAX_OUTPUT_RETRIES = 2
+            # 外れた出力(必須フィールド欠落)を返す。同じロック保持区間内
+            # (再取得不要、安価)で_MAX_OUTPUT_RETRIES回リトライする。
+            last_err: Exception | None = None
             for attempt in range(_MAX_OUTPUT_RETRIES + 1):
                 start_time = asyncio.get_running_loop().time()
                 try:
@@ -669,20 +685,19 @@ async def generate_via_llmjp(
 
                 cand = _extract_json_dict(raw)
                 if _valid_nazokake(cand):
-                    print("✅ ELYZA（おまけ）生成に成功！VRAMロックを解除します。")
+                    print("✅ ELYZA生成に成功！VRAMロックを解除します。")
                     return _finalize(cand)
 
+                last_err = ValueError("ELYZA出力がスキーマ不正でした(必須フィールド欠落)")
                 remaining = _MAX_OUTPUT_RETRIES - attempt
                 print(
                     f"⚠️ [ELYZA出力不正] {attempt + 1}回目の出力がスキーマ不備(必須フィールド欠落)。"
                     + (f"あと{remaining}回リトライします..." if remaining > 0 else "リトライ上限に達しました。")
                 )
 
-            print(
-                "⚠️ [ELYZA出力不正] リトライしても改善しなかったため、"
-                "クラウドAPI(Gemini)へフォールバックします。"
+            raise RuntimeError(
+                f"ELYZA生成が{_MAX_OUTPUT_RETRIES + 1}回とも出力スキーマ不正でした: {last_err}"
             )
-            return await generate_via_gemini(odai, persona_prompt, temperature_override)
     finally:
         await asyncio.to_thread(_vram_lock.release)
 
