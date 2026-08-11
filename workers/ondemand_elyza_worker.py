@@ -39,6 +39,8 @@ from pathlib import Path
 from types import FrameType
 from typing import Any
 
+import filelock
+
 # Windowsの既定コンソールはcp932であり、print()で絵文字等を出力するとUnicodeEncodeError
 # (最悪クラッシュ)や文字化けを起こす。apps/evaluator/backend/services/generation.py
 # (このファイルが後段でimportする_load_fewshot_pool()が起動時に即printする)と同じ対策を、
@@ -83,6 +85,14 @@ DEFAULT_POLL_INTERVAL_SEC = 2.0
 CLAIM_BATCH_SIZE = 5
 # ワーカークラッシュ等で"processing"のまま停止した場合のゾンビ回収閾値。
 STALE_PROCESSING_TIMEOUT_SEC = 900  # 15分
+
+# 【二重起動防止(Plan B)】scripts/start_elyza_worker.ps1側のOSプロセス一覧スキャン
+# によるガードは、このラッパー経由での起動にしか効かず、直接実行や、ほぼ同時の
+# 二重起動(両方がチェック時点では「まだ誰もいない」と判定するレースコンディション)
+# を防げなかった(実機で複数の`ondemand_elyza_worker.py`プロセスが同じ.vram.lockを
+# 奪い合う障害を確認済み)。起動経路を問わず構造的に二重起動を防ぐため、
+# Pythonプロセス自身がfilelockでOSレベルの排他ロックを取得する。
+_SINGLE_INSTANCE_LOCK_PATH = BASE_DIR / ".elyza_worker.pid.lock"
 
 _ELYZA_JOB_SCOPED_FIELDS = frozenset(
     {
@@ -402,20 +412,35 @@ def main(argv: list[str] | None = None) -> int:
         _log(f"1周期完了({processed}件処理)。")
         return 0
 
-    signal.signal(signal.SIGTERM, _handle_shutdown_signal)
-    signal.signal(signal.SIGINT, _handle_shutdown_signal)
-    _log(f"デーモンとして起動しました(ポーリング間隔: {args.interval}秒)。")
-    while not _shutdown_requested:
-        try:
-            processed = asyncio.run(run_once())
-            if processed:
-                _log(f"{processed}件処理しました。")
-        except Exception:
-            # 1周期の失敗でデーモン自体を落とさない(tools/scheduler_daemon.pyと同じ規約)。
-            traceback.print_exc(file=sys.stderr)
-        _interruptible_sleep(args.interval)
-    _log("Graceful Shutdown完了。")
-    return 0
+    # 【二重起動防止(Plan B)】非ブロッキング(timeout=0)でOSレベルの排他ロックを
+    # 取得する。既に別プロセス(直接実行・start_elyza_worker.ps1経由・二重起動の
+    # レースコンディション等、起動経路を問わない)が保持中であれば、即座に
+    # exit 0する(エラー扱いにはしない。呼び出し元のラッパーが「異常終了」と誤認して
+    # 再起動ループへ入らないようにするため)。
+    instance_lock = filelock.FileLock(str(_SINGLE_INSTANCE_LOCK_PATH), timeout=0)
+    try:
+        instance_lock.acquire()
+    except filelock.Timeout:
+        _log("既に別プロセスが稼働中のため終了します")
+        sys.exit(0)
+
+    try:
+        signal.signal(signal.SIGTERM, _handle_shutdown_signal)
+        signal.signal(signal.SIGINT, _handle_shutdown_signal)
+        _log(f"デーモンとして起動しました(ポーリング間隔: {args.interval}秒)。")
+        while not _shutdown_requested:
+            try:
+                processed = asyncio.run(run_once())
+                if processed:
+                    _log(f"{processed}件処理しました。")
+            except Exception:
+                # 1周期の失敗でデーモン自体を落とさない(tools/scheduler_daemon.pyと同じ規約)。
+                traceback.print_exc(file=sys.stderr)
+            _interruptible_sleep(args.interval)
+        _log("Graceful Shutdown完了。")
+        return 0
+    finally:
+        instance_lock.release()
 
 
 if __name__ == "__main__":

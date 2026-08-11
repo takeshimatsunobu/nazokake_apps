@@ -400,13 +400,14 @@ async def _fetch_terminal_elyza_job(doc_id: str) -> dict | None:
         return None
 
 
-# 【爆速化】Cloud Run本番でオンデマンドELYZAワーカー(経路B)の完了を待つ最大秒数。
-# workers/ondemand_elyza_worker.pyの1発入魂アルゴリズム化(best-of-1+内部リトライ)
-# とポーリング間隔短縮(2秒)により、ワーカー側の応答時間そのものが大幅に短縮された
-# ため、待機上限もそれに合わせて65秒から短縮した。フロントエンドのクライアント側
-# デッドライン(app.js: 90秒)より確実に短く、タイムアウト後のGemini Flash Lite
-# 代打呼び出し(数秒〜十数秒)の余地も残る。
-_ELYZA_WAIT_TIMEOUT_SEC = 32.0
+# 【実測に基づく調整】Cloud Run本番でオンデマンドELYZAワーカー(経路B)の完了を
+# 待つ最大秒数。当初32秒に短縮したが、実機計測(1発入魂アルゴリズム化後)で
+# 正常成功ケースが約40秒かかることが判明し、32秒では成功間近のELYZAを
+# 「早すぎる見切り」で代打へ切り替えてしまっていた。実測40秒を安全にカバーする
+# 45秒へ再調整する。フロントエンドのクライアント側デッドライン(app.js: 90秒)には
+# まだ十分な余裕があり、タイムアウト後のGemini Flash Lite代打呼び出し
+# (数秒〜十数秒)の余地も残る。
+_ELYZA_WAIT_TIMEOUT_SEC = 45.0
 _ELYZA_WAIT_POLL_INTERVAL_SEC = 2.0
 
 
