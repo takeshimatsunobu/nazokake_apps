@@ -65,6 +65,7 @@ for _path in (BASE_DIR, BACKEND_DIR):
 import firebase_admin  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
 from firebase_admin import firestore  # noqa: E402
+from google.api_core.exceptions import GoogleAPICallError, RetryError  # noqa: E402
 
 from nazokake_core.database import async_upsert_item, ensure_db_ready  # noqa: E402
 from nazokake_core.firestore_sync import (  # noqa: E402
@@ -433,6 +434,18 @@ def main(argv: list[str] | None = None) -> int:
                 processed = asyncio.run(run_once())
                 if processed:
                     _log(f"{processed}件処理しました。")
+            except (RetryError, GoogleAPICallError, TimeoutError, ConnectionError) as e:
+                # 【通信エラーからの自己復帰】Firestoreへのポーリング(_find_claimable_doc_ids/
+                # _claim_job_sync)がネットワークの瞬断やNorton等のTLS中間者検査の影響で
+                # RetryError/GoogleAPICallError(gRPC接続タイムアウト等)を送出すると、
+                # 以前はこの周期の例外がそのままプロセスをクラッシュさせ、
+                # start_elyza_worker.ps1の自動再起動ループに丸ごと頼る形になっていた
+                # (実機ログで`exit=-1`からの15秒後再起動を確認済み)。ここで明示的に
+                # 捕捉し、短い待機を挟んでループを継続することで、プロセス再起動という
+                # 重い手段を経ずに次のポーリング周期で自己復帰できるようにする。
+                _log(f"⚠️ 通信エラーにより再試行します: {e}")
+                _interruptible_sleep(5.0)
+                continue
             except Exception:
                 # 1周期の失敗でデーモン自体を落とさない(tools/scheduler_daemon.pyと同じ規約)。
                 traceback.print_exc(file=sys.stderr)
