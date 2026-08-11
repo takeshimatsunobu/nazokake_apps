@@ -5,6 +5,35 @@
 import { uiBuildCritiqueHtml } from "ui/result";
 import { appState } from "state";
 
+function _escapeHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+// 【Phase5/6】origin_typeに応じた由来バッジ。human_evaluationsの末尾エントリに
+// user_slug(投稿者のペンネーム)が残っていれば併記する(現状これが付くのは
+// user_akapen行のみ。user_originalはPOST /submit_humanがペンネームを収集しない
+// ためslugなしのバッジ表示になる)。
+function _originBadgeHtml(item) {
+    const originType = item.origin_type || 'ai_generated';
+    const evaluations = Array.isArray(item.human_evaluations) ? item.human_evaluations : [];
+    const lastEval = evaluations.length ? evaluations[evaluations.length - 1] : null;
+    const rawSlug = lastEval && lastEval.user_slug;
+    const slug = rawSlug && rawSlug !== 'anonymous' ? _escapeHtml(rawSlug) : null;
+
+    if (originType === 'user_akapen') {
+        const label = slug ? `🖍️ ${slug}さんの赤ペン` : '🖍️ ユーザーの赤ペン';
+        return `<span class="inline-block px-2 py-0.5 bg-orange-50 text-orange-700 border border-orange-200 rounded-full text-[10px] font-bold ml-1 align-middle">${label}</span>`;
+    }
+    if (originType === 'user_original') {
+        const label = slug ? `💡 ${slug}さんの自作` : '💡 ユーザーの自作';
+        return `<span class="inline-block px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded-full text-[10px] font-bold ml-1 align-middle">${label}</span>`;
+    }
+    // ai_generated: 主張しすぎない控えめなグレー表示(要件の「非表示でも可」の代替)。
+    return `<span class="inline-block px-2 py-0.5 bg-gray-50 text-gray-400 border border-gray-200 rounded-full text-[10px] font-bold ml-1 align-middle">🤖 AIの作品</span>`;
+}
+
 /**
  * 単一作品カードを feed-container に描画する（内部関数）
  * @param {import('../../api').components['schemas']['FeedItem']} item
@@ -17,6 +46,7 @@ function renderFeedItem(item) {
     let toku = item.result?.toku || ""; let kokoro = item.result?.kokoro || "";
     if (!toku && !kokoro && item.nazokake_text) { const tMatch = item.nazokake_text.match(/かけて、?「?(.*?)」?と[解と]く/); const kMatch = item.nazokake_text.match(/その[心こころ]は、?(.*)/); toku = tMatch ? tMatch[1] : ""; kokoro = kMatch ? kMatch[1] : item.nazokake_text; }
     const scores = item.scores || {}; const totalScore = (item.s_total || 0).toFixed(2); const critiqueHtml = uiBuildCritiqueHtml(item); const chartId = `feed-chart-${docId}`;
+    const originBadgeHtml = _originBadgeHtml(item);
 
     let evalUI = "";
     const isEvaluated = appState.evaluatedItems.includes(docId);
@@ -34,7 +64,7 @@ function renderFeedItem(item) {
         </div>`;
     }
 
-    const html = `<div class="bg-white/95 backdrop-blur-sm rounded-xl shadow-md p-5 border-t-4 border-[#902A19] mb-6 transition-all duration-300 transform relative" id="feed-card-${docId}"><div class="text-center mb-4"><span class="inline-block px-3 py-1 bg-[#FAF8F5] text-[#902A19] rounded-full text-xs font-bold mb-3 border border-[#C5B358]/50 shadow-sm">お題：${odai}</span><p class="font-bold mb-2 text-lg">「<span class="text-[#902A19]">${odai}</span>」とかけて、</p><p class="font-bold mb-2 text-lg">「<span class="text-[#5B8124]">${toku}</span>」ととく。</p><p class="text-xs text-gray-600 mt-2">そのこころは、</p><p class="font-bold text-lg text-[#902A19]">${kokoro}</p></div><details class="group bg-[#FAF8F5] p-3 rounded-lg border border-[#C5B358]/50 cursor-pointer mb-2 shadow-sm"><summary class="font-bold text-[#902A19] text-xs flex justify-between items-center list-none outline-none"><span>⚙️ 分析官の講評 (${totalScore}/5.0)</span><span class="transition group-open:rotate-180 text-[#C5B358]">▼</span></summary><div class="mt-3 pt-3 border-t border-[#C5B358]/30 flex flex-col md:flex-row items-center gap-4"><div class="w-[140px] h-[140px] shrink-0"><canvas id="${chartId}"></canvas></div><div class="text-[11px] text-gray-700 leading-relaxed flex-1">${critiqueHtml}</div></div></details>${evalUI}</div>`;
+    const html = `<div class="bg-white/95 backdrop-blur-sm rounded-xl shadow-md p-5 border-t-4 border-[#902A19] mb-6 transition-all duration-300 transform relative" id="feed-card-${docId}"><div class="text-center mb-4"><span class="inline-block px-3 py-1 bg-[#FAF8F5] text-[#902A19] rounded-full text-xs font-bold mb-3 border border-[#C5B358]/50 shadow-sm">お題：${odai}</span>${originBadgeHtml}<p class="font-bold mb-2 text-lg">「<span class="text-[#902A19]">${odai}</span>」とかけて、</p><p class="font-bold mb-2 text-lg">「<span class="text-[#5B8124]">${toku}</span>」ととく。</p><p class="text-xs text-gray-600 mt-2">そのこころは、</p><p class="font-bold text-lg text-[#902A19]">${kokoro}</p></div><details class="group bg-[#FAF8F5] p-3 rounded-lg border border-[#C5B358]/50 cursor-pointer mb-2 shadow-sm"><summary class="font-bold text-[#902A19] text-xs flex justify-between items-center list-none outline-none"><span>⚙️ 分析官の講評 (${totalScore}/5.0)</span><span class="transition group-open:rotate-180 text-[#C5B358]">▼</span></summary><div class="mt-3 pt-3 border-t border-[#C5B358]/30 flex flex-col md:flex-row items-center gap-4"><div class="w-[140px] h-[140px] shrink-0"><canvas id="${chartId}"></canvas></div><div class="text-[11px] text-gray-700 leading-relaxed flex-1">${critiqueHtml}</div></div></details>${evalUI}</div>`;
     container.insertAdjacentHTML('beforeend', html);
 
     setTimeout(() => { const ctx = /** @type {HTMLCanvasElement | null} */ (document.getElementById(chartId)); if(ctx) { const chartData = [scores.S_sur||0.5, scores.S_tech||0.5, scores.S_emo||0.5, scores.S_rhy||0.5, scores.S_sensory||0.5, scores.S_visual||0.5, scores.S_ontology||0.5, scores.S_cultural||0.5, scores.S_cm||0.5, scores.S_prosody||0.5, scores.S_nat||0.5, 0]; new Chart(ctx.getContext('2d'), { type: 'radar', data: { labels: ['意外性', '技巧', '情緒', 'リズム', '感覚', '視覚', '存在論', '文化', '概念', '韻律', '自然さ', '人間評価'], datasets: [{ data: chartData, backgroundColor: 'rgba(197, 179, 88, 0.2)', borderColor: 'rgba(197, 179, 88, 1)', borderWidth: 1, pointRadius: 0 }] }, options: { animation: false, scales: { r: { min: 0, max: 1.0, ticks: { display: false }, pointLabels: { font: { size: 6, family: "sans-serif" } } } }, plugins: { legend: { display: false } } } }); } }, 50);

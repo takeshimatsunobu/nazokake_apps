@@ -121,6 +121,9 @@ class FeedItem(BaseModel):
     result_doc_ids: Optional[List[str]] = None
     human_evaluations: Optional[List[Dict[str, Any]]] = None
     updated_at: Optional[str] = None
+    # --- Phase5/6: フィードバックループ統合。道場破りフィード側で由来バッジ表示に使う ---
+    origin_type: Optional[str] = None
+    source_item_id: Optional[str] = None
 
 
 class FeedItemsResponse(BaseModel):
