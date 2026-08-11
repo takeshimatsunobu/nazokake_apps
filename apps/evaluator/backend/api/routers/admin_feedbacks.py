@@ -11,7 +11,6 @@ from fastapi import APIRouter, Depends
 from firebase_admin import firestore
 
 from api.deps import get_db, verify_admin_token, handle_exceptions
-from services.generation import refresh_fewshot_pool_from_feedback
 from services.feedback_analyzer import (
     analyze_axis_divergence,
     generate_correction_prompt,
@@ -61,18 +60,20 @@ async def refresh_fewshot_pool(
     db=Depends(get_db),
     admin_token: dict = Depends(verify_admin_token),
 ):
-    """稼働中のAPIサーバー自身のプロセス内で Few-shot プールと評価プロンプトの動的補正を更新する(Webhook方式)。
+    """稼働中のAPIサーバー自身のプロセス内で、評価プロンプトの動的補正を更新する(Webhook方式)。
 
-    別プロセスのバッチスクリプトからDBへ直接書き込んでも、このサーバーの
-    services.generation._FEWSHOT_POOL / services.evaluation._DYNAMIC_CORRECTION_PROMPT
-    (いずれもプロセス内メモリ)には反映されない(プロセス間でメモリを共有しないため)。
-    このエンドポイントを外部から叩かせることで、両方の更新を確実にサーバー自身の
-    プロセス内で実行させる。
+    【Phase5/6】Few-shotプールの強制更新はこのエンドポイントの責務では
+    なくなった。管理コクピットの「⭐ Few-shot採用」確定時にFirestore
+    (nazokake_fewshots)へ即時Pushされ、生成側は
+    nazokake_core.fewshots.get_fewshot_pool()のTTLキャッシュ(既定300秒)経由で
+    自動的に反映を受け取るため、手動リフレッシュ操作が不要になった
+    (旧_FEWSHOT_POOLはプロセス内メモリのみで複数ワーカー間に伝播しない欠陥が
+    あったが、Firestore経由の共有プールへ統一したことで解消している)。
+    このエンドポイント自体は評価プロンプトの動的補正(_DYNAMIC_CORRECTION_PROMPT)
+    の更新用途で引き続き有効。
     """
-    added = await refresh_fewshot_pool_from_feedback(db)
-
     analysis = await analyze_axis_divergence(db)
     correction_prompt = generate_correction_prompt(analysis)
     update_dynamic_correction_prompt(correction_prompt)
 
-    return {"status": "success", "added": added, "correction_prompt": correction_prompt}
+    return {"status": "success", "correction_prompt": correction_prompt}

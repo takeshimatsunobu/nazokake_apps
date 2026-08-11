@@ -189,10 +189,31 @@ class PendingItem(BaseModel):
     s_total: Optional[float] = None
     s_total_llmjp: Optional[float] = None
     created_at: Optional[str] = None
+    # --- Phase5/6: フィードバックループ統合 ---
+    review_status: Optional[str] = None
+    origin_type: Optional[str] = None
+    source_item_id: Optional[str] = None
+    human_evaluations: Optional[List[Dict[str, Any]]] = None
+    is_fewshot_selected: Optional[bool] = None
+    fewshot_axis_tag: Optional[str] = None
 
 
 class PendingListResponse(BaseModel):
     items: List[PendingItem]
+
+
+# --- Phase5/6: Ⅱペインの5段階評価(review_status)。①🏆Goldenを選んだ場合のみ、
+# 既存のFewshotUpdateRequest(評価軸タグ選択)でFew-shot採用へ進める。
+class ReviewStatusUpdateRequest(BaseModel):
+    review_status: Literal["golden", "good", "hmm", "tolerable", "troll"] = Field(
+        ..., description="管理者による5段階評価"
+    )
+
+
+class ReviewStatusUpdateResponse(BaseModel):
+    status: str
+    doc_id: str
+    review_status: str
 
 
 # --- 監査証跡(Audit Trail): DLQ操作等の破壊的操作をappend-onlyで記録したログの

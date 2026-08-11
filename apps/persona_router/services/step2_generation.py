@@ -10,11 +10,16 @@ Step2(ルートA/B分岐・ペルソナ反映生成)のLLM呼び出し。
 (services/step1_estimation.pyと同じ方針)。
 
 ルートA/Bの分岐判定(step1.is_valid_input)はこの関数の内部で行う。呼び出し元
-(api/routers/generate.py)は odai/step1/persona を渡すだけでよい。
+(api/routers/generate.py)は odai/step1/persona/db を渡すだけでよい。
 
 【Phase3で async化】services/step1_estimation.pyと同じ理由(コスト計装の追加を
 機に、asyncio.to_thread経由のパターンへ揃えてイベントループのブロッキングも
 同時に解消する)。
+
+【Phase5/6】管理コクピット(Ⅱペイン)で①🏆Goldenと評価されFew-shot採用が確定した
+実例を、nazokake_core.fewshots.get_fewshot_pool()経由でルートAのプロンプトへ
+注入する(D)。ルートB(異常入力への逆手エンタメ応答)は真面目な創作例を模倣する
+性質のタスクではないため対象外とする。
 """
 from __future__ import annotations
 
@@ -25,6 +30,7 @@ import os
 from google import genai
 from google.genai.types import GenerateContentConfig
 from nazokake_core.env_config import get_gemini_api_key
+from nazokake_core.fewshots import get_fewshot_pool, sample_fewshot_examples
 
 from models.schemas import Step1Result
 from services.cost_logging import log_step_cost
@@ -47,7 +53,7 @@ _ROUTE_A_SYSTEM_INSTRUCTION_TEMPLATE = """\
 【語り手キャラクター設定】: {persona_prompt}
 【背景文脈データ】: {step1_json}
 【厳格なトーン制約】: 背景文脈データは「かけ言葉」のシチュエーション構築にのみ使用し、特定の界隈や若者言葉への過度な迎合（媚び）は厳禁です。ただし、あなたが演じるキャラクターの口調や属性（ギャル、ビジネス用語等）は絶対優先とし、相手が誰であっても自分のキャラクター性を爆発させてください。\
-"""
+{fewshot_block}"""
 
 # ルートB(is_valid_input=false): 異常入力(無意味な文字列)を逆手に取ったエンタメ
 # 応答。「わかりません」系の謝罪・エラー発言は禁止(is_valid_for_training=falseで
@@ -60,10 +66,32 @@ _ROUTE_B_SYSTEM_INSTRUCTION_TEMPLATE = """\
 """
 
 
+async def _build_fewshot_block(db) -> str:
+    """管理コクピットで①🏆Goldenと評価されFew-shot採用が確定した実例を、
+    毎回ランダムに3件抽出してプロンプト注入用のブロック文字列へ組み立てる。
+
+    get_fewshot_pool()はTTLキャッシュ済みだが内部でFirestore I/Oが発生し得るため、
+    イベントループをブロックしないようasyncio.to_threadへ委譲する
+    (nazokake_core.personas.get_personas()と同じ呼び出し規約)。
+    """
+    pool = await asyncio.to_thread(get_fewshot_pool, db)
+    picks = sample_fewshot_examples(pool, k=3)
+    if not picks:
+        return ""
+    lines = [json.dumps(d, ensure_ascii=False, separators=(",", ":")) for d in picks]
+    return (
+        "\n【お手本（管理コクピットで①🏆Goldenと評価された実例 / 毎回ランダムに3件抽出）】\n"
+        "下記は過去に高く評価された「お題→解き→こころ」の実例。この発想の質と構造を参考にせよ:\n"
+        + "\n".join(lines)
+        + "\n"
+    )
+
+
 async def generate_step2(
     odai: str,
     step1: Step1Result,
     persona: dict,
+    db=None,
     model_id: str | None = None,
 ) -> tuple[str, str, str, str, str]:
     """odai/Step1結果/ペルソナ辞書からルートA/Bを判定し、なぞかけを生成する。
@@ -77,9 +105,11 @@ async def generate_step2(
 
     if step1.is_valid_input:
         route = "A"
+        fewshot_block = await _build_fewshot_block(db)
         system_instruction = _ROUTE_A_SYSTEM_INSTRUCTION_TEMPLATE.format(
             persona_prompt=persona_prompt,
             step1_json=json.dumps(step1.model_dump(), ensure_ascii=False),
+            fewshot_block=fewshot_block,
         )
     else:
         route = "B"

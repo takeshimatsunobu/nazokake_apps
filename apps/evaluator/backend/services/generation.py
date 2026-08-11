@@ -12,7 +12,6 @@ _OLLAMA_SEMAPHORE = asyncio.Semaphore(1)
 
 import json
 import os
-import random
 import sys
 import threading
 
@@ -217,84 +216,44 @@ _GEN_FEWSHOT_EXAMPLE = (
 )
 
 # ============================================================
-# Dynamic Few-Shot プール（外部JSON）。モジュール読み込み時に一度だけロードする。
+# Dynamic Few-Shot（Phase5/6: nazokake_core.fewshots へ統一）。
 # ============================================================
-_FEWSHOT_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-    "data",
-    "nazokake_fewshot.json",
-)
+# 【Phase5/6での変更】従来はモジュール読み込み時に外部JSON(nazokake_fewshot.json)
+# を静的ロードし、POST /admin/feedbacks/refresh-fewshot Webhookでプロセス内
+# メモリの_FEWSHOT_POOLを手動更新する方式だった(プロセス間でメモリを共有できない
+# ため、複数ワーカー構成では更新が全プロセスへ伝播しない欠陥があった)。
+# apps/persona_router側の生成へも同一のGoldenデータを注入する(D)にあたり、
+# 管理コクピットの「⭐ Few-shot採用」(review_status=="golden" + タグ確定)を起点に
+# Firestore(nazokake_fewshots)へPushし、両サービスが
+# nazokake_core.fewshots.get_fewshot_pool()(TTLキャッシュ、300秒)経由で
+# 同じデータを読む構成へ一本化した。
+#
+# 【トレードオフ】旧_FEWSHOT_POOLの各エントリはCoT全工程
+# (associations/kakekotoba/shared_essence/surprise_check)を含む重量級の辞書
+# だったが、nazokake_fewshotsは apps/persona_router::step2_generation.py の
+# 出力スキーマに合わせた軽量な辞書(odai/toku/kokoro/nazokake_text)のみを保持する。
+# このためGEN_SCHEMA(本モジュール)が要求するCoTフィールドの「お手本」は
+# 静的な_GEN_FEWSHOT_EXAMPLE(1件、不変)のみとなり、動的抽出分の思考プロセス例は
+# 提示されなくなる(プロンプト品質へのトレードオフとして要監視)。
+from nazokake_core.fewshots import get_fewshot_pool, sample_fewshot_examples
 
 
-def _load_fewshot_pool():
-    """高品質ななぞかけ例文プール（150〜200件想定）を読み込む。失敗時は空（固定例のみ動作）。"""
-    try:
-        with open(_FEWSHOT_PATH, encoding="utf-8") as f:
-            data = json.load(f)
-        pool = [
-            x for x in data if isinstance(x, dict) and x.get("toku") and x.get("kokoro")
-        ]
-        print(f"📚 Few-shotプール読込: {len(pool)} 件")
-        return pool
-    except Exception as e:
-        print(f"⚠️ Few-shotプール読込失敗（固定例のみ使用）: {e}")
-        return []
+async def _sample_fewshot_block() -> str:
+    """共有Few-shotプール(nazokake_core.fewshots)から毎回【必ず3件】抽出し、
+    辞書を「1行JSON」に量子化して埋め込む（Dynamic Few-Shot）。
 
-
-_FEWSHOT_POOL = _load_fewshot_pool()
-
-
-async def refresh_fewshot_pool_from_feedback(db, limit: int = 200) -> int:
-    """Phase4: ユーザー高評価データ(user_feedbacks)+管理者の明示採用(Phase2の
-    「⭐ Few-shot採用」)の両方をFew-shotプールの先頭に優先的にマージする。
-
-    既存の静的プールは保持したまま両エントリ群を先頭に追加するマージ方式とし、
-    generate_via_gemini / generate_via_llmjp の既存挙動を壊さない(呼び出さない限り無関係)。
-    呼び出し元(POST /admin/feedbacks/refresh-fewshot Webhook)が任意のタイミングで
-    発火する想定。
-
-    【Phase2で保留していたFew-shotの動的配線(Phase4で解消)】管理コクピットの
-    「⭐ Few-shot採用」は判断の永続化(nazokake_items.is_fewshot_selected)のみを
-    行い、実際の生成プロンプトへの組み込みはここで初めて行われる。
-    build_curated_fewshot_entries()はSQLiteのみを参照するためdb(Firestore)を
-    必要としないが、引数を揃えるため関数シグネチャはそのままにしている。
-    """
-    global _FEWSHOT_POOL
-    from .feedback_loop import build_curated_fewshot_entries, build_high_rated_fewshot_entries
-
-    try:
-        high_rated = await build_high_rated_fewshot_entries(db, limit)
-        curated = await build_curated_fewshot_entries()
-        added = high_rated + curated
-        if added:
-            _FEWSHOT_POOL = added + _FEWSHOT_POOL
-            print(
-                f"🔁 Few-shotプールを強化: 高評価+{len(high_rated)}件 / 管理者採用+{len(curated)}件 "
-                f"(合計 {len(_FEWSHOT_POOL)}件)"
-            )
-        return len(added)
-    except Exception as e:
-        print(f"⚠️ Few-shotプールの強化に失敗(既存プールを維持): {e}")
-        return 0
-
-
-def _sample_fewshot_block() -> str:
-    """プールから毎回【必ず3件】抽出し、完全な辞書を「1行JSON」に量子化して埋め込む（Dynamic Few-Shot）。
-
-    省略形ではなく associations〜kokoro までの思考プロセス(CoT)を丸ごと高密度に提示することで、
-    AIに「考え方の型」と「出力フォーマット」を同時に深く模倣させる（プロンプトの量子化）。
     プールが空/3件未満でも安全（k はプール件数で上限クランプ、0件なら空文字）。
+    get_fewshot_pool()はTTLキャッシュ済みだが内部でFirestore I/Oが発生し得るため、
+    イベントループをブロックしないようasyncio.to_threadへ委譲する。
     """
-    if not _FEWSHOT_POOL:
+    pool = await asyncio.to_thread(get_fewshot_pool)
+    picks = sample_fewshot_examples(pool, k=3)
+    if not picks:
         return ""
-    k = min(3, len(_FEWSHOT_POOL))
-    picks = random.sample(_FEWSHOT_POOL, k)
-    # 完全辞書を改行・空白なしの1行JSONへ（separators=(',',':')）= プロンプトの量子化
     lines = [json.dumps(d, ensure_ascii=False, separators=(",", ":")) for d in picks]
     return (
-        "\n【お手本（思考プロセスとフォーマット / 毎回ランダムに3件抽出）】\n"
-        "下記は『連想→掛詞→本質→意外性チェック→解き→こころ』という思考の全工程を1行JSONに凝縮した実例。\n"
-        "このCoTの深さと密度、そして出力フォーマットを完全に再現せよ:\n"
+        "\n【お手本（管理コクピットで①🏆Goldenと評価された実例 / 毎回ランダムに3件抽出）】\n"
+        "下記は過去に高く評価された「お題→解き→こころ」の実例。この発想の質と構造を参考にせよ:\n"
         + "\n".join(lines)
         + "\n"
     )
@@ -449,7 +408,7 @@ async def _build_gen_prompts(
         + _GEN_FEWSHOT_EXAMPLE
         + "\n→ 単なる「整う」のダジャレに留めず、『正しい状態にリセットされる価値』という本質的共通点まで"
         "踏み込んでいる点が高評価のポイント。\n"
-        + _sample_fewshot_block()
+        + await _sample_fewshot_block()
     )
 
     # SRE: 動的プロンプトをDBから取得するステートレスな方法に切り替え

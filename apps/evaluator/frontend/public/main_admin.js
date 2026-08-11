@@ -6,7 +6,8 @@
 
 import {
     logout, deployToProduction, modelAction, retryDlqItem, discardDlqItem,
-    submitInvite, approveAdminUser, handleUnlockAction, toggleFewshotSelection,
+    submitInvite, approveAdminUser, handleUnlockAction,
+    selectReviewStatus, confirmReviewStatus,
     openPersonaEditModal, savePersonaConfig, clearPersonaConfig,
 } from "admin";
 import { uiSwitchTab } from "ui/tabs";
@@ -26,9 +27,11 @@ const CLICK_ACTIONS = {
     switchTab: (el) => uiSwitchTab(el.dataset.arg),
     submitInvite: () => submitInvite(),
     approveAdminUser: (el) => approveAdminUser(el.dataset.uid),
-    // 【Phase2新設】直談判レビュー(赦す/リセット/却下)とFew-shot採用。
+    // 【Phase2新設】直談判レビュー(赦す/リセット/却下)。
     handleUnlockAction: (el) => handleUnlockAction(el.dataset.requestId, el.dataset.unlockAction),
-    toggleFewshotSelection: (el) => toggleFewshotSelection(el.dataset.docId),
+    // 【Phase5/6新設】5段階評価(review_status)。旧toggleFewshotSelectionを置き換え。
+    selectReviewStatus: (el) => selectReviewStatus(el.dataset.docId, el.dataset.reviewStatus),
+    confirmReviewStatus: (el) => confirmReviewStatus(el.dataset.docId),
     // 【Phase4新設】ペルソナ管理(登録/上書き/クリア)。
     openPersonaEditModal: (el) => openPersonaEditModal(el.dataset.personaId),
     savePersonaConfig: () => savePersonaConfig(),

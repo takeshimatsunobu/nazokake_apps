@@ -36,6 +36,19 @@ const AXIS_LABELS = {
     S_persona: 'ペルソナ純度', S_aufheben: 'アウフヘーベン力',
 };
 
+// 【Phase5/6】nazokake_items.origin_type → バッジ表示。承認待ちキューの各行が
+// どのユーザーアクション由来か(AI生成/道場破りの赤ペン/自作投稿)を一目で示す。
+const ORIGIN_TYPE_BADGES = {
+    ai_generated: { emoji: '🤖', label: 'AI生成', className: 'bg-slate-100 text-slate-600 border-slate-200' },
+    user_akapen: { emoji: '🖍️', label: '赤ペン添削', className: 'bg-orange-50 text-orange-700 border-orange-200' },
+    user_original: { emoji: '💡', label: '自作投稿', className: 'bg-purple-50 text-purple-700 border-purple-200' },
+};
+
+function _originTypeBadgeHtml(originType) {
+    const badge = ORIGIN_TYPE_BADGES[originType] || ORIGIN_TYPE_BADGES.ai_generated;
+    return `<span class="inline-block text-[10px] font-bold ${badge.className} border rounded-full px-2 py-0.5 ml-1 align-middle">${badge.emoji} ${badge.label}</span>`;
+}
+
 function _newBadgeHtml(timestampIso) {
     return _isNewSince(timestampIso)
         ? '<span class="inline-block text-[10px] font-black bg-rose-600 text-white rounded-full px-1.5 py-0.5 ml-1">🆕 新着</span>'
@@ -409,40 +422,132 @@ export async function handleUnlockAction(requestId, action) {
 }
 
 // ------------------------------------------------------------
-// 【Phase2新設】Few-shot採用(承認待ちデータ・RLHFレビューの両カードから共通で呼ぶ)。
+// 【Phase5/6】5段階評価(review_status)。承認待ちデータ・RLHFレビューの両カードから
+// 共通で呼ぶ(旧「⭐ Few-shot採用」ボタンを廃止し置き換え)。
+// ①🏆Golden を選んだ場合のみ、Phase2の13評価軸タグの選択を必須とし、確定時に
+// POST .../review(review_status)とPOST .../fewshot(is_fewshot_selected+タグ)を
+// 続けて呼ぶ(バックエンド側もreview_status=="golden"でない限りfewshot採用を
+// 拒否する対称的なガードを持つ、apps/evaluator/backend/api/routers/admin_review.py
+// ::update_fewshot_selection参照)。
 // ------------------------------------------------------------
 
-// window.prompt()による簡易な評価軸選択(要件で明示された「プロンプトやセレクト
-// ボックス」のうち、既存DOMへの新規モーダル追加を要さない最小実装を選んだ)。
-// 入力欄には軸コードの一覧をあらかじめ列挙し、コピー&ペーストで選べるようにする。
-function _promptFewshotAxis() {
-    const optionsText = Object.entries(AXIS_LABELS)
-        .map(([code, label]) => `${code}(${label})`)
-        .join(' / ');
-    const input = window.prompt(
-        `どの評価軸の模範例として採用しますか？ 以下のコードのいずれかを入力してください:\n${optionsText}`,
-        'S_sur'
-    );
-    if (!input) return null;
-    const code = input.trim();
-    return AXIS_LABELS[code] ? code : null;
+const REVIEW_STATUS_OPTIONS = [
+    { value: 'golden', emoji: '🏆', label: 'Golden' },
+    { value: 'good', emoji: '🟢', label: 'Good' },
+    { value: 'hmm', emoji: '⚪', label: 'Hmm' },
+    { value: 'tolerable', emoji: '🟡', label: 'Tolerable' },
+    { value: 'troll', emoji: '🔴', label: 'Troll' },
+];
+
+// 承認待ちデータ・RLHFレビューの両カードから共通で埋め込む5段階評価UIブロック。
+// ボタン選択→(Golden時のみ)タグ選択→確定ボタン、の3段階(main_admin.jsの
+// CLICK_ACTIONS経由でselectReviewStatus/confirmReviewStatusへディスパッチされる)。
+function _renderReviewActionHtml(docId) {
+    const buttonsHtml = REVIEW_STATUS_OPTIONS.map((opt) => `
+        <button data-action="selectReviewStatus" data-doc-id="${docId}" data-review-status="${opt.value}"
+            class="review-status-btn text-xs font-bold bg-white text-gray-700 px-2.5 py-1.5 rounded border border-gray-300 hover:bg-gray-50 transition">
+            ${opt.emoji} ${opt.label}
+        </button>`).join('');
+    const axisOptionsHtml = Object.entries(AXIS_LABELS)
+        .map(([code, label]) => `<option value="${code}">${code}(${label})</option>`)
+        .join('');
+    return `
+        <div class="mt-3 pt-3 border-t border-gray-100">
+            <p class="text-xs font-bold text-gray-500 mb-2">📋 5段階評価</p>
+            <div class="flex flex-wrap gap-1.5 mb-2" id="review-buttons-${docId}">${buttonsHtml}</div>
+            <div id="axis-select-wrap-${docId}" class="hidden mb-2">
+                <select id="axis-select-${docId}" class="text-xs border border-gray-300 rounded px-2 py-1.5 w-full">
+                    <option value="">-- ①🏆Golden採用時: Few-shot評価軸タグを選択(必須) --</option>
+                    ${axisOptionsHtml}
+                </select>
+            </div>
+            <button data-action="confirmReviewStatus" data-doc-id="${docId}" id="review-confirm-${docId}" disabled
+                class="text-xs font-bold bg-gray-200 text-gray-400 px-3 py-1.5 rounded cursor-not-allowed transition w-full">
+                評価を確定
+            </button>
+        </div>`;
 }
 
-export async function toggleFewshotSelection(docId) {
-    const axisTag = _promptFewshotAxis();
-    if (!axisTag) {
-        showToast('評価軸コードが正しくないため、Few-shot採用をキャンセルしました', 'warning');
+export function selectReviewStatus(docId, status) {
+    const buttonsWrap = document.getElementById(`review-buttons-${docId}`);
+    if (buttonsWrap) {
+        buttonsWrap.querySelectorAll('button').forEach((btn) => {
+            const selected = /** @type {HTMLElement} */ (btn).dataset.reviewStatus === status;
+            btn.classList.toggle('ring-2', selected);
+            btn.classList.toggle('ring-[#902A19]', selected);
+            btn.classList.toggle('bg-[#FAF8F5]', selected);
+        });
+    }
+    const axisWrap = document.getElementById(`axis-select-wrap-${docId}`);
+    if (axisWrap) axisWrap.classList.toggle('hidden', status !== 'golden');
+
+    const confirmBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById(`review-confirm-${docId}`));
+    if (confirmBtn) {
+        confirmBtn.dataset.selectedStatus = status;
+        confirmBtn.disabled = false;
+        confirmBtn.classList.remove('bg-gray-200', 'text-gray-400', 'cursor-not-allowed');
+        confirmBtn.classList.add('bg-[#2C3539]', 'text-white', 'hover:bg-gray-800');
+    }
+}
+
+// 評価済みカードをフェードアウトさせてDOMから取り除く(承認待ち・RLHFレビュー
+// 両パネルに同じdoc_idのカードが同時に存在し得るため、両方のid規約を試す)。
+function _fadeOutAndRemoveCard(docId) {
+    [`pending-card-${docId}`, `feedback-card-${docId}`].forEach((cardId) => {
+        const card = document.getElementById(cardId);
+        if (!card) return;
+        card.style.transition = 'opacity 0.3s, transform 0.3s';
+        card.style.opacity = '0';
+        card.style.transform = 'scale(0.96) translateY(-10px)';
+        setTimeout(() => card.remove(), 300);
+    });
+}
+
+export async function confirmReviewStatus(docId) {
+    const confirmBtn = /** @type {HTMLButtonElement | null} */ (document.getElementById(`review-confirm-${docId}`));
+    const status = confirmBtn?.dataset.selectedStatus;
+    if (!status) {
+        showToast('5段階評価を選択してください', 'warning');
         return;
     }
-    try {
-        await authFetch(`${API_BASE}/admin/nazokake-items/${encodeURIComponent(docId)}/fewshot`, {
-            method: 'POST',
-            body: JSON.stringify({ is_fewshot_selected: true, fewshot_axis_tag: axisTag }),
-        });
-        showToast(`⭐ Few-shot採用しました(${AXIS_LABELS[axisTag]})`);
-    } catch (e) {
-        showToast(`Few-shot採用に失敗しました: ${e.message}`, 'warning');
+
+    let axisTag = '';
+    if (status === 'golden') {
+        const select = /** @type {HTMLSelectElement | null} */ (document.getElementById(`axis-select-${docId}`));
+        axisTag = select ? select.value : '';
+        if (!axisTag) {
+            showToast('①🏆Goldenの場合はFew-shot評価軸タグの選択が必須です', 'warning');
+            return;
+        }
     }
+
+    try {
+        await authFetch(`${API_BASE}/admin/nazokake-items/${encodeURIComponent(docId)}/review`, {
+            method: 'POST',
+            body: JSON.stringify({ review_status: status }),
+        });
+    } catch (e) {
+        showToast(`評価の確定に失敗しました: ${e.message}`, 'warning');
+        return;
+    }
+
+    if (status === 'golden') {
+        try {
+            await authFetch(`${API_BASE}/admin/nazokake-items/${encodeURIComponent(docId)}/fewshot`, {
+                method: 'POST',
+                body: JSON.stringify({ is_fewshot_selected: true, fewshot_axis_tag: axisTag }),
+            });
+        } catch (e) {
+            // review_status自体は既に確定済みのため、Few-shot採用の失敗はカードを
+            // 消さずに警告のみに留める(admin.pyの承認待ちキューからは既に外れているが、
+            // 未採用のまま気づかず放置されないよう管理者へ明示する)。
+            showToast(`5段階評価(Golden)は保存されましたが、Few-shot採用に失敗しました: ${e.message}`, 'warning');
+        }
+    }
+
+    showToast('✅ 評価完了');
+    _fadeOutAndRemoveCard(docId);
+    loadActionRequiredSummary();
 }
 
 // MLOps推移ダッシュボード(CQRSに基づく静的JSONダンプ方式)。
@@ -741,19 +846,16 @@ function renderModelFeedbackItem(item) {
     const comment = (item.comment || '(コメントなし)').replace(/</g, '&lt;');
     const createdAt = item.created_at ? _formatMlopsTimestamp(item.created_at) : '';
     return `
-        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+        <div class="bg-gray-50 border border-gray-200 rounded-lg p-4" ${item.doc_id ? `id="feedback-card-${item.doc_id}"` : ''}>
             <div class="flex justify-between items-start gap-4">
-                <div class="min-w-0">
+                <div class="min-w-0 flex-1">
                     <div class="flex items-center gap-2 mb-1">
                         <span class="text-xs font-bold px-2 py-0.5 rounded border ${modelBadgeClass}">${modelLabel}</span>
                         <span class="text-xs font-bold text-[#C5B358]">${score}</span>
                     </div>
                     <p class="text-xs text-gray-500">doc_id: ${item.doc_id || '(不明)'}</p>
                     <p class="text-sm text-gray-800 mt-2 whitespace-pre-wrap break-all">${comment}</p>
-                    ${item.doc_id ? `<button data-action="toggleFewshotSelection" data-doc-id="${item.doc_id}"
-                        class="mt-2 text-xs font-bold bg-yellow-50 text-yellow-700 px-3 py-1 rounded hover:bg-yellow-100 transition border border-yellow-200">
-                        ⭐ Few-shot採用
-                    </button>` : ''}
+                    ${item.doc_id ? _renderReviewActionHtml(item.doc_id) : ''}
                 </div>
                 <p class="text-xs text-gray-400 shrink-0">${createdAt}</p>
             </div>
@@ -907,13 +1009,16 @@ async function loadAppUsage() {
     }
 }
 
-// 承認待ちデータ。バックエンド(admin.py get_pending_items)は GET /admin/pending で
-// gemini_status/elyza_statusのいずれかが"pending"のなぞかけを作成日時降順で
-// 最大50件返す({items: [...]})。
+// 承認待ちデータ。バックエンド(nazokake_core.database::async_get_pending_items)は
+// GET /admin/pending で「review_status IS NULL」かつ(道場破りの赤ペン/自作投稿は
+// 無条件、AI生成は道場破りでのユーザー評価が1件以上ある行のみ)を作成日時降順で
+// 最大50件返す({items: [...]}、Phase5/6でフィードバックループ統合)。
 // 各アイテムの"pending"状態のモデル側にのみ承認/棄却ボタンを描画する
-// (_renderPendingActionButtons)。クリックはmain_admin.jsのCLICK_ACTIONS経由で
-// modelAction(docId, model, action)へディスパッチされ、成功後はこのパネルの
-// 再取得(loadPendingItems())まで行う(modelAction内部で完結)。
+// (_renderPendingActionButtons、gemini/elyzaどちらの生成結果を採用するかの旧来の
+// キュレーションであり、5段階評価(review_status)とは独立した別軸)。クリックは
+// main_admin.jsのCLICK_ACTIONS経由でmodelAction(docId, model, action)へ
+// ディスパッチされ、成功後はこのパネルの再取得(loadPendingItems())まで行う
+// (modelAction内部で完結)。
 /**
  * @returns {Promise<{items: Array<Record<string, any>>}>}
  */
@@ -940,6 +1045,19 @@ function _renderPendingActionButtons(docId, model) {
         </div>`;
 }
 
+// 【Phase5/6】道場破り経由のユーザー評価(human_evaluations、最新3件まで)を
+// カード内に要約表示する。5段階評価の判断材料として直接関わるため表示する。
+function _renderHumanEvaluationsHtml(evaluations) {
+    if (!Array.isArray(evaluations) || evaluations.length === 0) return '';
+    const rows = evaluations.slice(-3).map((ev) => {
+        const score = ev && ev.user_score != null ? `★${ev.user_score}` : '';
+        const comment = _escapeHtml((ev && ev.comment) || '');
+        const slug = _escapeHtml((ev && ev.user_slug) || 'anonymous');
+        return `<p class="text-xs text-gray-600">${score} <span class="text-gray-400">(${slug})</span> ${comment}</p>`;
+    }).join('');
+    return `<div class="mt-2 bg-gray-50 border border-gray-100 rounded p-2 space-y-1">${rows}</div>`;
+}
+
 function renderPendingItem(item) {
     const odai = (item.odai || '').replace(/</g, '&lt;');
     const geminiText = (item.nazokake_text || '(未生成)').replace(/</g, '&lt;');
@@ -948,9 +1066,10 @@ function renderPendingItem(item) {
     const eScore = item.s_total_llmjp != null ? ` / ${item.s_total_llmjp}点` : '';
     const createdAt = item.created_at ? _formatMlopsTimestamp(item.created_at) : '';
     return `
-        <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm">
-            <p class="font-bold text-gray-800">${odai}${_newBadgeHtml(item.created_at)}</p>
+        <div class="bg-white border border-gray-200 rounded-lg p-4 shadow-sm" id="pending-card-${item.doc_id}">
+            <p class="font-bold text-gray-800">${odai}${_originTypeBadgeHtml(item.origin_type)}${_newBadgeHtml(item.created_at)}</p>
             <p class="text-xs text-gray-400 mt-1">doc_id: ${item.doc_id}${createdAt ? ` / ${createdAt}` : ''}</p>
+            ${_renderHumanEvaluationsHtml(item.human_evaluations)}
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-3">
                 <div class="bg-blue-50/40 border border-blue-100 rounded p-3">
                     <p class="text-xs font-bold text-blue-700 mb-1">Gemini (${item.gemini_status || 'n/a'}${gScore})</p>
@@ -963,12 +1082,7 @@ function renderPendingItem(item) {
                     ${item.elyza_status === 'pending' ? _renderPendingActionButtons(item.doc_id, 'elyza') : ''}
                 </div>
             </div>
-            <div class="mt-3 pt-3 border-t border-gray-100">
-                <button data-action="toggleFewshotSelection" data-doc-id="${item.doc_id}"
-                    class="text-xs font-bold bg-yellow-50 text-yellow-700 px-3 py-1.5 rounded hover:bg-yellow-100 transition border border-yellow-200">
-                    ⭐ Few-shot採用
-                </button>
-            </div>
+            ${_renderReviewActionHtml(item.doc_id)}
         </div>`;
 }
 

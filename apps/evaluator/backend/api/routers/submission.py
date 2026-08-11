@@ -34,6 +34,8 @@ async def submit_human(req: HumanSubmitRequest):
             "author": "Human",
             "parent_id": req.parent_id,
             "is_sft_data": bool(req.parent_id),
+            # Phase5/6: トップページ等からの自作投稿を承認待ちキューへ統合するための由来タグ。
+            "origin_type": "user_original",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "status": "processing",
             "eval_status": "processing",

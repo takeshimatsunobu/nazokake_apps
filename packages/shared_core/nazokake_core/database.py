@@ -181,6 +181,20 @@ class NazokakeItemORM(Base):
     # 判断の記録とその後の消費ロジックを分離する設計)。
     is_fewshot_selected: Mapped[bool] = mapped_column(Boolean, default=False)
     fewshot_axis_tag: Mapped[str | None] = mapped_column(String, nullable=True)
+    # --- Phase5/6: フィードバックループ統合(道場破り赤ペン・自作投稿・管理者5段階評価) ---
+    # review_status: 管理コクピット(Ⅱペイン)による5段階評価。NULL=未評価(承認待ち
+    # キューの対象)。"golden"のみがFew-shot採用(is_fewshot_selected)の前提条件となる。
+    review_status: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    # origin_type: このレコードの由来。"ai_generated"(既存のGemini/ELYZA生成パイプライン、既定) /
+    # "user_akapen"(道場破りでの赤ペン修正、既存行を書き換えず新規行としてINSERT) /
+    # "user_original"(トップページ等の自作投稿、POST /submit_human)。
+    origin_type: Mapped[str] = mapped_column(
+        String, nullable=False, default="ai_generated", server_default="ai_generated"
+    )
+    # source_item_id: origin_type=="user_akapen"の行が、どの既存行(doc_id)への
+    # 添削かを指す自己参照。外部キー制約は張らない(元行が将来削除されても添削
+    # 履歴行自体は残す方針。他の緩やかな参照カラムと同じ設計)。
+    source_item_id: Mapped[str | None] = mapped_column(String, nullable=True)
     random_weight: Mapped[float | None] = mapped_column(Float, nullable=True)
     gemini_status: Mapped[str | None] = mapped_column(String, nullable=True)
     elyza_status: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -737,6 +751,9 @@ _NAZOKAKE_ITEM_BULK_DEFAULTS: dict[str, Any] = {
     "sync_status": "synced",  # Firestoreから来た時点で定義上「既に同期済み」
     "retry_count": 0,
     "elyza_job_retry_count": 0,
+    # Phase5/6で新設したNOT NULL列。旧Firestoreドキュメントはこのキーを持たないため、
+    # 「復元される既存データは全て旧世代のAI生成パイプライン由来」とみなして補う。
+    "origin_type": "ai_generated",
 }
 
 
@@ -865,23 +882,47 @@ async def async_get_audit_logs(limit: int = 100) -> list[dict[str, Any]]:
 _PENDING_ITEMS_LIMIT = 50
 
 
-async def async_get_pending_items() -> list[dict[str, Any]]:
-    """レビュー待ち(gemini_status/elyza_statusのいずれかが"pending")の行を
-    created_at降順で最大_PENDING_ITEMS_LIMIT件取得する。
+def _pending_review_filter():
+    """承認待ちキュー(Ⅱレビュー)の対象条件(Phase5/6: フィードバックループ統合)。
 
-    新規生成されたなぞかけはmodels.NazokakeItemのデフォルト値によりgemini_status
-    が必ず実際の"pending"文字列を持つ(admin.py._resolve_statuses()のような、
-    NULL値からの推定を要する旧データ向けフォールバックはここでは行わない。
-    レビューキューは直近の生成物を対象とすれば十分なため)。
+    review_status IS NULL(=管理者の5段階評価が未確定)であることを共通条件とし、
+    さらに由来ごとに以下を要求する:
+      - origin_type in ("user_akapen", "user_original"): 道場破りの赤ペン修正・
+        自作投稿はユーザーの能動的なアクションそのものが「レビューしてほしい」
+        という意思表示のため、無条件でキュー対象。
+      - origin_type == "ai_generated": 旧来のGemini/ELYZA生成パイプライン由来は、
+        道場破りフィードでユーザーが最低1件評価(human_evaluations)を残した
+        ものだけをキュー対象とする(生成されただけの未評価データで埋もれさせない)。
+
+    async_get_pending_items() / async_count_pending_items() /
+    async_count_pending_items_since() の3箇所が同一条件を共有する(条件を1箇所に
+    集約することで、キューの内訳とお知らせバッジの件数が食い違うドリフトを防ぐ)。
+    """
+    user_origin_filter = and_(
+        NazokakeItemORM.review_status.is_(None),
+        NazokakeItemORM.origin_type.in_(["user_akapen", "user_original"]),
+    )
+    ai_generated_with_evaluation_filter = and_(
+        NazokakeItemORM.review_status.is_(None),
+        NazokakeItemORM.origin_type == "ai_generated",
+        NazokakeItemORM.human_evaluations.isnot(None),
+        func.json_array_length(NazokakeItemORM.human_evaluations) > 0,
+    )
+    return or_(user_origin_filter, ai_generated_with_evaluation_filter)
+
+
+async def async_get_pending_items() -> list[dict[str, Any]]:
+    """承認待ちキュー(Ⅱレビュー)を作成日時降順で最大_PENDING_ITEMS_LIMIT件取得する。
+
+    条件は_pending_review_filter()参照。旧来の「gemini_status/elyza_statusの
+    いずれかがpending」という条件(AI生成パイプラインの内部進行状況)とは無関係な、
+    「ユーザーアクションはあったが管理者の5段階評価がまだ」という別軸のキューへ
+    Phase5/6で置き換えた。
     """
     async with get_session() as session:
-        pending_filter = or_(
-            NazokakeItemORM.gemini_status == "pending",
-            NazokakeItemORM.elyza_status == "pending",
-        )
         stmt = (
             select(NazokakeItemORM)
-            .where(pending_filter)
+            .where(_pending_review_filter())
             .order_by(NazokakeItemORM.created_at.desc())
             .limit(_PENDING_ITEMS_LIMIT)
         )
@@ -889,56 +930,26 @@ async def async_get_pending_items() -> list[dict[str, Any]]:
         return [_row_to_ui_dict(row) for row in rows]
 
 
-# Few-shotプールを肥大化させすぎないための上限(Phase4)。
-_FEWSHOT_CURATED_LIMIT = 100
-
-
-async def async_get_fewshot_curated_items() -> list[dict[str, Any]]:
-    """管理コクピットの「⭐ Few-shot採用」(Phase2、admin_review.py::update_fewshot_selection)
-    で is_fewshot_selected=True が付与された行を、doc_id/fewshot_axis_tagのみ
-    軽量に取得する(services/feedback_loop.py::build_curated_fewshot_entries()が
-    doc_idごとに本文を追加取得するため、ここでは全カラムを取得しない)。
-    """
-    async with get_session() as session:
-        stmt = (
-            select(NazokakeItemORM.doc_id, NazokakeItemORM.fewshot_axis_tag)
-            .where(NazokakeItemORM.is_fewshot_selected.is_(True))
-            .order_by(NazokakeItemORM.updated_at.desc())
-            .limit(_FEWSHOT_CURATED_LIMIT)
-        )
-        rows = (await session.execute(stmt)).all()
-        return [{"doc_id": r[0], "fewshot_axis_tag": r[1]} for r in rows]
-
-
 async def async_count_pending_items() -> int:
-    """レビュー待ち(gemini_status/elyza_statusのいずれかが"pending")の件数のみを
-    取得する(管理コクピットのお知らせバッジ用)。
+    """承認待ちキュー(Ⅱレビュー)の件数のみを取得する(管理コクピットのお知らせ
+    バッジ用)。条件はasync_get_pending_items()と同一(_pending_review_filter())。
     """
     async with get_session() as session:
-        pending_filter = or_(
-            NazokakeItemORM.gemini_status == "pending",
-            NazokakeItemORM.elyza_status == "pending",
-        )
         result = await session.execute(
-            select(func.count()).select_from(NazokakeItemORM).where(pending_filter)
+            select(func.count()).select_from(NazokakeItemORM).where(_pending_review_filter())
         )
         return result.scalar_one()
 
 
 async def async_count_pending_items_since(since_iso: str) -> int:
-    """レビュー待ちのうち、created_atがsince_isoより新しいものの件数。
+    """承認待ちキューのうち、created_atがsince_isoより新しいものの件数。
     お知らせバッジの「🆕新着」内訳用。
     """
     async with get_session() as session:
-        pending_filter = and_(
-            or_(
-                NazokakeItemORM.gemini_status == "pending",
-                NazokakeItemORM.elyza_status == "pending",
-            ),
-            NazokakeItemORM.created_at > since_iso,
-        )
         result = await session.execute(
-            select(func.count()).select_from(NazokakeItemORM).where(pending_filter)
+            select(func.count())
+            .select_from(NazokakeItemORM)
+            .where(and_(_pending_review_filter(), NazokakeItemORM.created_at > since_iso))
         )
         return result.scalar_one()
 

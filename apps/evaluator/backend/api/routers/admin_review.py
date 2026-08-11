@@ -1,14 +1,18 @@
 """api/routers/admin_review.py
 ================================
-Ⅱ ユーザーの投稿に基づく評価・承認(Phase2)。
+Ⅱ ユーザーの投稿に基づく評価・承認(Phase2、Phase5/6でフィードバックループ統合)。
 
 - GET  /unlock-requests                      : status=="pending"の直談判一覧
   (apps/persona_router が所有するFirestoreコレクションを直接読む。詳細は
   services/unlock_review.py のモジュールdocstring参照)。
 - POST /unlock-requests/{request_id}/action  : 赦す(pardon)/リセット(reset)/却下(reject)。
+- POST /nazokake-items/{doc_id}/review       : 5段階評価(review_status)の確定(Phase5/6)。
+  確定した時点でasync_get_pending_items()(承認待ちキュー)の対象から外れる。
 - POST /nazokake-items/{doc_id}/fewshot      : Few-shot採用フラグ+評価軸タグの更新。
   「承認待ちデータ」「RLHFレビュー」の両カードから共通で呼ばれる(どちらも最終的には
-  同じnazokake_itemsの1行を指すため)。
+  同じnazokake_itemsの1行を指すため)。①🏆Golden(review_status=="golden")と評価
+  済みの行のみ採用可能(Phase5/6)。採用が確定した瞬間、apps/persona_router側の
+  生成へ注入するためFirestore(nazokake_fewshots)へPushする(D)。
 """
 from __future__ import annotations
 
@@ -23,11 +27,15 @@ from api.deps import get_db, handle_exceptions, verify_admin_token
 from models.schemas import (
     FewshotUpdateRequest,
     FewshotUpdateResponse,
+    ReviewStatusUpdateRequest,
+    ReviewStatusUpdateResponse,
     UnlockActionRequest,
     UnlockActionResponse,
     UnlockRequestListResponse,
 )
 from nazokake_core.database import async_append_audit_log, async_get_item, async_upsert_item
+from nazokake_core.fewshots import push_fewshot_entry_sync, remove_fewshot_entry_sync
+from services.toku_kokoro import build_nazokake_text, extract_toku_kokoro
 from services.unlock_review import pardon, reject, reset
 
 router = APIRouter()
@@ -113,21 +121,57 @@ async def apply_unlock_action(
     return UnlockActionResponse(status="success", request_id=request_id, action=req.action)
 
 
+@router.post("/nazokake-items/{doc_id}/review", response_model=ReviewStatusUpdateResponse)
+@handle_exceptions
+async def update_review_status(
+    doc_id: str,
+    req: ReviewStatusUpdateRequest,
+    admin_token: dict = Depends(verify_admin_token),
+):
+    """Ⅱペインの5段階評価(Phase5/6)。確定した時点でasync_get_pending_items()
+    (承認待ちキュー)の対象から外れる(review_status IS NULLではなくなるため)。
+    """
+    existing = await async_get_item(doc_id)
+    if existing is None:
+        raise HTTPException(status_code=404, detail="対象のなぞかけが見つかりません")
+
+    await async_upsert_item({"doc_id": doc_id, "review_status": req.review_status})
+    await async_append_audit_log(
+        target_item_id=doc_id,
+        actor=f"admin:{admin_token.get('uid', 'unknown')}",
+        action="REVIEW_STATUS_SET",
+        reason_dict={"review_status": req.review_status},
+    )
+
+    return ReviewStatusUpdateResponse(
+        status="success", doc_id=doc_id, review_status=req.review_status
+    )
+
+
 @router.post("/nazokake-items/{doc_id}/fewshot", response_model=FewshotUpdateResponse)
 @handle_exceptions
 async def update_fewshot_selection(
     doc_id: str,
     req: FewshotUpdateRequest,
     admin_token: dict = Depends(verify_admin_token),
+    db=Depends(get_db),
 ):
     """「承認待ちデータ」「RLHFレビュー」双方のカードから共通で呼ばれる、Few-shot
-    採用フラグ+評価軸タグの更新。実際にservices.generation._FEWSHOT_POOLへ
-    動的に組み込む配線はPhase4(生成デフォルト設定のFirestore連携・キャッシュ基盤)で
-    行う予定であり、本エンドポイントは判断そのものの永続化に留める。
+    採用フラグ+評価軸タグの更新。①🏆Golden(review_status=="golden")と評価済みの
+    行のみ採用可能(Phase5/6の確定仕様)。採用が確定した瞬間、apps/persona_router
+    側の生成へ注入するためFirestore(nazokake_fewshots)へPushする(D、実データは
+    nazokake_core.fewshots.get_fewshot_pool()経由でTTLキャッシュ付きに読まれる)。
     """
     existing = await async_get_item(doc_id)
     if existing is None:
         raise HTTPException(status_code=404, detail="対象のなぞかけが見つかりません")
+
+    if req.is_fewshot_selected and existing.get("review_status") != "golden":
+        raise HTTPException(
+            status_code=422,
+            detail="①🏆Goldenと評価されたデータのみFew-shotに採用できます。"
+            "先に5段階評価でGoldenを選択してください。",
+        )
 
     await async_upsert_item(
         {
@@ -142,5 +186,27 @@ async def update_fewshot_selection(
         action="FEWSHOT_SELECT" if req.is_fewshot_selected else "FEWSHOT_UNSELECT",
         reason_dict={"fewshot_axis_tag": req.fewshot_axis_tag},
     )
+
+    try:
+        if req.is_fewshot_selected:
+            odai = existing.get("odai") or ""
+            toku, kokoro = extract_toku_kokoro(existing)
+            entry = {
+                "odai": odai,
+                "toku": toku,
+                "kokoro": kokoro,
+                "nazokake_text": existing.get("nazokake_text")
+                or build_nazokake_text(odai, toku, kokoro),
+                "fewshot_axis_tag": req.fewshot_axis_tag,
+            }
+            await asyncio.to_thread(push_fewshot_entry_sync, db, doc_id, entry)
+        else:
+            await asyncio.to_thread(remove_fewshot_entry_sync, db, doc_id)
+    except Exception as e:
+        # 判断そのもの(SQLite側is_fewshot_selected)の永続化は既に成功しているため、
+        # Firestore同期の失敗でAPI全体を失敗扱いにはしない(次回の選定操作時に
+        # 再試行される想定。get_fewshot_pool()のTTLキャッシュも「新規追加が
+        # 少し遅れて反映される」だけで生成自体は既存プールで継続できる)。
+        print(f"⚠️ [admin_review] Few-shot Firestore同期に失敗しました(判断の永続化自体は成功): {e}")
 
     return FewshotUpdateResponse(status="success", doc_id=doc_id)

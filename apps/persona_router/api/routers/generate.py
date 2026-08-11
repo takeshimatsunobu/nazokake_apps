@@ -71,7 +71,7 @@ async def generate_routed(req: GenerateRoutedRequest, db=Depends(get_db)):
     # --- Step2: ルート決定(step1.is_valid_input)・生成・全文組み立てはこの関数の内部で行う ---
     # 【Phase3】コスト計装の追加に伴いasync化(services/step2_generation.py参照)。
     route, toku, kokoro, nazokake_text, generator_model_id = await generate_step2(
-        req.odai, step1, persona
+        req.odai, step1, persona, db=db
     )
 
     # --- 段階的ブロック: ルートB(異常入力)発生をカウントする ---
