@@ -232,15 +232,33 @@ async def progressive_generate(
         CF_CLIENT_ID等のトンネル設定が存在せず(cloudbuild.yaml確認済み)、
         デフォルトのlocalhost:11434は構造的に到達不能(instructions/257で実測確認)。
         K_SERVICE(Cloud Run自身が注入する環境変数。main.pyのログ初期化と同じ検出規約)
-        が設定されている場合、【緊急対応: 自宅ワーカー回線不調】オンデマンドジョブ
-        キュー(経路B)を待たず、process_elyza_pinch_hitter()でその場にGemini Flash
-        Liteの代打生成へ切り替える。ローカル開発(K_SERVICE未設定)では従来通り
-        直接Ollama呼び出し(経路A)を試みる。
+        が設定されている場合はこの直接呼び出し自体を試みず、generate_ai()が既に
+        書き込み済みのelyza_job_status="pending"を経由するinstructions/250の
+        オンデマンドジョブキュー(workers/ondemand_elyza_worker.py)を
+        _ELYZA_WAIT_TIMEOUT_SEC秒だけ待つ。
+
+        【真の代打ロジック】「100%代打が出るならそれはスタメンだ」という指摘を
+        踏まえ、Cloud Run環境=即Gemini Flash Liteという以前の緊急対応(完全バイパス)
+        を撤回。まずローカルワーカーの完了を待ち、制限時間内に完了すれば実際の
+        ELYZA結果を採用する。タイムアウトまたはdead_letter(恒久失敗)の場合のみ、
+        process_elyza_pinch_hitter()でGemini Flash Liteに代打させる。
+        ローカル開発(K_SERVICE未設定)では従来通り直接Ollama呼び出し(経路A)を試みる。
         """
         if os.getenv("K_SERVICE"):
             logger.info(
-                f"[{doc_id}] ℹ️ Cloud Run環境のため、Gemini Flash Lite代打モードで生成します"
-                "(自宅ELYZAワーカーの通信回線不調に伴う緊急対応)。"
+                f"[{doc_id}] ℹ️ Cloud Run環境のため、オンデマンドジョブキュー(経路B)の完了を"
+                f"最大{_ELYZA_WAIT_TIMEOUT_SEC:.0f}秒待機します。"
+            )
+            worker_result = await _wait_for_elyza_worker_or_none(doc_id)
+            if worker_result is not None:
+                await async_upsert_item({"doc_id": doc_id, **worker_result})
+                logger.info(
+                    f"[{doc_id}] ✅ ローカルワーカーが制限時間内に完了しました(代打なし)。"
+                )
+                return
+            logger.warning(
+                f"[{doc_id}] ⚠️ ローカルワーカーが制限時間内に応答しなかった"
+                "(またはdead_letterへ隔離済み)ため、Gemini Flash Lite代打へ切り替えます。"
             )
             await process_elyza_pinch_hitter()
             return
@@ -380,6 +398,45 @@ async def _fetch_terminal_elyza_job(doc_id: str) -> dict | None:
             f"⚠️ [ELYZA Job] Firestoreからの結果マージに失敗(ローカルのみで続行): {e}"
         )
         return None
+
+
+# 【真の代打ロジック】Cloud Run本番でオンデマンドELYZAワーカー(経路B)の完了を
+# 待つ最大秒数。フロントエンドのクライアント側デッドライン(app.js: 90秒)より
+# 確実に短くし、タイムアウト後のGemini Flash Lite代打呼び出し(数秒〜十数秒)の
+# 余地を残す。ポーリング間隔はFirestore読み取り回数を抑えつつ、ジョブが早期に
+# 終わった場合はすぐ検知できるバランス値として5秒とした。
+_ELYZA_WAIT_TIMEOUT_SEC = 65.0
+_ELYZA_WAIT_POLL_INTERVAL_SEC = 5.0
+
+
+async def _wait_for_elyza_worker_or_none(
+    doc_id: str,
+    timeout_sec: float = _ELYZA_WAIT_TIMEOUT_SEC,
+    poll_interval_sec: float = _ELYZA_WAIT_POLL_INTERVAL_SEC,
+) -> dict | None:
+    """オンデマンドELYZAワーカー(workers/ondemand_elyza_worker.py)がジョブを
+    終端状態(completed/dead_letter)へ進めるのを、最大timeout_sec秒だけ待つ。
+
+    - ワーカーが制限時間内に llmjp_status=="completed" まで完了させた場合:
+      _ELYZA_JOB_MERGE_FIELDS の辞書を返す(呼び出し元がそのままupsertする)。
+    - dead_letter(ワーカー側がリトライを使い果たして恒久失敗)、またはタイムアウト
+      した場合: Noneを返す(=呼び出し元は代打へ切り替える)。
+
+    timeout_sec/poll_interval_secを引数化しているのは、検証スクリプト
+    (scripts/test_pinch_hitter_rate.py)が実際の待機を伴わず短時間で代打分岐を
+    再現できるようにするため(本番呼び出し側は既定値のまま使う)。
+    """
+    elapsed = 0.0
+    while elapsed < timeout_sec:
+        result = await _fetch_terminal_elyza_job(doc_id)
+        if result is not None:
+            if result.get("llmjp_status") == "completed":
+                return result
+            # dead_letter等、終端だが失敗: 代打対象として扱う。
+            return None
+        await asyncio.sleep(poll_interval_sec)
+        elapsed += poll_interval_sec
+    return None
 
 
 def _fetch_full_document_sync(doc_id: str) -> dict[str, Any] | None:

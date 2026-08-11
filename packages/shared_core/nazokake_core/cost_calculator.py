@@ -25,6 +25,12 @@ PRICE_TABLE_USD_PER_M_TOKENS: dict[str, tuple[float, float]] = {
     # 未登録だったため、Gemini生成コストが常に0円扱いになっていた欠落を修正)。
     # 単価は暫定推定値。実際の請求明細と照合の上、必要に応じて更新すること。
     "gemini-3.5-flash": (0.10, 0.40),
+    # ELYZAタイムアウト時のGemini Flash Lite代打モード(apps/evaluator/backend/
+    # api/routers/generate.py::process_elyza_pinch_hitter)で実運用使用中。
+    # gemini-3.5-flashの約半額という一般的なFlash-Lite/Flash比率を踏まえた
+    # 暫定推定値(実測でこのモデル固有の価格を確認できていないため)。
+    # 実際の請求明細と照合の上、必要に応じて更新すること。
+    "gemini-3.5-flash-lite": (0.05, 0.20),
 }
 
 DEFAULT_EXCHANGE_RATE_USD_JPY = 160.0
