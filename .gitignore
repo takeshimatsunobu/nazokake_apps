@@ -122,3 +122,5 @@ tools/instructions/
 # を持たないorphan gitlinkとして誤ってコミットすると、clone時に中身が復元できない
 # ダングリング参照が永続的に残るだけで無意味なため、意図的にgit管理対象から除外する。
 archive/_trash_candidates/apps_evaluator_backup/
+
+data/sqlite/*.zip

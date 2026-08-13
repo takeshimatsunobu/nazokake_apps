@@ -17,10 +17,14 @@
     <script type="importmap">
     {
         "imports": {
-            "config": "/config.js?v=20260811b",
-            "state": "/state.js?v=20260811b",
-            "api": "/api.js?v=20260811b",
-            "app": "/app.js?v=20260811b"
+            "config": "/config.js?v=20260813a",
+            "state": "/state.js?v=20260813a",
+            "api": "/api.js?v=20260813a",
+            "app": "/app.js?v=20260813a",
+            "firebase-config": "/firebase-config.js?v=20260813a",
+            "ui/auth": "/ui/auth.js?v=20260813a",
+            "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+            "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
         }
     }
     </script>
@@ -42,7 +46,13 @@
     <!-- ヘッダー(最小限。モバイルファーストのため縦幅を極力使わない) -->
     <header class="shrink-0 bg-indigo-700 text-white px-4 py-2.5 flex items-center justify-between shadow-md z-10">
         <h1 class="text-sm font-black tracking-wide">🎭 なぞかけ道場</h1>
-        <span class="text-[10px] text-indigo-200">匿名でOK・すぐ作れます</span>
+        <div class="flex items-center gap-2">
+            <span class="text-[10px] text-indigo-200 hidden xs:inline">匿名でOK・すぐ作れます</span>
+            <a href="/personas.html"
+                class="text-[11px] font-bold text-white bg-indigo-600 border border-indigo-400 rounded-full px-3 py-1 active:scale-95">
+                マイペルソナ
+            </a>
+        </div>
     </header>
 
     <!-- Step1: 上段・公開タイムライン領域(スクロール可能) -->
@@ -121,49 +131,10 @@
         </div>
     </div>
 
-    <!-- Phase3: 「赤ペン」添削モーダル(ペンネーム登録 → 添削入力 → ハッカーライクな送信ログ演出) -->
-    <div id="redpen-modal" class="hidden fixed inset-0 z-40 bg-black/60 flex items-end sm:items-center justify-center">
-        <div class="w-full sm:max-w-sm bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl p-4 max-h-[85vh] overflow-y-auto">
-            <div class="flex items-center justify-between mb-3">
-                <h2 class="text-sm font-black text-rose-700">🖊️ 赤ペン添削</h2>
-                <button id="redpen-close" type="button" class="text-slate-400 text-xl leading-none px-1">&times;</button>
-            </div>
+    <!-- 【persona_feature_plan_v3.md Phase9クリーンアップ】「赤ペン」添削モーダルは、
+         書き込み先がevaluator backend側のPOST /feed/evaluate/{doc_id}(SQLite
+         user_akapen系統)へ一本化されたため削除した。旧実装はgit履歴を参照。 -->
 
-            <!-- ペンネーム未登録時のみ表示 -->
-            <div id="redpen-penname-step">
-                <p class="text-xs text-slate-500 mb-2">添削には署名(ペンネーム)が必要です。まず名乗ってください。</p>
-                <input id="redpen-penname-input" type="text" maxlength="30" placeholder="例: 通りすがりの添削マン"
-                    class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 mb-2 focus:outline-none focus:ring-2 focus:ring-rose-400">
-                <button id="redpen-penname-submit" type="button"
-                    class="w-full text-sm font-bold text-white bg-rose-600 rounded-full py-2 active:scale-95">
-                    この名前で名乗る
-                </button>
-            </div>
-
-            <!-- 添削入力ステップ -->
-            <div id="redpen-form-step" class="hidden">
-                <p class="text-[11px] text-slate-400 mb-1">元の解答</p>
-                <p id="redpen-original" class="text-xs text-slate-600 bg-slate-50 rounded-lg p-2 mb-3 whitespace-pre-wrap"></p>
-
-                <label class="text-[11px] font-bold text-slate-500">添削後の「解き」</label>
-                <input id="redpen-toku" type="text" maxlength="200"
-                    class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 mb-2 focus:outline-none focus:ring-2 focus:ring-rose-400">
-
-                <label class="text-[11px] font-bold text-slate-500">添削後の「その心は」</label>
-                <textarea id="redpen-kokoro" rows="3" maxlength="400"
-                    class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-rose-400"></textarea>
-
-                <button id="redpen-submit" type="button"
-                    class="w-full text-sm font-bold text-white bg-rose-600 rounded-full py-2.5 active:scale-95">
-                    添削を届ける
-                </button>
-            </div>
-
-            <!-- ハッカーライクな送信ログ演出 -->
-            <div id="redpen-hacker-log" class="hidden bg-black rounded-lg p-3 font-mono text-[11px] text-emerald-400 leading-relaxed h-48 overflow-y-auto"></div>
-        </div>
-    </div>
-
-    <script type="module" src="/app.js?v=20260811b"></script>
+    <script type="module" src="/app.js?v=20260813b"></script>
 </body>
 </html>

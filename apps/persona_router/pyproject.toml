@@ -1,7 +1,7 @@
 [project]
 name = "nazokake-persona-router"
 version = "0.1.0"
-description = "ペルソナ推定とルーティングシステム(Step1キャッシュ + Step2生成、Cloud Run)"
+description = "お題属性推定とルーティングシステム(Step1キャッシュ + Step2生成、Cloud Run)"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi[standard]",

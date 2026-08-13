@@ -337,6 +337,22 @@ class ActionRequiredSummaryResponse(BaseModel):
     )
 
 
+class DatasetLayerCount(BaseModel):
+    """persona_feature_plan_v3.md §5/§6: 3層データセット基盤の1層分の件数サマリ。"""
+
+    label: str = Field(..., description="表示用ラベル(例: 「第1層(構造)」)")
+    total: int = Field(..., description="この層の現在の件数")
+
+
+class DatasetLayerSummaryResponse(BaseModel):
+    structure: DatasetLayerCount
+    reaction: DatasetLayerCount
+    correction: DatasetLayerCount
+    warning: Optional[str] = Field(
+        None, description="いずれかの層の集計が失敗し0件へ縮退した場合の警告メッセージ。正常時はnull"
+    )
+
+
 # ------------------------------------------------------------
 # Phase 1: APIエラー率(api/routers/admin_health.py::get_api_error_rate)。
 # nazokake_core.schemas.SystemCostLog.success を集計するだけで、Cloud Logging等の

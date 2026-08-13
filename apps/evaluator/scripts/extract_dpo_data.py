@@ -14,8 +14,26 @@ Phase 4.11 で全面改修:
   出力を持つ場合は同一プロンプト比較、片側のみキュレーション済みならバケット比較)。
 - 出力は従来通り data/dpo_dataset.jsonl。各行に "source"(admin/user) と
   "pair_type"(same_prompt/cross_prompt) のメタデータを付与する。
+
+【persona_feature_plan_v3.md Phase8 §5.3】user_feedbacks由来(source=="user")の
+ペアに以下2点を追加する(管理者キュレーション(source=="admin")は人間の審査
+ゲートを既に通過しているため対象外、計画書の表の通り):
+  1. 自己評価の除外: なぞかけを生んだ語り手ペルソナの所有者(narrator_personas.
+     owner_uid)が、自分自身の作品を評価したuser_feedbacksは学習ペアの根拠と
+     して使わない(自己強化バイアス防止)。
+  2. 寄与上限: 単一owner_uid・単一narrator_persona_version_idのいずれかが
+     user由来ペア全体の5%を超えて寄与しないようサンプリングする(一部の
+     ユーザー/ペルソナが優先選好データを支配することを防ぐ)。
+
+このスクリプトは apps/evaluator/.venv_ai という専用の最小限AI実行環境の
+サブプロセスとして起動される(tools/run_dpo_pipeline.py参照)ため、
+nazokake_coreパッケージがインストールされている保証が無い。このため
+narrator_personasの読み取りはnazokake_core.narrator_personasをimportせず、
+既存の設計方針(_fetch_nazokake_items_by_ids等)に倣い素のFirestore
+クライアントで直接行う。
 """
 import json
+import math
 import random
 from collections import defaultdict
 from pathlib import Path
@@ -34,7 +52,24 @@ REJECTED_SCORE_MAX = 2     # user_feedbacks Tier B: これ以下 かつ bad評�
 
 USER_FEEDBACK_FETCH_LIMIT = 500
 
+# persona_feature_plan_v3.md §5.3: 単一owner_uid/単一narrator_persona_version_idの
+# user由来ペア全体に対する寄与上限(5%)。
+CONTRIBUTION_CAP_RATIO = 0.05
+
 PROMPT_TEMPLATE = "お題「{odai}」で、誰もが納得する大衆性を持った秀逸ななぞかけを作成してください。"
+
+
+def _resolve_narrator_persona_owner_uid(db, persona_id, cache: dict) -> str | None:
+    """narrator_personasドキュメントからowner_uidを引く(§5.3の自己評価除外・
+    寄与上限フィルタで使う)。呼び出し元がcache辞書を使い回すことで、同一
+    persona_idへの重複Firestore読み取りを避ける。
+    """
+    if not persona_id:
+        return None
+    if persona_id not in cache:
+        snap = db.collection("narrator_personas").document(persona_id).get()
+        cache[persona_id] = (snap.to_dict() or {}).get("owner_uid") if snap.exists else None
+    return cache[persona_id]
 
 
 def _init_firebase():
@@ -63,7 +98,13 @@ def _classify(status: str) -> str:
 
 
 def _bucket_pairing(good_bucket: list, bad_bucket: list, source: str) -> list:
-    """good/badバケットをシャッフルして横断ペアリングする(pair_type=cross_prompt)。"""
+    """good/badバケットをシャッフルして横断ペアリングする(pair_type=cross_prompt)。
+
+    §5.3の寄与上限フィルタはchosen(採用)側の語り手ペルソナに帰属させるため、
+    good_bucketの各要素が持つnarrator_persona_id/version_id/owner_uid(存在する
+    場合のみ、管理者キュレーション側のバケットはこれらのキーを持たない)を
+    ペアへ引き継ぐ。"_"始まりの内部メタデータキーは最終出力の直前で除去される。
+    """
     good_bucket = list(good_bucket)
     bad_bucket = list(bad_bucket)
     random.shuffle(good_bucket)
@@ -74,6 +115,8 @@ def _bucket_pairing(good_bucket: list, bad_bucket: list, source: str) -> list:
             "prompt": PROMPT_TEMPLATE.format(odai=good["odai"]),
             "chosen": good["text"], "rejected": bad["text"],
             "source": source, "pair_type": "cross_prompt",
+            "_chosen_narrator_persona_version_id": good.get("narrator_persona_version_id"),
+            "_chosen_owner_uid": good.get("owner_uid"),
         })
     return pairs
 
@@ -155,16 +198,23 @@ def _fetch_nazokake_items_by_ids(db, doc_ids: list) -> dict:
 
 
 def extract_user_feedback_pairs(db, limit: int = USER_FEEDBACK_FETCH_LIMIT) -> list:
-    """user_feedbacks由来のChosen/Rejectedペアを抽出する(Tier A優先、Tier Bで補完)。"""
+    """user_feedbacks由来のChosen/Rejectedペアを抽出する(Tier A優先、Tier Bで補完)。
+
+    §5.3: 各フィードバックについて、対象なぞかけを生んだ語り手ペルソナの
+    owner_uidを引き、フィードバック投稿者(user_uid)と一致する場合は
+    「自己評価」として集計対象から除外する(自己強化バイアス防止)。
+    """
     feedbacks = fetch_recent_user_feedbacks(db, limit)
     if not feedbacks:
         return []
 
     doc_ids = sorted({fb["doc_id"] for fb in feedbacks if fb.get("doc_id")})
     items_by_id = _fetch_nazokake_items_by_ids(db, doc_ids)
+    owner_uid_cache: dict = {}
 
     by_doc_scores = defaultdict(lambda: defaultdict(list))
     scored_entries = []  # (doc_id, model_target, overall_score, axis_feedback)
+    self_eval_excluded = 0
 
     for fb in feedbacks:
         doc_id = fb.get("doc_id")
@@ -174,8 +224,21 @@ def extract_user_feedback_pairs(db, limit: int = USER_FEEDBACK_FETCH_LIMIT) -> l
             continue
         if doc_id not in items_by_id:
             continue
+
+        data = items_by_id[doc_id]
+        persona_owner_uid = _resolve_narrator_persona_owner_uid(
+            db, data.get("narrator_persona_id"), owner_uid_cache
+        )
+        fb_user_uid = fb.get("user_uid")
+        if fb_user_uid and persona_owner_uid and fb_user_uid == persona_owner_uid:
+            self_eval_excluded += 1
+            continue
+
         by_doc_scores[doc_id][model_target].append(overall_score)
         scored_entries.append((doc_id, model_target, overall_score, fb.get("axis_feedback") or {}))
+
+    if self_eval_excluded:
+        print(f"🛡️ [自己評価除外] user_feedbacks {self_eval_excluded}件を自己評価として除外しました。")
 
     pairs = []
     tier_a_doc_ids = set()
@@ -201,6 +264,10 @@ def extract_user_feedback_pairs(db, limit: int = USER_FEEDBACK_FETCH_LIMIT) -> l
             "prompt": PROMPT_TEMPLATE.format(odai=odai),
             "chosen": chosen, "rejected": rejected,
             "source": "user", "pair_type": "same_prompt",
+            "_chosen_narrator_persona_version_id": data.get("narrator_persona_version_id"),
+            "_chosen_owner_uid": _resolve_narrator_persona_owner_uid(
+                db, data.get("narrator_persona_id"), owner_uid_cache
+            ),
         })
         tier_a_doc_ids.add(doc_id)
 
@@ -216,7 +283,13 @@ def extract_user_feedback_pairs(db, limit: int = USER_FEEDBACK_FETCH_LIMIT) -> l
             continue
 
         if overall_score >= CHOSEN_SCORE_MIN:
-            good_bucket.append({"odai": odai, "text": text})
+            good_bucket.append({
+                "odai": odai, "text": text,
+                "narrator_persona_version_id": data.get("narrator_persona_version_id"),
+                "owner_uid": _resolve_narrator_persona_owner_uid(
+                    db, data.get("narrator_persona_id"), owner_uid_cache
+                ),
+            })
         elif overall_score <= REJECTED_SCORE_MAX and "bad" in axis_feedback.values():
             bad_bucket.append({"odai": odai, "text": text})
 
@@ -239,6 +312,57 @@ def _dedupe(pairs: list) -> list:
     return result
 
 
+def _apply_contribution_caps(pairs: list, cap_ratio: float = CONTRIBUTION_CAP_RATIO) -> list:
+    """§5.3: user由来ペア(source=="user")について、単一owner_uid・単一
+    narrator_persona_version_idのいずれかがuser由来ペア全体のcap_ratio(既定5%)を
+    超えて寄与しないようサンプリングする。
+
+    管理者キュレーション(source=="admin")は人間の審査ゲートを既に通過している
+    ため対象外(計画書の表: 「管理者キュレーション(Task1) | 人間のゲートがある
+    ため上限不要」)。属人化の実体はchosen(採用)側にあるとみなし、
+    _chosen_owner_uid/_chosen_narrator_persona_version_idで判定する(DPOは
+    chosen分布を強化する学習のため)。owner_uid/version_idが不明(None)の
+    ペアは上限判定の対象外とする(判定材料が無いものまで恣意的に間引かない)。
+    """
+    admin_pairs = [p for p in pairs if p.get("source") != "user"]
+    user_pairs = [p for p in pairs if p.get("source") == "user"]
+    if not user_pairs:
+        return pairs
+
+    base_count = len(user_pairs)
+    max_per_key = max(1, math.floor(cap_ratio * base_count))
+
+    shuffled = list(user_pairs)
+    random.shuffle(shuffled)
+
+    owner_counts: dict = defaultdict(int)
+    version_counts: dict = defaultdict(int)
+    kept = []
+    dropped = 0
+    for pair in shuffled:
+        owner_uid = pair.get("_chosen_owner_uid")
+        version_id = pair.get("_chosen_narrator_persona_version_id")
+        if owner_uid and owner_counts[owner_uid] >= max_per_key:
+            dropped += 1
+            continue
+        if version_id and version_counts[version_id] >= max_per_key:
+            dropped += 1
+            continue
+        if owner_uid:
+            owner_counts[owner_uid] += 1
+        if version_id:
+            version_counts[version_id] += 1
+        kept.append(pair)
+
+    if dropped:
+        print(
+            f"🛡️ [寄与上限] user由来{base_count}件中{dropped}件を上限超過のため除外しました"
+            f"(1owner_uid/1version_idあたり最大{max_per_key}件、cap_ratio={cap_ratio})。"
+        )
+
+    return admin_pairs + kept
+
+
 def extract_dpo_dataset_v7():
     db = _init_firebase()
 
@@ -253,15 +377,24 @@ def extract_dpo_dataset_v7():
     dpo_dataset = _dedupe(admin_pairs + user_pairs)
     print(f"📊 重複排除後の合計: {len(dpo_dataset)}件")
 
+    dpo_dataset = _apply_contribution_caps(dpo_dataset)
+    print(f"📊 寄与上限フィルタ後の合計: {len(dpo_dataset)}件")
+
     output_dir = Path.cwd() / "data"
     output_dir.mkdir(exist_ok=True)
     output_path = output_dir / "dpo_dataset.jsonl"
 
+    # "_"始まりのキーは寄与上限フィルタ用の内部メタデータであり、既存の出力契約
+    # (prompt/chosen/rejected/source/pair_type)には含めない。
+    output_dataset = [
+        {k: v for k, v in item.items() if not k.startswith("_")} for item in dpo_dataset
+    ]
+
     with open(output_path, "w", encoding="utf-8") as f:
-        for item in dpo_dataset:
+        for item in output_dataset:
             f.write(json.dumps(item, ensure_ascii=False) + "\n")
 
-    print(f"✅ DPO用データ抽出完了: {len(dpo_dataset)}件のペアを {output_path} に保存しました。")
+    print(f"✅ DPO用データ抽出完了: {len(output_dataset)}件のペアを {output_path} に保存しました。")
 
 
 if __name__ == "__main__":

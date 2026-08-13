@@ -26,10 +26,10 @@ run_dpo_training()(なぞかけ学習、prompt/chosen/rejected形式)。共通�
 import・4bit量子化ロード・LoRA(PEFT)設定・VRAM解放は、両関数から使う非公開ヘルパーへ
 集約し重複を避ける(Trainerクラス・データセット処理は各関数で完全に独立させる)。
 
-【instructions/278→279: なぞかけSFT専用関数の追加】instructions/278の調査で、
-data/sft_dataset.jsonl(tools/extract_dataset.pyの実際の出力)がChatMLの"messages"では
-なく{"prompt","completion"}のフラット2キーであることが判明した。run_sft_training()
-(Agent学習、ChatML専用)とは別に、この形状専用のrun_nazo_sft_training()を追加する。
+【Phase 8 (v3.0.0) 共通エンベロープ対応】
+なぞかけSFT専用関数 (run_nazo_sft_training) は、Phase 8で導入された3層データセットの
+共通エンベロープ形式 (payload 内に odai, toku, kokoro が分離された状態) を読み取り、
+動的に学習テキストへ組み立てる。
 
 【VRAM 8GB防弾仕様(instructions/276、全関数で維持)】
 - モデルロード: max_seq_length=1024, load_in_4bit=True(VRAM枯渇防止)。
@@ -40,20 +40,7 @@ data/sft_dataset.jsonl(tools/extract_dataset.pyの実際の出力)がChatMLの"m
 torch/unsloth/datasets/trlはGPU学習専用の重量級依存であり、requirements_orchestrator.txt
 (CI/エージェントツール用の軽量な共通環境)には意図的に含めていない。これらを関数内で
 遅延importし、該当行にpyright抑制コメントを付与することで、GPU環境の無いマシン
-(このモジュールをimportするだけのtools/train_nazo_model.py/train_agent_model.py、
-およびCIのPyrightゲート)を壊さない(apps/batch_factory/train_dpo.pyの--dry-run分岐と
-同じ設計判断)。
-
-以前実装されていた「--ppidを受け取り、デーモンスレッドで数秒おきに親プロセスの死活を
-ポーリングし、消失を検知したらos._exit(1)で自爆する」機構(Child Suicide)は、
-ポーリング間隔に起因する検知遅延や、ポーリングという仕組み自体の不確実性のため
-完全に廃止した(Epic 3)。
-
-プロセスツリーのアトミックな破棄は、呼び出し元(tools/train_nazo_model.py /
-tools/train_agent_model.py、さらにその親であるtools/mlops_pipeline_nazo.py /
-tools/mlops_pipeline_agent.py)が tools/process_manager.py 経由でOSネイティブな
-機構(POSIXのプロセスグループ/Windowsの Job Object)を用いて保証する責務へ
-委譲されている。このモジュール自身はもはや自己の生死を監視する必要がない。
+を壊さない。
 """
 
 from __future__ import annotations
@@ -71,6 +58,9 @@ def _load_model_with_lora(base_model: str):
     """4bit量子化ロード + LoRA(PEFT)設定(instructions/276のVRAM 8GB防弾仕様を両
     Trainerで共有する非公開ヘルパー)。戻り値は (model, tokenizer)。
     """
+    # [Fix: Segfault] Windows環境におけるpyarrow.datasetの初期化クラッシュ（アクセス違反）を防ぐため、
+    # 巨大なモンキーパッチを行うunslothの前に必ずdatasetsをロードし、C++ネイティブ拡張を安定化させる。
+    import datasets  # pyright: ignore[reportMissingImports] # noqa: F401
     from unsloth import FastLanguageModel  # pyright: ignore[reportMissingImports]
 
     print(f"[Action] Loading model: {base_model}")
@@ -116,8 +106,7 @@ def run_sft_training(base_model: str, dataset_path: Path, output_lora_path: Path
 
     tools/extract_agent_sft.pyが出力する"messages"列を、トークナイザ自身の標準的な
     チャットテンプレート(apply_chat_template)でプレーンテキストへ変換した上で
-    SFTTrainerへ渡す。特定のchat_template名(例: "llama-3")をハードコードしないのは、
-    このモジュールが対象モデルを知らない汎用コアエンジンであるため(絶対制約)。
+    SFTTrainerへ渡す。
     """
     from datasets import load_dataset  # pyright: ignore[reportMissingImports]
     from trl import SFTConfig, SFTTrainer  # pyright: ignore[reportMissingImports]
@@ -167,13 +156,10 @@ def run_sft_training(base_model: str, dataset_path: Path, output_lora_path: Path
 
 
 def run_nazo_sft_training(base_model: str, dataset_path: Path, output_lora_path: Path) -> None:
-    """なぞかけSFT専用: {"prompt","completion"}の2カラムを持つデータセットに対する
-    SFTTrainer(instructions/278の調査で判明、tools/extract_dataset.pyが実際に出力する
-    data/sft_dataset.jsonlの形状はChatMLの"messages"ではなくこのフラット2キーだった)。
+    """なぞかけSFT専用: Phase 8 (v3.0.0) の共通エンベロープ形式に対するSFTTrainer。
 
-    run_sft_training()(Agent学習、ChatML)とは別関数として分離する: なぞかけSFTには
-    チャットテンプレートを適用する対象("messages")が存在せず、単純な固定テンプレートで
-    1つのtextフィールドへ組み立てるだけで足りるため。
+    抽出されたJSONLが持つ `payload` (odai, toku, kokoro) を読み取り、
+    モデルに学習させる完成文のフォーマットへと動的に組み立てる。
     """
     from datasets import load_dataset  # pyright: ignore[reportMissingImports]
     from trl import SFTConfig, SFTTrainer  # pyright: ignore[reportMissingImports]
@@ -186,7 +172,19 @@ def run_nazo_sft_training(base_model: str, dataset_path: Path, output_lora_path:
     dataset = load_dataset("json", data_files=str(dataset_path), split="train")
 
     def _build_text(example: dict) -> dict:
-        text = f"### お題:\n{example['prompt']}\n\n### なぞかけ:\n{example['completion']}"
+        # Phase 8 (v3.0.0) 共通エンベロープ形式
+        if "payload" in example:
+            payload = example["payload"]
+            odai = payload.get("odai", "")
+            toku = payload.get("toku", "")
+            kokoro = payload.get("kokoro", "")
+            text = f"### お題:\n{odai}\n\n### なぞかけ:\n{odai}とかけて、{toku}と解く。\nその心は、{kokoro}"
+        else:
+            # 旧形式のフォールバック (flat prompt/completion)
+            prompt = example.get("prompt", "")
+            completion = example.get("completion", "")
+            text = f"### お題:\n{prompt}\n\n### なぞかけ:\n{completion}"
+            
         return {"text": text}
 
     dataset = dataset.map(_build_text, remove_columns=dataset.column_names)

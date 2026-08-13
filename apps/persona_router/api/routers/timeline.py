@@ -20,6 +20,8 @@ from firebase_admin import firestore
 from api.deps import get_db
 from api.routers.generate import RESULTS_COLLECTION
 from models.schemas import TimelineItem, TimelineResponse, ZabutonResponse
+from nazokake_core.narrator_personas import get_persona
+from nazokake_core.persona_reactions import add_reaction, effective_reaction_count
 
 router = APIRouter()
 
@@ -80,17 +82,44 @@ async def get_timeline(before: str | None = None, limit: int = DEFAULT_LIMIT, db
 
 @router.post("/v1/timeline/{doc_id}/zabuton", response_model=ZabutonResponse)
 async def add_zabuton(doc_id: str, db=Depends(get_db)):
-    """「座布団」リアクションを1件加算する。
+    """「座布団」リアクションを1件記録する。
 
     Phase2時点では連打・多重送信の防止はフロントエンド側(送信後ボタンを無効化
     し、反応済みdoc_idをlocalStorageへ記録)のみで行う。サーバー側のレート制限/
     重複排除は未実装(将来の悪用が問題化した場合に追加を検討する、と明記しておく)。
+
+    【persona_feature_plan_v3.md Phase8 §5.5】カウント方式を
+    nazokake_results.{doc_id}.zabuton_countへの単純なfirestore.Increment(1)から、
+    persona_reactionsコレクションへの「1反応=1レコードの追加」へ変更した。
+    既存のzabuton_countはこれ以降インクリメントせず、切り替え以前に蓄積された
+    反応数を表す初期値(baseline)として凍結し、実効反応数はbaseline +
+    persona_reactionsの件数で算出する(nazokake_core.persona_reactions参照)。
     """
     doc_ref = db.collection(RESULTS_COLLECTION).document(doc_id)
     snapshot = doc_ref.get()
     if not snapshot.exists:
         raise HTTPException(status_code=404, detail=f"指定のdoc_idが見つかりません: {doc_id}")
 
-    doc_ref.update({"zabuton_count": firestore.Increment(1)})
-    updated = doc_ref.get().to_dict() or {}
-    return ZabutonResponse(doc_id=doc_id, zabuton_count=updated.get("zabuton_count", 0))
+    data = snapshot.to_dict() or {}
+    narrator_persona_id = data.get("persona_id")
+    persona_doc = get_persona(db, narrator_persona_id) if narrator_persona_id else None
+    data_origin = "no_data"
+    owner_uid = None
+    if persona_doc:
+        data_origin = "builtin" if persona_doc.get("is_builtin") else "custom"
+        owner_uid = persona_doc.get("owner_uid")
+
+    add_reaction(
+        db,
+        target_collection=RESULTS_COLLECTION,
+        target_doc_id=doc_id,
+        narrator_persona_id=narrator_persona_id or "No_Data",
+        narrator_persona_version_id=data.get("narrator_persona_version_id") or "No_Data",
+        data_origin=data_origin,
+        owner_uid=owner_uid,
+        reaction_type="zabuton",
+    )
+
+    baseline = data.get("zabuton_count", 0)
+    total = effective_reaction_count(db, baseline=baseline, target_doc_id=doc_id)
+    return ZabutonResponse(doc_id=doc_id, zabuton_count=total)

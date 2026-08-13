@@ -33,8 +33,8 @@ import psutil  # noqa: E402
 from sqlalchemy import select  # noqa: E402
 
 from nazokake_core.database import (  # noqa: E402
-    DEFAULT_DB_PATH,
     NazokakeItemORM,
+    _resolve_repo_root_default_db_path,
     ensure_db_ready,
     get_session,
 )
@@ -55,8 +55,12 @@ LOCK_CANDIDATE_NAME_KEYWORDS = ("python", "uvicorn")
 
 
 def _resolve_db_path() -> Path:
-    """nazokake_core.database と同一のルール(環境変数 NAZOKAKE_DB_PATH 優先)でDBパスを解決する。"""
-    return Path(os.environ.get("NAZOKAKE_DB_PATH", DEFAULT_DB_PATH)).resolve()
+    """nazokake_core.database と同一のルール(環境変数 NAZOKAKE_DB_PATH 優先、未設定時は
+    リポジトリルート直下の絶対パス、persona_feature_plan_v3.md §9.1)でDBパスを解決する。
+    """
+    return Path(
+        os.environ.get("NAZOKAKE_DB_PATH") or _resolve_repo_root_default_db_path()
+    ).resolve()
 
 
 def check_no_process_locks(paths: list[Path]) -> None:

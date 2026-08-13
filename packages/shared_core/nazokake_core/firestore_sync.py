@@ -31,7 +31,13 @@ import firebase_admin
 from firebase_admin import firestore
 
 from .database import (
+    AuditLogORM,
+    QualityCircuitBreakerStateORM,
+    ResearchArticleORM,
+    TriggerStateORM,
     async_bulk_restore_items_if_missing,
+    async_bulk_restore_rows_if_missing,
+    async_get_all_rows,
     get_pending_sync_batch,
     mark_sync_failed,
     mark_synced,
@@ -40,6 +46,19 @@ from .database import (
 logger = logging.getLogger(__name__)
 
 DEFAULT_COLLECTION = "nazokake_items"
+
+# persona_feature_plan_v3.md §9.3: nazokake_items以外にFirestoreの同期対象へ
+# 追加する4テーブル。いずれもCloud Runの/tmpにしかなく、再起動のたびに失われて
+# いたため、Push(バックアップ)とPull(起動時復元)の両方を対象にする。
+# (collection名, ORM, 主キー列名)。collection名はテーブル名と同一にする
+# (nazokake_itemsと同じ命名規約、FIRESTORE_SYNC_COLLECTIONのような個別の
+# 環境変数オーバーライドはPhase1では設けない)。
+_STRUCTURAL_SYNC_TARGETS: tuple[tuple[str, type, str], ...] = (
+    ("audit_logs", AuditLogORM, "id"),
+    ("trigger_state", TriggerStateORM, "pipeline_id"),
+    ("quality_circuit_breaker_state", QualityCircuitBreakerStateORM, "pipeline_id"),
+    ("research_articles", ResearchArticleORM, "article_id"),
+)
 
 # instructions/240: 起動時リストアを、一括insert可能な数千件規模でも安全な
 # ホストパラメータ数(チャンクサイズ x NazokakeItemORMの列数)に収めるための単位。
@@ -144,14 +163,66 @@ def _push_one_sync(db, collection: str, row: dict[str, Any]) -> str:
     return _txn(db.transaction())
 
 
-async def sync_once(batch_size: int = 20) -> dict[str, int]:
-    """未同期(pending/error)バッチを1回分処理する。戻り値は件数の集計。"""
+def _push_structural_table_sync(
+    db, collection: str, pk_column: str, rows: list[dict[str, Any]]
+) -> int:
+    """1テーブル分を丸ごとFirestoreへUpsertする(同期関数、asyncio.to_threadから呼ぶ)。
+
+    nazokake_itemsの_push_one_syncと異なり、リモートの新旧比較(順序逆転防止)は
+    行わない。対象4テーブルはこのモジュールのPush以外にFirestoreへ書き込む主体が
+    存在しない(split-brainの懸念がない)ため、単純な上書きで十分(§9.3)。
+    """
+    pushed = 0
+    for row in rows:
+        doc_id = str(row[pk_column])
+        payload = {k: v for k, v in row.items() if v is not None}
+        db.collection(collection).document(doc_id).set(payload, merge=True)
+        pushed += 1
+    return pushed
+
+
+async def _push_structural_tables(db) -> dict[str, int]:
+    """_STRUCTURAL_SYNC_TARGETSの4テーブルを、それぞれ全件Firestoreへ丸ごとPushする。
+
+    1テーブルのPush失敗が他テーブルや呼び出し元(sync_once)を巻き込まないよう、
+    テーブルごとに個別にtry/exceptする。
+    """
+    stats: dict[str, int] = {}
+    for collection, orm_cls, pk_column in _STRUCTURAL_SYNC_TARGETS:
+        try:
+            rows = await async_get_all_rows(orm_cls)
+            pushed = await asyncio.to_thread(
+                _push_structural_table_sync, db, collection, pk_column, rows
+            )
+            stats[collection] = pushed
+        except Exception as e:
+            sys.stderr.write(
+                f"[firestore_sync][structural] {collection} のPushに失敗しました: {e}\n"
+            )
+            stats[collection] = 0
+    return stats
+
+
+async def sync_once(batch_size: int = 20) -> dict[str, Any]:
+    """未同期(pending/error)バッチを1回分処理する。戻り値は件数の集計。
+
+    §9.3: nazokake_itemsの差分Pushに加え、_STRUCTURAL_SYNC_TARGETSの4テーブルも
+    毎回全件Pushする(件数が少ないため許容できるコスト)。結果は"structural"キー
+    (テーブル名 -> push件数の辞書)にまとめ、既存の"pushed"等のキー(nazokake_items
+    向け)とは独立させる(既存呼び出し元のstats.get("pushed", 0)等の参照を壊さない)。
+    """
     _ensure_firebase_app()
     db = firestore.client()
     collection = _resolve_collection()
 
     rows = await get_pending_sync_batch(limit=batch_size)
-    stats = {"pushed": 0, "skipped_stale": 0, "failed": 0, "fatal": 0, "total": len(rows)}
+    stats: dict[str, Any] = {
+        "pushed": 0,
+        "skipped_stale": 0,
+        "failed": 0,
+        "fatal": 0,
+        "total": len(rows),
+    }
 
     for row in rows:
         doc_id = row["doc_id"]
@@ -171,6 +242,7 @@ async def sync_once(batch_size: int = 20) -> dict[str, int]:
             if became_fatal:
                 stats["fatal"] += 1
 
+    stats["structural"] = await _push_structural_tables(db)
     return stats
 
 
@@ -211,7 +283,41 @@ def _normalize_for_sqlite(value: Any) -> Any:
     return value
 
 
-async def async_restore_from_firestore() -> dict[str, int]:
+async def _restore_structural_tables(db) -> dict[str, dict[str, int]]:
+    """§9.3: _STRUCTURAL_SYNC_TARGETSの4テーブルを、それぞれ丸ごとFirestoreから
+    Pull復元する(既存優先、async_bulk_restore_rows_if_missingのINSERT OR IGNORE
+    セマンティクス)。nazokake_itemsのような1万件超のチャンク分割は対象4テーブルの
+    実測件数(いずれも数十件以下)では不要なため、1テーブル1バッチで復元する。
+    """
+    stats: dict[str, dict[str, int]] = {}
+    for collection, orm_cls, pk_column in _STRUCTURAL_SYNC_TARGETS:
+        table_stats = {"restored": 0, "skipped_existing": 0, "skipped_invalid": 0, "errors": 0}
+        try:
+            docs = await asyncio.to_thread(lambda c=collection: list(db.collection(c).stream()))
+            valid_rows: list[dict[str, Any]] = []
+            for doc in docs:
+                data = doc.to_dict() or {}
+                data[pk_column] = doc.id
+                if not data.get(pk_column):
+                    table_stats["skipped_invalid"] += 1
+                    continue
+                valid_rows.append({k: _normalize_for_sqlite(v) for k, v in data.items()})
+
+            restored, skipped_existing = await async_bulk_restore_rows_if_missing(
+                orm_cls, pk_column, valid_rows
+            )
+            table_stats["restored"] = restored
+            table_stats["skipped_existing"] = skipped_existing
+        except Exception as e:
+            logger.warning(
+                f"⚠️ [firestore_restore][structural] {collection} の復元に失敗しました: {e}"
+            )
+            table_stats["errors"] += 1
+        stats[collection] = table_stats
+    return stats
+
+
+async def async_restore_from_firestore() -> dict[str, Any]:
     """instructions/240: Cloud Run起動時、空のローカルSQLiteへFirestoreの
     nazokake_itemsコレクションから全件をPull(復元)する。sync_once()と対になる
     復元方向の処理で、これによりPush/Pull両方向が揃い「Cloud Run再起動でSQLiteが
@@ -238,7 +344,12 @@ async def async_restore_from_firestore() -> dict[str, int]:
     db = firestore.client()
     collection = _resolve_collection()
 
-    stats = {"restored": 0, "skipped_existing": 0, "skipped_invalid": 0, "errors": 0}
+    stats: dict[str, Any] = {
+        "restored": 0,
+        "skipped_existing": 0,
+        "skipped_invalid": 0,
+        "errors": 0,
+    }
 
     docs = await asyncio.to_thread(lambda: list(db.collection(collection).stream()))
 
@@ -269,4 +380,9 @@ async def async_restore_from_firestore() -> dict[str, int]:
         f"skipped_existing={stats['skipped_existing']} "
         f"skipped_invalid={stats['skipped_invalid']} errors={stats['errors']}"
     )
+
+    structural_stats = await _restore_structural_tables(db)
+    stats["structural"] = structural_stats
+    logger.info(f"🔄 [firestore_restore][structural] {structural_stats}")
+
     return stats

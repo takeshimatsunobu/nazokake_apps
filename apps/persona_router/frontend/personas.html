@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#4338CA">
+    <title>マイペルソナ (なぞかけ道場)</title>
+    <meta name="description" content="なぞかけ道場の語り手ペルソナ管理画面。自分だけのペルソナを作成・編集できます。">
+    <link rel="icon" href="data:,">
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- 【index.htmlと同じ規約】ローカルJSにバージョンクエリを付与し、更新のたびに
+         再フェッチさせる。次回このHTMLへ変更を加える際はこのバージョン文字列を
+         更新すること(index.html・personas.html双方の全エントリで統一)。 -->
+    <script type="importmap">
+    {
+        "imports": {
+            "config": "/config.js?v=20260813a",
+            "state": "/state.js?v=20260813a",
+            "api": "/api.js?v=20260813a",
+            "firebase-config": "/firebase-config.js?v=20260813a",
+            "ui/auth": "/ui/auth.js?v=20260813a",
+            "ui/personas": "/ui/personas.js?v=20260813a",
+            "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
+            "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
+        }
+    }
+    </script>
+
+    <style>
+        html, body { height: 100%; }
+        body { height: 100dvh; overscroll-behavior-y: none; }
+        #tooltip-sheet { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+    </style>
+</head>
+<body class="bg-slate-100 flex flex-col overflow-hidden">
+
+    <div id="toast-container" class="fixed top-3 inset-x-0 z-50 flex flex-col items-center gap-2 pointer-events-none px-4"></div>
+
+    <header class="shrink-0 bg-indigo-700 text-white px-4 py-2.5 flex items-center gap-2 shadow-md z-10">
+        <a href="/index.html" aria-label="なぞかけ道場に戻る" class="text-white text-lg leading-none px-1 active:scale-95">←</a>
+        <h1 class="text-sm font-black tracking-wide">🎭 マイペルソナ</h1>
+    </header>
+
+    <main class="relative flex-1 overflow-y-auto px-3 pt-3 pb-8">
+
+        <!-- ==================== マイペルソナ ==================== -->
+        <section aria-labelledby="my-personas-heading" class="mb-6">
+            <div class="flex items-center justify-between mb-2">
+                <h2 id="my-personas-heading" class="text-sm font-black text-slate-700">マイペルソナ</h2>
+                <button id="edit-mode-toggle" type="button" aria-pressed="false"
+                    class="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 active:scale-95">
+                    編集
+                </button>
+            </div>
+
+            <div id="my-personas-list" class="flex flex-col gap-2">
+                <p class="text-center text-xs text-slate-400 py-6">読み込み中...</p>
+            </div>
+
+            <button id="create-persona-btn" type="button"
+                class="mt-3 w-full text-sm font-bold text-indigo-700 bg-white border-2 border-dashed border-indigo-300 rounded-xl py-3 active:scale-95 disabled:opacity-50 disabled:pointer-events-none">
+                ＋ 新しいペルソナを作る
+            </button>
+            <p id="persona-limit-note" class="mt-1 text-center text-[11px] text-slate-400"></p>
+        </section>
+
+        <!-- ==================== アプリのペルソナ(組み込み・固定) ==================== -->
+        <section aria-labelledby="builtin-personas-heading">
+            <h2 id="builtin-personas-heading" class="text-sm font-black text-slate-700 mb-2">アプリのペルソナ</h2>
+            <div id="builtin-personas-list" class="flex flex-col gap-1.5">
+                <p class="text-center text-xs text-slate-400 py-6">読み込み中...</p>
+            </div>
+        </section>
+    </main>
+
+    <!-- ==================== 作成・編集フォーム(モーダル) ==================== -->
+    <div id="persona-form-modal" class="hidden fixed inset-0 z-40 bg-black/60 flex items-end sm:items-center justify-center">
+        <div class="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl p-4 max-h-[90vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-3">
+                <h2 id="persona-form-title" class="text-sm font-black text-indigo-700">ペルソナを作る</h2>
+                <button id="persona-form-close" type="button" class="text-slate-400 text-xl leading-none px-1" aria-label="閉じる">&times;</button>
+            </div>
+
+            <form id="persona-form" class="flex flex-col gap-3">
+                <!-- 【§7.4】ドラフト生成: 名前だけ入力してAIに初期案を作らせる -->
+                <div>
+                    <div class="flex items-center gap-1 mb-1">
+                        <label for="field-display_name" class="text-xs font-bold text-slate-600">呼び名</label>
+                        <button type="button" data-tooltip-field="display_name"
+                            class="tooltip-trigger w-4 h-4 shrink-0 rounded-full bg-slate-200 text-slate-500 text-[10px] font-black leading-4 text-center"
+                            aria-expanded="false" aria-describedby="tooltip-sheet">?</button>
+                    </div>
+                    <div class="flex gap-2">
+                        <input id="field-display_name" name="display_name" type="text" required maxlength="30"
+                            class="flex-1 min-w-0 text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                        <button id="draft-generate-btn" type="button"
+                            class="shrink-0 text-xs font-bold text-white bg-fuchsia-600 rounded-lg px-3 py-2 active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center gap-1.5">
+                            <svg id="draft-spinner" class="hidden animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                            </svg>
+                            <span id="draft-generate-label">✨ AI下書き</span>
+                        </button>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex items-center gap-1 mb-1">
+                        <label for="field-prompt" class="text-xs font-bold text-slate-600">人格の説明</label>
+                        <button type="button" data-tooltip-field="prompt"
+                            class="tooltip-trigger w-4 h-4 shrink-0 rounded-full bg-slate-200 text-slate-500 text-[10px] font-black leading-4 text-center"
+                            aria-expanded="false" aria-describedby="tooltip-sheet">?</button>
+                    </div>
+                    <textarea id="field-prompt" name="prompt" rows="5" required maxlength="2000"
+                        class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400"></textarea>
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <div class="flex items-center gap-1 mb-1">
+                            <label for="field-first_person" class="text-xs font-bold text-slate-600">一人称</label>
+                            <button type="button" data-tooltip-field="first_person"
+                                class="tooltip-trigger w-4 h-4 shrink-0 rounded-full bg-slate-200 text-slate-500 text-[10px] font-black leading-4 text-center"
+                                aria-expanded="false" aria-describedby="tooltip-sheet">?</button>
+                        </div>
+                        <input id="field-first_person" name="first_person" type="text" maxlength="30"
+                            class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-1 mb-1">
+                            <label for="field-tone" class="text-xs font-bold text-slate-600">雰囲気</label>
+                            <button type="button" data-tooltip-field="tone"
+                                class="tooltip-trigger w-4 h-4 shrink-0 rounded-full bg-slate-200 text-slate-500 text-[10px] font-black leading-4 text-center"
+                                aria-expanded="false" aria-describedby="tooltip-sheet">?</button>
+                        </div>
+                        <select id="field-tone" name="tone"
+                            class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                            <option value="gentle">おだやか</option>
+                            <option value="energetic">元気いっぱい</option>
+                            <option value="cool">クール</option>
+                            <option value="warm">あたたかい</option>
+                            <option value="sharp">辛口</option>
+                            <option value="playful">おちゃめ</option>
+                            <option value="serious">まじめ</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex items-center gap-1 mb-1">
+                        <label for="field-speech_style" class="text-xs font-bold text-slate-600">語り口</label>
+                        <button type="button" data-tooltip-field="speech_style"
+                            class="tooltip-trigger w-4 h-4 shrink-0 rounded-full bg-slate-200 text-slate-500 text-[10px] font-black leading-4 text-center"
+                            aria-expanded="false" aria-describedby="tooltip-sheet">?</button>
+                    </div>
+                    <input id="field-speech_style" name="speech_style" type="text" maxlength="200"
+                        class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                </div>
+
+                <div>
+                    <div class="flex items-center gap-1 mb-1">
+                        <label for="field-favorite_topics" class="text-xs font-bold text-slate-600">得意なジャンル</label>
+                        <button type="button" data-tooltip-field="favorite_topics"
+                            class="tooltip-trigger w-4 h-4 shrink-0 rounded-full bg-slate-200 text-slate-500 text-[10px] font-black leading-4 text-center"
+                            aria-expanded="false" aria-describedby="tooltip-sheet">?</button>
+                    </div>
+                    <input id="field-favorite_topics" name="favorite_topics" type="text" placeholder="カンマ区切りで入力(例: 日常, 恋愛)"
+                        class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                </div>
+
+                <div>
+                    <div class="flex items-center gap-1 mb-1">
+                        <label for="field-taboo" class="text-xs font-bold text-slate-600">苦手な話題</label>
+                        <button type="button" data-tooltip-field="taboo"
+                            class="tooltip-trigger w-4 h-4 shrink-0 rounded-full bg-slate-200 text-slate-500 text-[10px] font-black leading-4 text-center"
+                            aria-expanded="false" aria-describedby="tooltip-sheet">?</button>
+                    </div>
+                    <input id="field-taboo" name="taboo" type="text" placeholder="カンマ区切りで入力(任意)"
+                        class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <div class="flex items-center gap-1 mb-1">
+                            <label for="field-thinking_level" class="text-xs font-bold text-slate-600">じっくり度</label>
+                            <button type="button" data-tooltip-field="thinking_level"
+                                class="tooltip-trigger w-4 h-4 shrink-0 rounded-full bg-slate-200 text-slate-500 text-[10px] font-black leading-4 text-center"
+                                aria-expanded="false" aria-describedby="tooltip-sheet">?</button>
+                        </div>
+                        <select id="field-thinking_level" name="thinking_level"
+                            class="w-full text-sm border border-slate-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-indigo-400">
+                            <option value="low">低い</option>
+                            <option value="medium">ふつう</option>
+                            <option value="high">高い</option>
+                        </select>
+                    </div>
+                    <div>
+                        <div class="flex items-center gap-1 mb-1">
+                            <label for="field-temperature" class="text-xs font-bold text-slate-600">飛躍度</label>
+                            <button type="button" data-tooltip-field="temperature"
+                                class="tooltip-trigger w-4 h-4 shrink-0 rounded-full bg-slate-200 text-slate-500 text-[10px] font-black leading-4 text-center"
+                                aria-expanded="false" aria-describedby="tooltip-sheet">?</button>
+                        </div>
+                        <input id="field-temperature" name="temperature" type="range" min="0" max="1.5" step="0.1" value="0.8"
+                            class="w-full">
+                    </div>
+                </div>
+
+                <button id="persona-form-submit" type="submit"
+                    class="mt-1 w-full text-sm font-bold text-white bg-indigo-600 rounded-full py-2.5 active:scale-95 disabled:opacity-50 disabled:pointer-events-none">
+                    保存する
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- ==================== ツールチップ(§8.4: title属性は使わない、ボタン開閉式) ====================
+         モバイルでは画面下部シート形式(items-end)、それ以外は中央寄せ(sm:items-center)。 -->
+    <div id="tooltip-overlay" class="hidden fixed inset-0 z-50 bg-black/40 flex items-end sm:items-center justify-center">
+        <div id="tooltip-sheet" role="dialog" aria-modal="true" aria-labelledby="tooltip-sheet-title"
+            class="w-full sm:max-w-sm bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl p-4">
+            <div class="flex items-center justify-between mb-2">
+                <h3 id="tooltip-sheet-title" class="text-sm font-black text-slate-700"></h3>
+                <button id="tooltip-close" type="button" class="text-slate-400 text-xl leading-none px-1" aria-label="閉じる">&times;</button>
+            </div>
+            <p id="tooltip-sheet-body" class="text-sm text-slate-600 leading-relaxed"></p>
+        </div>
+    </div>
+
+    <script type="module" src="/ui/personas.js?v=20260813a"></script>
+</body>
+</html>

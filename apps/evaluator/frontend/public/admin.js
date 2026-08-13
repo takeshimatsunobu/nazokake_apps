@@ -26,14 +26,14 @@ function _isNewSince(timestampIso) {
     return t > prev;
 }
 
-// 【Phase2】評価軸コード→表示ラベル。apps/evaluator/backend/services/evaluation.pyの
-// AXES(13軸)と対応させる(persona_router/frontend側のresult.jsのuiAxisLabelsと同じ
-// 役割だが、S_persona/S_aufhebenを含む最新13軸版)。Few-shot採用時の評価軸タグ選択に使う。
+// 【persona_feature_plan_v3.md Phase2】評価軸コード→表示ラベル。
+// apps/evaluator/backend/services/evaluation.pyのAXES(11軸)と対応させる
+// (persona_router/frontend側のresult.jsのuiAxisLabelsと同じ役割)。
+// Few-shot採用時の評価軸タグ選択に使う。
 const AXIS_LABELS = {
     S_nat: '自然さ', S_tech: '技巧', S_rhy: 'リズム', S_prosody: '韻律',
     S_sur: '意外性', S_emo: '論理/納得感', S_cultural: '文化',
     S_visual: '視覚', S_sensory: '感覚', S_cm: 'クロスモーダル', S_ontology: '存在論',
-    S_persona: 'ペルソナ純度', S_aufheben: 'アウフヘーベン力',
 };
 
 // 【Phase5/6】nazokake_items.origin_type → バッジ表示。承認待ちキューの各行が
@@ -1420,6 +1420,36 @@ async function loadApiErrorRate() {
 }
 
 // ------------------------------------------------------------
+// 【persona_feature_plan_v3.md Phase8新設】3層(構造/反応/訂正)データセット基盤の集計
+// ------------------------------------------------------------
+
+async function loadDatasetLayerSummary() {
+    const structureEl = document.getElementById('dataset-layer-structure-total');
+    const reactionEl = document.getElementById('dataset-layer-reaction-total');
+    const correctionEl = document.getElementById('dataset-layer-correction-total');
+    const warningEl = document.getElementById('dataset-layer-summary-warning');
+    try {
+        const res = await authFetch(`${API_BASE}/admin/dataset-layer-summary`);
+        if (structureEl) structureEl.textContent = String(res.structure.total);
+        if (reactionEl) reactionEl.textContent = String(res.reaction.total);
+        if (correctionEl) correctionEl.textContent = String(res.correction.total);
+        if (warningEl) {
+            if (res.warning) {
+                warningEl.textContent = `⚠️ ${res.warning}`;
+                warningEl.classList.remove('hidden');
+            } else {
+                warningEl.classList.add('hidden');
+            }
+        }
+    } catch (e) {
+        if (structureEl) structureEl.textContent = '—';
+        if (reactionEl) reactionEl.textContent = '—';
+        if (correctionEl) correctionEl.textContent = '—';
+        console.warn('⚠️ 3層データセット集計の取得に失敗しました:', e);
+    }
+}
+
+// ------------------------------------------------------------
 // 【Phase4新設】Ⅳ生成設定: ペルソナ管理(3段階ライフサイクル)。
 // ------------------------------------------------------------
 
@@ -1594,6 +1624,7 @@ async function initAdmin() {
         loadPendingItems(),
         loadPendingAdminUsers(),
         loadApiErrorRate(),
+        loadDatasetLayerSummary(),
         loadUnlockRequests(),
         loadApiCosts(),
         loadGcpCosts(),

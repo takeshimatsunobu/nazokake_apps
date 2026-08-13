@@ -18,8 +18,6 @@ const STORAGE_KEYS = {
     // BLOCKEDが判明したらここに保存し、次回訪問時にリロード一発でブロック画面を
     // 復元できるようにする(サーバーへ問い合わせずに済む)。
     blockedUntil: "nazopr_blocked_until",
-    // Phase3: 「赤ペン」添削時に使うペンネーム(ユーザーが自分で設定する)。
-    penName: "nazopr_pen_name",
 };
 
 // 記録の無限肥大化を防ぐ上限(古いものから捨てる)。
@@ -57,7 +55,9 @@ function ensureUid() {
 export const appState = {
     uid: ensureUid(),
     selectedPersonaId: 1,
-    personas: /** @type {{persona_id:number, name:string}[]} */ ([]),
+    // 【Phase6でGET /v1/personasの形状変更】persona_idは文字列(組み込みは"1"〜"10"、
+    // カスタムはUUID)、表示名はdisplay_name。is_builtinで組み込み/カスタムを判別する。
+    personas: /** @type {{persona_id:string, display_name:string, is_builtin:boolean}[]} */ ([]),
     // 直近の再描画済みタイムライン先頭のcreated_at(新着ポーリングの基準点)。
     newestSeenCreatedAt: /** @type {string|null} */ (null),
 };
@@ -92,16 +92,4 @@ export function setCachedBlockedUntil(isoString) {
     } else {
         localStorage.removeItem(STORAGE_KEYS.blockedUntil);
     }
-}
-
-// ------------------------------------------------------------
-// Phase3: ペンネーム(添削の署名に使う。未設定ならnull)
-// ------------------------------------------------------------
-
-export function getPenName() {
-    return localStorage.getItem(STORAGE_KEYS.penName);
-}
-
-export function setPenName(name) {
-    localStorage.setItem(STORAGE_KEYS.penName, name);
 }

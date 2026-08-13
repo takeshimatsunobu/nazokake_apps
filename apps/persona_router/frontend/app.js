@@ -8,11 +8,11 @@
 // ではなく、経過時間に応じてメッセージを切り替える演出であることを明記しておく。
 import {
     appState, markAsMine, isMine, hasReactedZabuton, markZabutonReacted,
-    getCachedBlockedUntil, setCachedBlockedUntil, getPenName, setPenName,
+    getCachedBlockedUntil, setCachedBlockedUntil,
 } from "state";
 import {
     apiFetchPersonas, apiGenerate, apiFetchTimeline, apiZabuton,
-    apiSubmitUnlockRequest, apiSubmitCorrection,
+    apiSubmitUnlockRequest,
 } from "api";
 
 const TIMELINE_PAGE_SIZE = 20;
@@ -61,26 +61,40 @@ function showToast(message, kind = "info") {
 }
 
 function personaName(personaId) {
-    const found = appState.personas.find((p) => p.persona_id === personaId);
-    return found ? found.name : `ペルソナ#${personaId}`;
+    // personaIdはPOST /v1/generateのレスポンス(persona_id: number)由来のため数値。
+    // appState.personasの要素はGET /v1/personas由来でpersona_idが文字列("1"等)の
+    // ため、緩い比較(==)で数値/文字列どちらでも一致させる。
+    const found = appState.personas.find((p) => String(p.persona_id) === String(personaId));
+    return found ? found.display_name : `ペルソナ#${personaId}`;
 }
 
 // ------------------------------------------------------------
 // ペルソナ選択チップ(下段・生成UI)
+//
+// 【persona_feature_plan_v3.md Phase6以降の変更に伴う対応】GET /v1/personas は
+// 組み込み+マイペルソナの両方を返すようになったが、POST /v1/generate は現時点でも
+// persona_id: int (1〜10、組み込みのみ) しか受け付けない(カスタムペルソナでの
+// 生成統合はこのフェーズの対象外の既知のギャップ)。そのため生成用チップには
+// is_builtin===true の項目のみを表示する(カスタムペルソナはpersonas.htmlの
+// マイペルソナ管理でのみ扱う)。
 // ------------------------------------------------------------
+
+function generatablePersonas() {
+    return appState.personas.filter((p) => p.is_builtin);
+}
 
 function renderPersonaChips() {
     const wrap = document.getElementById("persona-chips");
     if (!wrap) return;
-    wrap.innerHTML = appState.personas
+    wrap.innerHTML = generatablePersonas()
         .map((p) => {
-            const active = p.persona_id === appState.selectedPersonaId;
+            const active = Number(p.persona_id) === appState.selectedPersonaId;
             const cls = active
                 ? "bg-indigo-600 text-white border-indigo-600"
                 : "bg-white text-slate-700 border-slate-300";
             return `<button type="button" data-persona-id="${p.persona_id}"
                 class="persona-chip shrink-0 whitespace-nowrap text-xs font-bold px-3 py-1.5 rounded-full border ${cls}">
-                ${escapeHtml(p.name)}
+                ${escapeHtml(p.display_name)}
             </button>`;
         })
         .join("");
@@ -126,10 +140,6 @@ function cardHtml(item) {
                 ${reacted ? "disabled" : ""}
                 class="zabuton-btn text-xs font-bold px-3 py-1.5 rounded-full border ${reacted ? "bg-slate-100 text-slate-400 border-slate-200" : "bg-amber-50 text-amber-700 border-amber-300 active:scale-95"}">
                 🪑 座布団 <span class="zabuton-count">${item.zabuton_count}</span>
-            </button>
-            <button type="button" data-action="redpen" data-doc-id="${escapeHtml(item.doc_id)}"
-                class="text-xs font-bold px-3 py-1.5 rounded-full border bg-rose-50 text-rose-700 border-rose-300 active:scale-95">
-                🖊️ 赤ペン
             </button>
         </div>
     </article>`;
@@ -252,7 +262,7 @@ function flushPendingNewItems() {
 }
 
 // ------------------------------------------------------------
-// タイムライン上のアクション(座布団・赤ペン、イベント委譲)
+// タイムライン上のアクション(座布団、イベント委譲)
 // ------------------------------------------------------------
 
 async function onTimelineClick(ev) {
@@ -260,12 +270,6 @@ async function onTimelineClick(ev) {
     if (zabutonBtn) {
         await handleZabuton(zabutonBtn);
         return;
-    }
-    const redpenBtn = ev.target.closest('[data-action="redpen"]');
-    if (redpenBtn) {
-        const card = redpenBtn.closest(".timeline-card");
-        const original = card?.querySelector(".nazokake-body")?.textContent || "";
-        openRedpenModal(redpenBtn.dataset.docId, original);
     }
 }
 
@@ -467,102 +471,10 @@ function initBlockScreen() {
     }
 }
 
-// ------------------------------------------------------------
-// Phase3: 「赤ペン」添削モーダル(ペンネーム登録 → 添削 → ハッカーライクなログ演出)
-// ------------------------------------------------------------
-
-let redpenTargetDocId = null;
-
-const HACKER_LOG_LINES = [
-    "> connecting to nazokake-core.internal ...",
-    "> authenticating pen name ...",
-    "> parsing kakekotoba structure ...",
-    "> diffing original vs corrected ...",
-    "> committing DPO candidate pair ...",
-    "> done. thank you for your contribution.",
-];
-
-function openRedpenModal(docId, originalText) {
-    redpenTargetDocId = docId;
-    document.getElementById("redpen-original").textContent = originalText || "";
-    document.getElementById("redpen-toku").value = "";
-    document.getElementById("redpen-kokoro").value = "";
-    document.getElementById("redpen-hacker-log").classList.add("hidden");
-    document.getElementById("redpen-hacker-log").innerHTML = "";
-
-    const hasPenName = !!getPenName();
-    document.getElementById("redpen-penname-step").classList.toggle("hidden", hasPenName);
-    document.getElementById("redpen-form-step").classList.toggle("hidden", !hasPenName);
-
-    document.getElementById("redpen-modal")?.classList.remove("hidden");
-}
-
-function closeRedpenModal() {
-    document.getElementById("redpen-modal")?.classList.add("hidden");
-    redpenTargetDocId = null;
-}
-
-async function playHackerLogThenClose() {
-    const logEl = document.getElementById("redpen-form-step");
-    logEl.classList.add("hidden");
-    const hackerEl = document.getElementById("redpen-hacker-log");
-    hackerEl.classList.remove("hidden");
-    hackerEl.innerHTML = "";
-
-    for (const line of HACKER_LOG_LINES) {
-        const p = document.createElement("p");
-        p.textContent = line;
-        hackerEl.appendChild(p);
-        hackerEl.scrollTop = hackerEl.scrollHeight;
-        await new Promise((resolve) => setTimeout(resolve, 260));
-    }
-    await new Promise((resolve) => setTimeout(resolve, 700));
-    closeRedpenModal();
-    showToast("🖊️ 赤ペン添削が届けられました。ありがとうございます!", "info");
-}
-
-function handleRedPenPenNameSubmit() {
-    const input = document.getElementById("redpen-penname-input");
-    const name = (input?.value || "").trim();
-    if (!name) {
-        showToast("ペンネームを入力してください", "warning");
-        return;
-    }
-    setPenName(name);
-    document.getElementById("redpen-penname-step")?.classList.add("hidden");
-    document.getElementById("redpen-form-step")?.classList.remove("hidden");
-}
-
-async function handleRedPenSubmit() {
-    const toku = (document.getElementById("redpen-toku")?.value || "").trim();
-    const kokoro = (document.getElementById("redpen-kokoro")?.value || "").trim();
-    if (!toku || !kokoro) {
-        showToast("添削後の「解き」と「その心は」を両方入力してください", "warning");
-        return;
-    }
-    const submitBtn = document.getElementById("redpen-submit");
-    if (submitBtn) submitBtn.disabled = true;
-    try {
-        await apiSubmitCorrection({
-            originalDocId: redpenTargetDocId,
-            clientUuid: appState.uid,
-            penName: getPenName(),
-            correctedToku: toku,
-            correctedKokoro: kokoro,
-        });
-        await playHackerLogThenClose();
-    } catch (e) {
-        showToast(`添削の送信に失敗しました: ${e.message}`, "error");
-    } finally {
-        if (submitBtn) submitBtn.disabled = false;
-    }
-}
-
-function initRedpenModal() {
-    document.getElementById("redpen-close")?.addEventListener("click", closeRedpenModal);
-    document.getElementById("redpen-penname-submit")?.addEventListener("click", handleRedPenPenNameSubmit);
-    document.getElementById("redpen-submit")?.addEventListener("click", handleRedPenSubmit);
-}
+// 【persona_feature_plan_v3.md Phase9クリーンアップ】「赤ペン」添削モーダル
+// (ペンネーム登録 → 添削 → ハッカーライクなログ演出)は、書き込み先がevaluator
+// backend側のPOST /feed/evaluate/{doc_id}(SQLite user_akapen系統)へ一本化された
+// ため削除した。旧実装はgit履歴を参照。
 
 // ------------------------------------------------------------
 // 初期化
@@ -575,12 +487,12 @@ async function init() {
     document.getElementById("load-more-btn")?.addEventListener("click", loadMoreTimeline);
     document.getElementById("new-items-pill")?.addEventListener("click", flushPendingNewItems);
     initBlockScreen();
-    initRedpenModal();
 
     try {
         appState.personas = await apiFetchPersonas();
-        if (appState.personas.length) {
-            appState.selectedPersonaId = appState.personas[0].persona_id;
+        const generatable = generatablePersonas();
+        if (generatable.length) {
+            appState.selectedPersonaId = Number(generatable[0].persona_id);
         }
         renderPersonaChips();
     } catch (e) {

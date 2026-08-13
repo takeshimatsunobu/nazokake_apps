@@ -1,7 +1,14 @@
 """
 main.py
 =========
-ペルソナ推定とルーティングシステム — FastAPI エントリポイント(骨組み)。
+お題属性推定とルーティングシステム — FastAPI エントリポイント(骨組み)。
+
+【命名の是正、persona_feature_plan_v3.md §0】このサービスは自らを「ペルソナ推定」
+と名乗っていたが、Step1(services/step1_estimation.py)が推定しているのはお題の
+言語的性質7属性(is_valid_input/domain_category/vocabulary_difficulty/
+slang_level/wordplay_flexibility/topic_scale/is_seasonal)であり、ペルソナでも
+ユーザー属性でもない。「narrator persona」(PERSONAS[1..10])はStep2の生成入力
+として使われるのみで、Step1では推定されない。実装は変更せず名称のみ是正する。
 
 apps/evaluator/backend と同じDDD再編規約(api/routers, models, services)に
 従う。起動時のカレントディレクトリは必ずこのファイルのあるディレクトリ
@@ -14,6 +21,20 @@ apps/evaluator/backend と同じDDD再編規約(api/routers, models, services)�
 from __future__ import annotations
 
 import os
+import sys
+
+# 【persona_feature_plan_v3.md Phase6】Windowsの既定コンソールはcp932であり、
+# print()で絵文字(⚠️等)を出力するとUnicodeEncodeErrorが発生する
+# (apps/evaluator/backend/main.py・workers/ondemand_elyza_worker.pyと同じ対策。
+# services/persona_draft.pyのフェイルセーフ用ログ出力で実際に踏んだため追加した)。
+# どのimportよりも前、かつこのファイル自身のprint()が呼ばれるより前に適用する。
+if sys.platform == "win32":
+    import io
+
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(encoding="utf-8")
+    if isinstance(sys.stderr, io.TextIOWrapper):
+        sys.stderr.reconfigure(encoding="utf-8")
 
 # 【重要: importの順序を変えないこと】api.routers(→services.step1_estimation等
 # →nazokake_core.env_config)を先にimportすることで、env_config側の自動.env
@@ -21,7 +42,7 @@ import os
 # 読む)を先に完了させる。その"後"で load_persona_router_env() を呼ぶことで、
 # override=Trueの後勝ち原則により、このアプリ固有の値(STEP1_MODEL/STEP2_MODEL/
 # GCP_PROJECT_ID)が正しく優先される(env.pyのdocstring参照)。
-from api.routers import corrections, generate, personas, timeline, unlock
+from api.routers import generate, personas, timeline, unlock
 from env import load_persona_router_env
 
 load_persona_router_env()
@@ -63,7 +84,10 @@ app.include_router(generate.router, tags=["generate"])
 app.include_router(personas.router, tags=["personas"])
 app.include_router(timeline.router, tags=["timeline"])
 app.include_router(unlock.router, tags=["unlock"])
-app.include_router(corrections.router, tags=["corrections"])
+# 【persona_feature_plan_v3.md Phase9クリーンアップ】赤ペン添削の書き込み口を
+# evaluator backend側のPOST /feed/evaluate/{doc_id}(SQLite user_akapen系統)へ
+# 一本化したため、このアプリ独自のPOST /v1/corrections(corrections.router、
+# Firestore corrections系統)は廃止した。旧実装はgit履歴を参照。
 
 
 @app.get("/healthz")

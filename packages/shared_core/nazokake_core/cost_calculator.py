@@ -31,6 +31,14 @@ PRICE_TABLE_USD_PER_M_TOKENS: dict[str, tuple[float, float]] = {
     # 暫定推定値(実測でこのモデル固有の価格を確認できていないため)。
     # 実際の請求明細と照合の上、必要に応じて更新すること。
     "gemini-3.5-flash-lite": (0.05, 0.20),
+    # persona_feature_plan_v3.md Phase6 §7.4: マイペルソナ「ドラフト生成」
+    # (apps/persona_router/services/persona_draft.py)専用のservice_typeキー。
+    # モデル自体は"gemini-3.5-flash"と同じだが、計画書が指定する単価
+    # (入力$1.50/1M、出力$9.00/1M)が既存の"gemini-3.5-flash"エントリ
+    # (evaluatorの本番生成コスト計測で実運用中、暫定推定値$0.10/$0.40)と
+    # 食い違っていたため、既存エントリを上書きせず別キーとして登録する
+    # (上書きするとevaluator側の全生成コスト計測に影響してしまうため)。
+    "persona_draft_gemini": (1.50, 9.00),
 }
 
 DEFAULT_EXCHANGE_RATE_USD_JPY = 160.0

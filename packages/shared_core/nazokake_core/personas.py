@@ -109,12 +109,64 @@ PERSONAS = {
 }
 
 
+class PersonaNotFoundError(Exception):
+    """指定されたpersona_idがPERSONAS(動的上書き込み)に存在しない場合に送出する。
+
+    【persona_feature_plan_v3.md Phase4 §7.3】以前は存在しないIDを
+    PERSONAS.get(id, PERSONAS[1])で黙ってペルソナ1にすり替えていたが、これだと
+    「記録されたpersona_id」と「実際に生成に使われたペルソナ」が食い違う事故が
+    起こり得た(気づかれないまま発生するため特に危険)。本例外は呼び出し元
+    (HTTPハンドラ・ジョブワーカー等)がそれぞれの文脈に応じたエラー処理
+    (404応答・ジョブのfailed確定等)へ変換するための共通の型。
+    """
+
+    def __init__(self, persona_id: object) -> None:
+        self.persona_id = persona_id
+        super().__init__(f"不明なpersona_id: {persona_id!r}")
+
+
+def get_persona_or_raise(persona_id: int | str, db=None) -> dict:
+    """get_personas(db)(動的上書き反映済み)から該当ペルソナを取得する。
+
+    存在しないIDに対してPERSONAS[1]等へ黙ってフォールバックすることは絶対に
+    しない(§7.3、PersonaNotFoundError参照)。
+
+    persona_idはintでも数字文字列("1"等)でも受け付け、内部でintへ正規化した上で
+    get_personas()の既存キー型(int、PERSONAS自体の型と同一)で引く。
+    【型統一についての注記】persona_feature_plan_v3.md §7.3は「persona_idの型を
+    文字列に統一する」ことを求めているが、これはFirestoreドキュメントIDとして
+    本来文字列であるnarrator_persona_id(nazokake_core.narrator_personas、Phase4で
+    新設)の話であり、既にadmin_config.py/persona_routerが依存している
+    PERSONAS/get_personas()自体のキー型(int)をここで変更すると両者を壊す
+    (実装時に確認して回避)。本関数はint/str両方の入力を許容することで、
+    呼び出し元がどちらの型でpersona_idを保持していても同じ経路を使えるようにする。
+
+    見つからない場合はPersonaNotFoundErrorを送出する。
+    """
+    try:
+        key = int(persona_id)
+    except (TypeError, ValueError):
+        raise PersonaNotFoundError(persona_id) from None
+
+    persona = get_personas(db).get(key)
+    if persona is None:
+        raise PersonaNotFoundError(persona_id)
+    return persona
+
+
 def get_system_prompt(persona_id: int) -> str:
-    """PERSONASから該当のプロンプトを取得(存在しないIDはデフォルトの1にフォールバック)。
+    """PERSONASから該当のプロンプトを取得する。
     JSON形式(キーは kake/toku/kokoro/persona_comment のみ)での出力を強制する
     システムプロンプト文字列を返す。
+
+    【persona_feature_plan_v3.md Phase4 §7.3】存在しないIDへのPERSONAS[1]
+    フォールバックは廃止した(記録上のpersona_idと実際に使われたペルソナが
+    食い違う事故を防ぐため)。呼び出し元はget_persona_or_raise()相当の
+    事前検証を行うか、本関数が送出するPersonaNotFoundErrorを捕捉すること。
     """
-    persona = PERSONAS.get(persona_id, PERSONAS[1])
+    persona = PERSONAS.get(persona_id)
+    if persona is None:
+        raise PersonaNotFoundError(persona_id)
     return f"""あなたは以下のペルソナに完全になりきり、なぞかけを作成してください。
 必ずJSON形式で出力し、キーは "kake", "toku", "kokoro", "persona_comment" の4つのみにしてください。
 それ以外のMarkdown(```json等)やテキストは絶対に含めないでください。

@@ -25,7 +25,10 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
-from nazokake_core.database import DEFAULT_DB_PATH, ensure_db_ready  # noqa: E402
+from nazokake_core.database import (  # noqa: E402
+    _resolve_repo_root_default_db_path,
+    ensure_db_ready,
+)
 
 MAX_BACKUP_GENERATIONS = 5
 
@@ -35,8 +38,12 @@ WAL_SIDECAR_SUFFIXES = ("-wal", "-shm")
 
 
 def _resolve_db_path() -> Path:
-    """database.py と同一のルール(環境変数 NAZOKAKE_DB_PATH 優先)でDBパスを解決する。"""
-    return Path(os.environ.get("NAZOKAKE_DB_PATH", DEFAULT_DB_PATH)).resolve()
+    """database.py と同一のルール(環境変数 NAZOKAKE_DB_PATH 優先、未設定時は
+    リポジトリルート直下の絶対パス、persona_feature_plan_v3.md §9.1)でDBパスを解決する。
+    """
+    return Path(
+        os.environ.get("NAZOKAKE_DB_PATH") or _resolve_repo_root_default_db_path()
+    ).resolve()
 
 
 def _confirm(prompt: str) -> bool:

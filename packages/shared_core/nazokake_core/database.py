@@ -26,6 +26,7 @@ import uuid
 from collections.abc import AsyncIterator, Callable, Coroutine
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any, TypeVar
 
 from opentelemetry import metrics
@@ -83,6 +84,29 @@ def _on_db_retry(retry_state):
 
 DEFAULT_DB_PATH = "nazokake_local.db"
 
+
+def _resolve_repo_root_default_db_path() -> str:
+    """NAZOKAKE_DB_PATH未設定時のフォールバック先を、呼び出し元のカレントディレクトリ
+    非依存な絶対パスに固定する(persona_feature_plan_v3.md §9.1)。
+
+    以前はDEFAULT_DB_PATH("nazokake_local.db")という素の相対パスのままだったため、
+    このモジュールをimportするプロセスのカレントディレクトリ次第で
+    apps/evaluator/backend/nazokake_local.db や packages/shared_core/nazokake_local.db
+    のような空のDBファイルが散在していた(NAZOKAKE_DB_PATHを明示的に絶対パス設定する
+    run_api.ps1経由の起動では顕在化しないが、pytestやアドホックなスクリプト実行では
+    容易に再現する)。nazokake_core.env_config._load_env()と同じ「このファイル自身の
+    場所から上へ辿ってリポジトリルート(.gitを持つディレクトリ)を探す」手法を流用し、
+    見つかったリポジトリルート直下のDEFAULT_DB_PATHへ解決する。
+    """
+    current = Path(__file__).resolve().parent
+    for parent in [current, *current.parents]:
+        if (parent / ".git").exists():
+            return str(parent / DEFAULT_DB_PATH)
+    # リポジトリルートが見つからない場合(例: パッケージが単体でvendoringされた等)は
+    # 従来通りカレントディレクトリ基準の相対パスへフォールバックする。
+    return DEFAULT_DB_PATH
+
+
 # ポイズンピル判定の閾値: mark_sync_failed()がこの回数に達したらsync_status="fatal"へ
 # 隔離し、get_pending_sync_batch()の対象から外す(無限リトライ防止)。
 MAX_SYNC_RETRIES = 3
@@ -91,8 +115,11 @@ T = TypeVar("T")
 
 
 def _resolve_db_url() -> str:
-    """環境変数 NAZOKAKE_DB_PATH(未設定時は DEFAULT_DB_PATH)からaiosqlite用の接続URLを組み立てる。"""
-    db_path = os.environ.get("NAZOKAKE_DB_PATH", DEFAULT_DB_PATH)
+    """環境変数 NAZOKAKE_DB_PATH(未設定時はリポジトリルート直下の絶対パス、
+    §9.1参照)からaiosqlite用の接続URLを組み立てる。解決結果は起動時に必ずログ出力する
+    (どのDBファイルへ実際に接続しているかを常に追跡可能にするため)。"""
+    db_path = os.environ.get("NAZOKAKE_DB_PATH") or _resolve_repo_root_default_db_path()
+    logger.info(f"📁 [DB経路解決] NAZOKAKE_DB_PATH未指定時のデフォルト解決先: {db_path}")
     return f"sqlite+aiosqlite:///{db_path}"
 
 
@@ -162,6 +189,22 @@ class NazokakeItemORM(Base):
     source: Mapped[str | None] = mapped_column(String, nullable=True)
     model_id: Mapped[str | None] = mapped_column(String, nullable=True)
     evaluator_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # persona: narrator persona(PERSONAS[1..10]、語り手ペルソナ)選択の現役の配送経路。
+    # {"persona_id":.., "temperature":..} 形で
+    # apps/evaluator/backend/api/routers/generate.py が書き込み、
+    # 一方向同期(sync_once_safe)でFirestoreへPushされた後、
+    # workers/ondemand_elyza_worker.py::_claim_job_sync がFirestore側のこの値を
+    # 読み取ってELYZA生成のペルソナID/temperatureとして使う。
+    # 【persona_feature_plan_v3.md §2.4 との相違点】同計画書は当初audience persona
+    # (Big5+職業分類、apps/batch_factory側の別概念で本列とは無関係)の廃止調査の
+    # 一環として本列を「読み取り側が存在しない廃止済み列」と分類していたが、
+    # 実際には上記の通り現役の読み取り側が存在するため、廃止・書き込み停止はしない
+    # (2026-08-12、実装時に読み取り経路を確認して訂正)。
+    # 【Phase3で新設したnarrator_persona_id等との関係】下記4列は「論理参照先」を
+    # 恒久的に記録する新経路だが、generate.py/ondemand_elyza_worker.pyの実配送は
+    # 現時点でも本列(persona JSON)のままである。両者の一本化(全参照経路を
+    # get_personas相当へ寄せる)はPhase5の対象であり、それまでは本列への書き込みを
+    # 継続する。
     persona: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     trend: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
     dpo_pair_id: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -256,6 +299,27 @@ class NazokakeItemORM(Base):
     # 復元処理を全滅させた実例を踏まえた、意図的な設計判断。
     llmjp_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
     llmjp_is_pinch_hitter: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # --- persona_feature_plan_v3.md Phase3: 語り手ペルソナへの論理参照(§3.5) ---
+    # Firestore(narrator_personas/narrator_persona_versions、Phase4で新設予定)を
+    # SSoTとするため、ここではFK制約を張らない論理参照カラムとして持つのみ。
+    # 実データが無い/未判明の行は"No_Data"(narrator_persona_version_idのみPhase4の
+    # バージョニング基盤が無いため当面全件"No_Data")。
+    narrator_persona_id: Mapped[str] = mapped_column(
+        String, nullable=False, default="No_Data", server_default="No_Data"
+    )
+    narrator_persona_version_id: Mapped[str] = mapped_column(
+        String, nullable=False, default="No_Data", server_default="No_Data"
+    )
+    narrator_persona_name: Mapped[str] = mapped_column(
+        String, nullable=False, default="No_Data", server_default="No_Data"
+    )
+    # data_origin: "builtin"(PERSONAS[1..10]由来と判明) / "custom"(Phase6のユーザー
+    # 作成ペルソナ由来、今回は未使用) / "no_data"(出自不明)。除外用ではなく分析・
+    # 追跡用(§5.7)。他3列が"No_Data"(大文字)なのに対しこの列のみ小文字"no_data"
+    # なのは計画書(persona_feature_plan_v3.md §3.5)の表記通り。
+    data_origin: Mapped[str] = mapped_column(
+        String, nullable=False, default="no_data", server_default="no_data"
+    )
 
 
 class AuditLogORM(Base):
@@ -778,6 +842,14 @@ _NAZOKAKE_ITEM_BULK_DEFAULTS: dict[str, Any] = {
     # 踏まえ「意図的にNone」であることを明示するため、念のため追記しておく。
     "llmjp_model_id": None,
     "llmjp_is_pinch_hitter": None,
+    # persona_feature_plan_v3.md Phase3で新設したNOT NULL列(server_default有り)。
+    # 上記is_fewshot_selectedと全く同じ教訓(このリストへの追記漏れが起動時リストア
+    # 全滅の実例を過去に生んでいる)を踏まえ、旧Firestoreドキュメントがこの4キーを
+    # 持たない場合の既定値をここで必ず補う。
+    "narrator_persona_id": "No_Data",
+    "narrator_persona_version_id": "No_Data",
+    "narrator_persona_name": "No_Data",
+    "data_origin": "no_data",
 }
 
 
@@ -831,6 +903,58 @@ async def async_bulk_restore_items_if_missing(
                 else 0
             )
 
+    return inserted, len(filtered_rows) - inserted
+
+
+# ------------------------------------------------------------------
+# persona_feature_plan_v3.md §9.3: audit_logs/trigger_state/
+# quality_circuit_breaker_state/research_articlesをFirestoreの同期対象へ追加する
+# ためのDAO。これらはnazokake_itemsと異なりsync_status等の差分追跡列を持たない
+# 小規模テーブル(実測でいずれも数十件以下)のため、「毎回全件をFirestoreへ丸ごと
+# Push・起動時に丸ごとPull(既存優先で復元)」という簡素な方式を取る。
+# 汎用ヘルパーとして1回実装し、対象4テーブルで共有する(firestore_sync.py参照)。
+# ------------------------------------------------------------------
+
+
+async def async_get_all_rows(orm_cls: type[DeclarativeBase]) -> list[dict[str, Any]]:
+    """指定ORMの全行を辞書のリストとして返す(読み取り専用)。
+
+    件数が少ない(高々数百件規模)テーブルをFirestoreへ丸ごとPushする用途専用。
+    nazokake_itemsのような大規模テーブルには使わないこと(全件ロードのため)。
+    """
+    columns = [c.name for c in orm_cls.__table__.columns]
+    async with get_session() as session:
+        result = await session.execute(select(orm_cls))
+        rows = result.scalars().all()
+        return [{c: getattr(row, c) for c in columns} for row in rows]
+
+
+async def async_bulk_restore_rows_if_missing(
+    orm_cls: type[DeclarativeBase], pk_column: str, rows: list[dict[str, Any]]
+) -> tuple[int, int]:
+    """指定ORMへ、主キーが未存在の行のみ一括挿入する(INSERT OR IGNORE相当)。
+
+    async_bulk_restore_items_if_missing()の汎用版。audit_logs等の小規模テーブルは
+    NazokakeItemORMのような複雑な後方互換デフォルト補完(_NAZOKAKE_ITEM_BULK_DEFAULTS)
+    を必要としない(Firestore側のドキュメントは常にこのコードベース自身のPushが
+    書いた完全な行であり、旧世代スキーマの断片が混入する余地がないため)。欠けている
+    キーはNoneのまま素通しし、NOT NULL制約違反があれば呼び出し元のtry/exceptに任せる。
+    """
+    if not rows:
+        return 0, 0
+    columns = [c.name for c in orm_cls.__table__.columns]
+    filtered_rows = [{col: payload.get(col) for col in columns} for payload in rows]
+
+    async with get_session() as session:
+        async with session.begin():
+            stmt = sqlite_insert(orm_cls).values(filtered_rows)
+            stmt = stmt.on_conflict_do_nothing(index_elements=[pk_column])
+            result = await session.execute(stmt)
+            inserted = (
+                getattr(result, "rowcount", 0)
+                if getattr(result, "rowcount", 0) and getattr(result, "rowcount", 0) > 0
+                else 0
+            )
     return inserted, len(filtered_rows) - inserted
 
 

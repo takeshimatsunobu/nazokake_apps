@@ -44,7 +44,7 @@ if sys.platform == "win32":
     if isinstance(sys.stderr, io.TextIOWrapper):
         sys.stderr.reconfigure(encoding="utf-8")
 
-from nazokake_core.database import DEFAULT_DB_PATH  # noqa: E402
+from nazokake_core.database import _resolve_repo_root_default_db_path  # noqa: E402
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 ALEMBIC_INI_PATH = BASE_DIR / "packages" / "shared_core" / "alembic.ini"
@@ -63,7 +63,7 @@ def _load_alembic_config_utf8(ini_path: Path) -> Config:
 
 
 def main() -> int:
-    db_path = os.environ.get("NAZOKAKE_DB_PATH", DEFAULT_DB_PATH)
+    db_path = os.environ.get("NAZOKAKE_DB_PATH") or _resolve_repo_root_default_db_path()
     lock_path = f"{db_path}.migration.lock"
 
     cfg = _load_alembic_config_utf8(ALEMBIC_INI_PATH)

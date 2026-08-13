@@ -11,7 +11,7 @@ from alembic import context
 # このファイル(alembic/env.py)から見た packages/shared_core をsys.pathへ追加する。
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from nazokake_core.database import Base, DEFAULT_DB_PATH  # noqa: E402
+from nazokake_core.database import Base, _resolve_repo_root_default_db_path  # noqa: E402
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
@@ -29,13 +29,14 @@ target_metadata = Base.metadata
 
 def _resolve_sync_db_url() -> str:
     """nazokake_core.database._resolve_db_url()と同一のルール(環境変数
-    NAZOKAKE_DB_PATH優先、未設定時はDEFAULT_DB_PATH)でDBパスを解決する。
+    NAZOKAKE_DB_PATH優先、未設定時はリポジトリルート直下の絶対パス、
+    persona_feature_plan_v3.md §9.1)でDBパスを解決する。
 
     アプリ本体はaiosqlite(非同期ドライバ)で接続するが、Alembicのマイグレーション
     自体は常駐イベントループを必要としない同期処理のため、標準のsqlite3ドライバ
     (aiosqliteサフィックス無し)へ向ける。
     """
-    db_path = os.environ.get("NAZOKAKE_DB_PATH", DEFAULT_DB_PATH)
+    db_path = os.environ.get("NAZOKAKE_DB_PATH") or _resolve_repo_root_default_db_path()
     return f"sqlite:///{db_path}"
 
 
@@ -60,6 +61,11 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        # persona_feature_plan_v3.md Phase3: SQLiteはALTER TABLEの機能が限定的
+        # (列のADD自体は素で動くが、型変更・制約変更・古いSQLiteでのDROP COLUMN等は
+        # 直接サポートしない)。batch_alter_table(新テーブル作成→コピー→差し替え)を
+        # 自動的に使わせることで、将来のマイグレーションも含めて安全側に倒す。
+        render_as_batch=True,
     )
 
     with context.begin_transaction():
@@ -80,7 +86,11 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            render_as_batch=True,
+        )
 
         with context.begin_transaction():
             context.run_migrations()

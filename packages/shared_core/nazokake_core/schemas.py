@@ -39,12 +39,6 @@ class Scores(BaseModel):
     S_cm: float = Field(..., ge=0.0, le=1.0)
     S_prosody: float = Field(..., ge=0.0, le=1.0)
     S_nat: float = Field(..., ge=0.0, le=1.0)
-    # 【Phase4追加】persona_router向けに新設した2軸。default=0.5とすることで、これらの
-    # 軸を採点しない旧来の書き込み元(batch_factory/batch/gemini_evaluator.py等)が
-    # 何も変更せずに済む後方互換を保つ(apps/evaluator/backend/api/routers/generate.py:76の
-    # Scores(**raw)呼び出しでも欠損時は自動的にこの既定値が使われる)。
-    S_persona: float = Field(0.5, ge=0.0, le=1.0)
-    S_aufheben: float = Field(0.5, ge=0.0, le=1.0)
 
 class Result(BaseModel):
     hint: str = ""
@@ -63,7 +57,12 @@ class Big5(BaseModel):
 class PersonaMeta(BaseModel):
     occupation_code: str
     occupation_name: str
-    big5: Big5
+    # 【persona_feature_plan_v3.md Phase3 §2.2】big5必須制約を削除。旧audience
+    # persona(職業13分類×Big5)の廃止に伴い、Big5の概念自体を持たない本番マスター
+    # ペルソナ(narrator persona)経由の構築(batch_factory/master_personas.py等)では
+    # 値を指定しない。Bigクラス自体・occupation_code/occupation_name/persona_prompt
+    # の必須制約はPhase3の対象外のため維持する。
+    big5: Big5 | None = None
     persona_prompt: str
 
 class TrendMeta(BaseModel):

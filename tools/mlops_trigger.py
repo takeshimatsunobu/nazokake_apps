@@ -1,6 +1,34 @@
 """
 tools/mlops_trigger.py
 =========================
+【🛑 RETIRED 2026-08-13】このトリガーは無効化されている。
+
+commit b2b22d9「chore(infra): enforce CI/CD SSoT, remove backdoor, setup GH
+actions」(2026-08-04)が、このモジュールの前提だった tools/extract_dataset.py
+(コアーセット・リプレイ選定/MinHash LSH重複排除/DPOペア化を含む本格的な抽出
+パイプライン)と tools/extract_agent_sft.py を削除した。これにより本モジュールは
+起動時に ModuleNotFoundError でクラッシュする状態が2026-08-04以降続いていた。
+
+tools/extract_training_data.py はこの穴を埋める代替ではない(同ファイルの
+docstringが明言する通り、コアーセット・リプレイ/DPOペア化を持たない別目的の
+軽量な補助スクリプト)。つまり _fetch_candidates 相当の抽出ロジックはリポジトリ
+上に存在しない。
+
+加えて、このトリガーが駆動する best-of-N/DPO学習パイプラインそのものが、
+CLAUDE.md §5に記載の通りbest-of-1へ既に置き換えられており、リポジトリ内の
+別の場所(tools/apply_best_of_n_safeguards_v3.py等)でも同系統のロジックが
+隔離(quarantine)対象として扱われている最中だった。
+
+以上を2026-08-13にユーザーへ提示し、「抽出ロジックを復元して復旧する」のではなく
+「このトリガー自体を退役させる」方針が選択された。そのため以下は、旧
+ModuleNotFoundErrorに代えて、起動時に即座に安全へ抜ける退役ガードのみを残し、
+DBのtrigger_state claimもエフェメラルVMキックも二度と行わない。
+
+以下は退役前の設計ドキュメントとして参照用に残す(実際のロジックは
+main()冒頭の退役ガードにより到達しない)。
+
+---
+
 イベント駆動のMLOps起動トリガー(Epic 3、instructions/173でステートレス化、
 instructions/174でクールダウン状態をDBへ完全移行)。
 
@@ -125,13 +153,10 @@ import asyncio
 import json
 import os
 import shutil
-import signal
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 from types import FrameType
-
-import filelock
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 if str(BASE_DIR) not in sys.path:
@@ -145,7 +170,10 @@ from nazokake_core.database import (  # noqa: E402
 from tools import shadow_mode  # noqa: E402
 from tools.cleanup_git_resources import cleanup_merged_git_resources  # noqa: E402
 from tools.config import settings  # noqa: E402
-from tools.extract_dataset import _fetch_candidates  # noqa: E402
+
+# 【🛑 RETIRED 2026-08-13】tools.extract_dataset は commit b2b22d9 で削除済み。
+# count_nazo_candidates() はもはや呼び出されない(main()冒頭の退役ガード参照)ため、
+# 復活させる代わりにインポート自体を削除した。
 
 # 【instructions/178】このトリガー自身の多重実行を防ぐローカル排他ロック。run/は
 # tools/mlops_common.pyのVRAM_LOCK_PATHと同じ揮発層の慣習に合わせた既存ディレクトリ
@@ -219,9 +247,14 @@ def _save_last_run_status(status: str, message: str, **details) -> None:
 
 
 def count_nazo_candidates() -> int:
-    """tools/extract_dataset.pyと同一条件のなぞかけDPO/SFT候補の総件数を数える。"""
-    candidates = asyncio.run(_fetch_candidates())
-    return len(candidates)
+    """【🛑 RETIRED】tools/extract_dataset.py削除(commit b2b22d9)により抽出ロジック
+    自体が存在しない。main()冒頭の退役ガードによりこの関数はもはや呼ばれない。
+    """
+    raise RuntimeError(
+        "tools/mlops_trigger.py は退役済みです。count_nazo_candidates() は"
+        "tools/extract_dataset.py(commit b2b22d9で削除)に依存していたため、"
+        "呼び出し不能な状態のまま残しています。"
+    )
 
 
 def count_agent_success_logs() -> int:
@@ -634,25 +667,18 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    # 【instructions/298: Graceful Shutdown】OS/Dockerデーモンからの停止シグナルを
-    # 直接トラップする(tools/scheduler_daemon.pyと同じ規約)。
-    signal.signal(signal.SIGTERM, _handle_shutdown_signal)
-    signal.signal(signal.SIGINT, _handle_shutdown_signal)
-
-    # 【instructions/178】run/.vm_provision.lock(timeout=0)で、このトリガー自身の
-    # 多重実行を排除する。他プロセスが既にロックを保持している場合は競合とみなし、
-    # エラーではなく正常系として何もせずExit 0する(tools/run_migrations.pyの
-    # filelock.Timeout捕捉パターンを踏襲)。
-    lock = filelock.FileLock(str(VM_PROVISION_LOCK_PATH), timeout=0)
-    try:
-        with lock:
-            return _run_trigger_cycle(args)
-    except filelock.Timeout:
-        print(
-            "ℹ️  [Trigger] 他のtools/mlops_trigger.pyが既にロックを保持しているため、"
-            "多重プロビジョニングを避けて何もせず終了します(instructions/178)。"
-        )
-        return 0
+    # 【🛑 RETIRED 2026-08-13】ここで即座に安全側へ抜ける。以降の閾値評価・Git
+    # クリーンアップ・DBのtrigger_state claim・エフェメラルVMキックは一切行わない
+    # (ユーザー承認済み: 抽出ロジックの復元ではなくトリガー自体の退役を選択)。
+    retirement_message = (
+        "tools/mlops_trigger.py は退役済みです(2026-08-13)。前提だった"
+        "tools/extract_dataset.py が commit b2b22d9 で削除されて以降、抽出ロジックが"
+        "存在しないため、閾値評価もエフェメラルVMキックも行わず何もせず終了します。"
+    )
+    print(f"🛑 [Trigger] {retirement_message}", file=sys.stderr)
+    if not args.dry_run:
+        _save_last_run_status("retired", retirement_message)
+    return 0
 
 
 if __name__ == "__main__":

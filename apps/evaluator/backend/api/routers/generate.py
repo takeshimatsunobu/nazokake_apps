@@ -34,7 +34,8 @@ from firebase_admin import firestore
 from api.deps import get_db, handle_exceptions
 from api.routers.admin_costs import is_budget_exceeded
 from models.schemas import GenerateRequest
-from personas import PERSONAS
+from nazokake_core.narrator_personas import compute_version_id
+from nazokake_core.personas import PersonaNotFoundError, get_persona_or_raise
 from services.generation import generate_via_gemini, generate_via_llmjp
 from services.evaluation import run_evaluation, AXES
 from nazokake_core.database import async_get_item, async_upsert_item
@@ -86,6 +87,7 @@ async def progressive_generate(
     pair_id: str,
     persona_prompt: str | None = None,
     temperature: float | None = None,
+    narrator_persona_id: str | None = None,
 ):
     """段階的開示の本体。Gemini と ELYZA を「完全に独立した並列フロー」で実行する。
 
@@ -138,7 +140,12 @@ async def progressive_generate(
             # 送出される。このリクエスト単位のtry/exceptがそのまま吸収し、他の並行
             # リクエストやサーバープロセス自体には影響しない(常駐サーバーのため、
             # apps/batch_factoryのような自律ループのプロセス強制終了はここでは行わない)。
-            await async_record_evaluation_score("live_evaluation_gemini", ev["s_total"])
+            # 【persona_feature_plan_v3.md Phase5 §5.4】pipeline_idの末尾に
+            # narrator_persona_idを付与し、ペルソナごとに品質監視ウィンドウを
+            # 分離する(1ペルソナの不調が他ペルソナの健全なカウンタを汚さないため)。
+            await async_record_evaluation_score(
+                f"live_evaluation_gemini::{narrator_persona_id}", ev["s_total"]
+            )
             validated_scores = _validate_scores_with_fallback(ev["scores"])
             await async_upsert_item(
                 {
@@ -199,8 +206,10 @@ async def progressive_generate(
                 }
             )
             ev_l = await run_evaluation(odai, text_l)
+            # 【persona_feature_plan_v3.md Phase5 §5.4】pipeline_idの末尾に
+            # narrator_persona_idを付与し、ペルソナごとに品質監視ウィンドウを分離する。
             await async_record_evaluation_score(
-                "live_evaluation_elyza", ev_l["s_total"]
+                f"live_evaluation_elyza::{narrator_persona_id}", ev_l["s_total"]
             )
             validated_scores_l = _validate_scores_with_fallback(ev_l["scores"])
             await async_upsert_item(
@@ -281,8 +290,10 @@ async def progressive_generate(
             ev_l = await run_evaluation(odai, text_l)
             # 【instructions/182】Gemini側(live_evaluation_gemini)とは別のpipeline_idで
             # 追跡する(ELYZA/おまけ側の不調がGemini側の健全なカウンタを汚さないため)。
+            # 【persona_feature_plan_v3.md Phase5 §5.4】pipeline_idの末尾に
+            # narrator_persona_idを付与し、ペルソナごとに品質監視ウィンドウを分離する。
             await async_record_evaluation_score(
-                "live_evaluation_elyza", ev_l["s_total"]
+                f"live_evaluation_elyza::{narrator_persona_id}", ev_l["s_total"]
             )
             validated_scores_l = _validate_scores_with_fallback(ev_l["scores"])
             await async_upsert_item(
@@ -322,11 +333,12 @@ async def _guarded_progressive(
     pair_id: str,
     persona_prompt: str | None = None,
     temperature: float | None = None,
+    narrator_persona_id: str | None = None,
 ):
     """未捕捉例外でもDBに必ず error を書き、無限ロード（サイレントデス）を防ぐ最終防壁。"""
     try:
         await progressive_generate(
-            db, doc_id, odai, pair_id, persona_prompt, temperature
+            db, doc_id, odai, pair_id, persona_prompt, temperature, narrator_persona_id
         )
     except Exception as e:
         logger.exception(f"[{doc_id}] 背景タスク(生成・評価)で致命的エラー発生: {e}")
@@ -571,8 +583,27 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
     # ローカルDB更新へ記録し、抽出スクリプトがバッチ由来・アプリ由来を同一ロジックで
     # ペア回収できるようにする。
     pair_id = f"dpo-{uuid.uuid4().hex[:12]}"
-    # ペルソナ選択(personas.py)。存在しないIDはデフォルト(1)にフォールバックする。
-    persona_prompt = PERSONAS.get(req.persona_id, PERSONAS[1])["prompt"]
+    # 【persona_feature_plan_v3.md Phase4 §7.2/§7.3】ハードコードのPERSONASを
+    # 直接参照する代わりにget_persona_or_raise(id, db)を経由することで、
+    # 管理コクピット(admin_config.py)からの動的上書きを自動的に反映する
+    # (persona_router::generate_routed()と同じ経路)。存在しないIDへ
+    # PERSONAS[1]へ黙ってフォールバックすることも廃止し、404を返す。
+    try:
+        persona = get_persona_or_raise(req.persona_id, db)
+    except PersonaNotFoundError:
+        raise HTTPException(status_code=404, detail=f"不明なpersona_id: {req.persona_id}")
+    persona_prompt = persona["prompt"]
+    # 【persona_feature_plan_v3.md Phase5 §3.4/§7.3】narrator_persona_id(文字列
+    # 統一済み)と、Phase4で新設したnarrator_personas.pyの内容ハッシュversion_idを
+    # 算出する。settingsのキー名(display_name/prompt)はtools/seed_narrator_personas.py
+    # のシード時と揃える(同一内容なら同一version_idになることを保証するため)。
+    # 【レース対策(§3.4)】ここで確定させたversion_id/persona_promptは、以降の
+    # ELYZAジョブペイロード・SQLite行の両方へそのままスナップショットとして
+    # 記録する(ワーカーはFirestoreを引き直さない)。
+    narrator_persona_id = str(req.persona_id)
+    narrator_persona_version_id = compute_version_id(
+        narrator_persona_id, {"display_name": persona["name"], "prompt": persona["prompt"]}
+    )
     await async_upsert_item(
         {
             "doc_id": doc_id,
@@ -589,9 +620,23 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
             "created_at": datetime.now(timezone.utc).isoformat(),
             "random_weight": random.random(),  # noqa: S311 (無限スクロール用シーク乱数。暗号用途ではない)
             "dpo_pair_id": pair_id,
+            # persona_feature_plan_v3.md Phase3で新設した論理参照4列(現時点で
+            # 生成可能なのは組み込みペルソナのみのためdata_originは常に"builtin")。
+            "narrator_persona_id": narrator_persona_id,
+            "narrator_persona_version_id": narrator_persona_version_id,
+            "narrator_persona_name": persona["name"],
+            "data_origin": "builtin",
             # persona列(既存のJSON汎用カラム)にリクエストされたペルソナID/温度を記録する。
             # 新規マイグレーション不要でスキーマへ組み込むための選択。
-            "persona": {"persona_id": req.persona_id, "temperature": req.temperature},
+            # 【Phase5 §3.4】narrator_persona_version_id/persona_promptもここに同梱し、
+            # workers/ondemand_elyza_worker.pyがFirestoreを引き直さずスナップショットを
+            # そのまま使えるようにする(_claim_job_sync参照)。
+            "persona": {
+                "persona_id": req.persona_id,
+                "temperature": req.temperature,
+                "narrator_persona_version_id": narrator_persona_version_id,
+                "persona_prompt": persona["prompt"],
+            },
         }
     )
     # 【instructions/283】Cloud RunはCPUをリクエスト処理中のみ割り当てる仕様のため、
@@ -604,7 +649,7 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
     # 背景で生成パイプラインを発火し、即座にレスポンスを返す（HTTPをブロックしない）
     task = asyncio.create_task(
         _guarded_progressive(
-            db, doc_id, req.odai, pair_id, persona_prompt, req.temperature
+            db, doc_id, req.odai, pair_id, persona_prompt, req.temperature, narrator_persona_id
         )
     )
     _bg_tasks.add(task)

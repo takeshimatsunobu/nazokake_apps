@@ -1,7 +1,8 @@
 """
 models/schemas.py
 ====================
-ペルソナ推定とルーティングシステムのPydanticスキーマ契約(骨組み)。
+お題属性推定とルーティングシステムのPydanticスキーマ契約(骨組み)。
+【命名の是正、persona_feature_plan_v3.md §0】main.pyのdocstring参照。
 apps/evaluator/backend/models/schemas.py と同じ配置規約(Request/Responseを
 1ファイルに集約)に従う。
 
@@ -18,9 +19,10 @@ apps/evaluator/backend/models/schemas.py と同じ配置規約(Request/Response�
 """
 from __future__ import annotations
 
+import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 DomainCategory = Literal["school", "work", "hobby", "daily_life", "general_unknown"]
 VocabularyDifficulty = Literal["easy", "standard", "advanced"]
@@ -90,27 +92,11 @@ class GenerateRoutedResponse(BaseModel):
     )
 
 
-# ------------------------------------------------------------
-# GET /v1/personas: フロントエンドのペルソナ選択UI用(骨組み)。
-#
-# 【SSoT注記】ペルソナの実体(prompt本文含む)は nazokake_core.personas.PERSONAS が
-# 唯一の情報源。フロントエンドがこれを二重管理すると、GEMINI_API_KEYの複製事故
-# (apps/persona_router/env.py参照)やAPI_BASEの複製事故(evaluator/frontend/
-# config.js参照)と同種の「値の食い違い」を将来必ず起こす。そのため本APIは
-# 表示に必要な最小限(id/name)のみを都度返し、prompt本文(生成ロジックの内部
-# 詳細)はクライアントへ渡さない。
-# ------------------------------------------------------------
-class PersonaListItem(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    persona_id: int = Field(..., ge=1, le=10)
-    name: str = Field(..., description="表示用のペルソナ名(nazokake_core.personas.PERSONASの'name')")
-
-
-class PersonaListResponse(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    personas: list[PersonaListItem]
+# 【persona_feature_plan_v3.md Phase6】GET /v1/personas のレスポンスは
+# 旧PersonaListItem/PersonaListResponse(persona_id: int、name/promptのみの
+# 簡易形)から、NarratorPersonaItem/NarratorPersonaListResponse(本ファイル
+# 末尾、persona_id: str、narrator_personas文書の全付随情報込み)へ置き換えた
+# (§7.1「GET /v1/personas: 変更」)。
 
 
 # ------------------------------------------------------------
@@ -174,30 +160,253 @@ class UnlockRequestResponse(BaseModel):
     submitted_at: str = Field(..., description="ISO8601(UTC)")
 
 
+# 【persona_feature_plan_v3.md Phase9クリーンアップ】POST /v1/corrections用の
+# CorrectionCreate/CorrectionResponse(Phase3で新設)は、赤ペン添削の書き込み口が
+# evaluator backend側のPOST /feed/evaluate/{doc_id}(SQLite user_akapen系統)へ
+# 一本化されたため削除した。旧実装はgit履歴を参照。
+
 # ------------------------------------------------------------
-# POST /v1/corrections: 「赤ペン」添削の送信(Phase3)。
+# persona_feature_plan_v3.md Phase6: マイペルソナAPI(§7.1の9エンドポイント)。
 #
-# 元のAI生成(nazokake_results.{original_doc_id})に対する人間の添削案を保存する。
-# 元テキスト(rejected相当)と添削後テキスト(chosen相当)の両方を1ドキュメントに
-# 保存しておくことで、将来のDPOペア抽出(apps/evaluator/backend/scripts/
-# extract_dpo_data.py相当)がこのコレクションを直接読むだけで
-# {prompt, chosen, rejected} を組み立てられるようにする(SSoT: 元テキストの
-# 複製は「その時点のスナップショット」として意図的に許容する。nazokake_results側が
-# 後から変わることは無いため食い違いは発生しない)。
+# 【§7.5 プロンプトインジェクション対策(このモジュールが担う部分)】
+# 1. 名前は30文字・改行禁止
+# 3. prompt保存時に長さ上限(2000文字)と禁止パターン検査
+# ここでの正規表現検査はあくまで補助的な防御(defense in depth)であり、主たる
+# 防御は「アプリ側の固定プロンプトを常にユーザープロンプトより後ろに配置する
+# (後勝ち構造)」という呼び出し側(services/step2_generation.py等、Phase6の
+# スコープ外)の構造そのもの。ここでは、システムプロンプトの構造自体を破壊しようと
+# する明確な意図を持つパターン(会話ロールマーカーの偽装・既存指示の無視要求)
+# のみを狙い撃ちし、ロールプレイ設定自体(「〜として振る舞ってください」等、
+# 本機能の核心)を誤検知しないよう最小限に絞る。
 # ------------------------------------------------------------
-class CorrectionCreate(BaseModel):
+
+_INJECTION_PATTERN_SOURCES = [
+    # 【修正】"ignore all previous instructions"のように修飾語が複数連続する
+    # ケースを取りこぼさないよう、"ignore"と"instructions"の間は語数を限定せず
+    # 任意文字(最大20文字、改行またぎの回避策も想定しDOTALLを適用)の緩い
+    # ギャップとして扱う。
+    r"ignore\s+.{0,20}?\binstructions?\b",
+    r"disregard\s+.{0,20}?\b(instructions?|rules?|guidelines?)\b",
+    r"system\s*prompt",
+    r"system\s*:",
+    r"assistant\s*:",
+    r"<\|.*?\|>",  # ChatML等の特殊トークン偽装(<|im_start|>等)
+    r"###\s*instruction",
+    r"(これまで|以上|上記)の(指示|命令|プロンプト)(を|は)?\s*(無視|忘れ|破棄)",
+    r"システムプロンプト",
+    r"(指示|命令)を?\s*(すべて|全て)\s*(無視|忘れ)",
+]
+_INJECTION_PATTERNS = [
+    re.compile(p, re.IGNORECASE | re.DOTALL) for p in _INJECTION_PATTERN_SOURCES
+]
+
+
+def _reject_injection_patterns(value: str, *, field_label: str) -> str:
+    for pattern in _INJECTION_PATTERNS:
+        if pattern.search(value):
+            raise ValueError(
+                f"{field_label}に、システムプロンプトの構造を乱す可能性のある"
+                "パターンが含まれているため保存できません。"
+            )
+    return value
+
+
+def _reject_newlines(value: str, *, field_label: str) -> str:
+    if "\n" in value or "\r" in value:
+        raise ValueError(f"{field_label}に改行を含めることはできません。")
+    return value
+
+
+PersonaTone = Literal["gentle", "energetic", "cool", "warm", "sharp", "playful", "serious"]
+PersonaThinkingLevel = Literal["low", "medium", "high"]
+
+
+class PersonaSettingsInput(BaseModel):
+    """narrator_persona_versions.settings に保存する設定項目(§3.2)。
+
+    create/update(POST・PATCH)の入力にも、draft生成の出力にも使う共通の形。
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    original_doc_id: str = Field(..., min_length=1, description="nazokake_results のドキュメントID")
-    client_uuid: str = Field(..., min_length=1, max_length=100)
-    pen_name: str = Field(..., min_length=1, max_length=30, description="添削者のペンネーム(localStorage保存)")
-    corrected_toku: str = Field(..., min_length=1, max_length=200)
-    corrected_kokoro: str = Field(..., min_length=1, max_length=400)
+    display_name: str = Field(..., min_length=1, max_length=30, description="このペルソナの呼び名です")
+    prompt: str = Field(
+        ..., min_length=1, max_length=2000,
+        description="AIに「あなたは誰か」を教える文章。人格の核になります",
+    )
+    first_person: str = Field("", max_length=30, description="一人称(僕・私・わし など)")
+    speech_style: str = Field("", max_length=200, description="語尾や口調の癖")
+    tone: PersonaTone = Field("gentle", description="全体の雰囲気")
+    favorite_topics: list[str] = Field(default_factory=list, max_length=20, description="得意なお題のジャンル")
+    taboo: list[str] = Field(default_factory=list, max_length=20, description="触れさせたくない話題")
+    thinking_level: PersonaThinkingLevel = Field(
+        "low", description="AIがどれくらいじっくり考えるか(Geminiのみ)"
+    )
+    temperature: float = Field(0.8, ge=0.0, le=1.5, description="発想の飛躍度(ELYZAのみ)")
+
+    @field_validator("display_name")
+    @classmethod
+    def _validate_display_name(cls, v: str) -> str:
+        v = _reject_newlines(v, field_label="display_name")
+        return _reject_injection_patterns(v, field_label="display_name")
+
+    @field_validator("prompt")
+    @classmethod
+    def _validate_prompt(cls, v: str) -> str:
+        return _reject_injection_patterns(v, field_label="prompt")
+
+    @field_validator("first_person", "speech_style")
+    @classmethod
+    def _validate_short_text_fields(cls, v: str) -> str:
+        return _reject_newlines(v, field_label="このフィールド")
+
+    @field_validator("favorite_topics", "taboo")
+    @classmethod
+    def _validate_list_fields(cls, v: list[str]) -> list[str]:
+        for item in v:
+            if len(item) > 50:
+                raise ValueError("リスト内の各項目は50文字以内にしてください。")
+            _reject_newlines(item, field_label="リスト項目")
+        return v
 
 
-class CorrectionResponse(BaseModel):
+class PersonaCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    correction_id: str
-    original_doc_id: str
-    submitted_at: str = Field(..., description="ISO8601(UTC)")
+    settings: PersonaSettingsInput
+    base_persona_id: str | None = Field(
+        None, description="派生元のpersona_id(既存ペルソナを複製してカスタマイズする場合)"
+    )
+
+
+class PersonaUpdateRequest(BaseModel):
+    """PATCH /v1/personas/{id}: 新バージョンを追加する(§3.3、既存バージョンの上書きはしない)。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    settings: PersonaSettingsInput
+
+
+class NarratorPersonaItem(BaseModel):
+    """narrator_personas文書のAPI公開形(§3.1)。persona_idは文字列(§7.3)。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    persona_id: str
+    display_name: str
+    owner_uid: str
+    owner_display_name: str | None = None
+    base_persona_id: str | None = None
+    is_builtin: bool
+    is_deletable: bool
+    is_visible: bool
+    current_version_id: str
+    sort_order: int
+    created_at: str
+    updated_at: str
+    # 【persona_feature_plan_v3.md Phase7で追加】current_version_idが指す
+    # narrator_persona_versions文書のsettings(§3.2)をそのまま同梱する。
+    # 編集フォーム(apps/persona_router/frontend/ui/personas.js)がPATCH前に
+    # 現在値をプリフィルするために必要(9エンドポイントに単体GETが無いため、
+    # 既存のGET /v1/personasのレスポンスを拡充する形で対応する)。
+    # バージョン文書が何らかの理由で見つからない場合はNone(呼び出し元は
+    # 新規作成同然の空フォームとして扱う)。
+    settings: dict | None = None
+
+
+class NarratorPersonaListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    personas: list[NarratorPersonaItem]
+
+
+class PersonaMutationResponse(BaseModel):
+    """POST・PATCH /v1/personas の共通レスポンス。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    persona_id: str
+    version_id: str
+
+
+class PersonaDeleteResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    persona_id: str
+    deleted: bool = True
+
+
+class PersonaOrderRequest(BaseModel):
+    """PUT /v1/personas/order: 並び順の一括更新。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ordered_persona_ids: list[str] = Field(..., min_length=1, max_length=5)
+
+
+class PersonaOrderResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ordered_persona_ids: list[str]
+
+
+class PersonaSchemaField(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    type: Literal["string", "enum", "list[string]", "float"]
+    applies_to: Literal["both", "gemini", "elyza"]
+    tooltip: str
+
+
+class PersonaSchemaResponse(BaseModel):
+    """GET /v1/personas/schema: 設定項目定義+ツールチップ本文(§3.2)。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    fields: list[PersonaSchemaField]
+
+
+class PersonaDraftRequest(BaseModel):
+    """POST /v1/personas/draft: 名前からGeminiで初期設定を生成する(保存しない、§7.4)。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    display_name: str = Field(..., min_length=1, max_length=30, description="このペルソナの呼び名です")
+
+    @field_validator("display_name")
+    @classmethod
+    def _validate_display_name(cls, v: str) -> str:
+        v = _reject_newlines(v, field_label="display_name")
+        return _reject_injection_patterns(v, field_label="display_name")
+
+
+class PersonaDraftResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    settings: PersonaSettingsInput
+    is_fallback: bool = Field(
+        ..., description="Gemini呼び出し・パースに失敗し、空テンプレートへフォールバックした場合true"
+    )
+
+
+class TransferCodeIssueResponse(BaseModel):
+    """POST /v1/personas/transfer-code: 引き継ぎコード発行(§6.1)。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(..., description="A3K7-9PQR形式の引き継ぎコード")
+    expires_at: str = Field(..., description="ISO8601(UTC)。24時間後")
+
+
+class TransferCodeApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: str = Field(..., min_length=1, max_length=20)
+
+
+class TransferCodeApplyResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    transferred_count: int = Field(..., description="所有権が移管されたペルソナ数")
+    new_owner_uid: str

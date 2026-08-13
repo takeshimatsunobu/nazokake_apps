@@ -19,6 +19,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from api.deps import get_db
 from models.schemas import GenerateRoutedRequest, GenerateRoutedResponse
+from nazokake_core.narrator_personas import compute_version_id
 from nazokake_core.personas import get_personas
 from services.penalty import build_blocked_response, check_block_status, record_route_b
 from services.step1_cache import get_cached_step1, put_step1_cache
@@ -60,6 +61,15 @@ async def generate_routed(req: GenerateRoutedRequest, db=Depends(get_db)):
     if persona is None:
         raise HTTPException(status_code=400, detail=f"不明なpersona_id: {req.persona_id}")
 
+    # 【persona_feature_plan_v3.md Phase5 §3.4/§7.3】narrator_persona_id(文字列
+    # 統一済み)と、Phase4で新設したnarrator_personas.pyの内容ハッシュversion_idを
+    # 算出する。settingsのキー名(display_name/prompt)はtools/seed_narrator_personas.py
+    # のシード時と揃える(同一内容なら同一version_idになることを保証するため)。
+    narrator_persona_id = str(req.persona_id)
+    narrator_persona_version_id = compute_version_id(
+        narrator_persona_id, {"display_name": persona["name"], "prompt": persona["prompt"]}
+    )
+
     # --- Step1: キャッシュ確認 → ミス時のみLLM推定 ---
     step1 = get_cached_step1(db, req.odai)
     step1_cache_hit = step1 is not None
@@ -86,6 +96,11 @@ async def generate_routed(req: GenerateRoutedRequest, db=Depends(get_db)):
         "doc_id": doc_id,
         "odai": req.odai,
         "persona_id": req.persona_id,
+        # persona_feature_plan_v3.md Phase5 §3.4: 生成に実際に使われたペルソナの
+        # バージョンを記録する(narrator_persona_id自体はpersona_idと同一文字列の
+        # ため別フィールドとしては持たず、既存のpersona_idを論理参照として使う)。
+        "narrator_persona_version_id": narrator_persona_version_id,
+        "narrator_persona_name": persona["name"],
         # 【Phase2追加】管理コクピットの直談判レビュー(apps/evaluator/backend/
         # api/routers/admin_review.py)が「このクライアントが何を書いてブロック
         # されたか(犯行現場)」をapi/routers/unlock.py::submit_unlock_request()から

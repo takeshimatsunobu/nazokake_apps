@@ -28,6 +28,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from firebase_admin import firestore
 from google.api_core.exceptions import FailedPrecondition
 from google.cloud.firestore_v1.base_query import FieldFilter
+from sqlalchemy import func, select
 
 from api.deps import get_db, handle_exceptions, verify_admin_token
 from models.schemas import (
@@ -35,12 +36,16 @@ from models.schemas import (
     ActionRequiredSummaryResponse,
     ApiErrorRateByService,
     ApiErrorRateResponse,
+    DatasetLayerCount,
+    DatasetLayerSummaryResponse,
     DlqActionRequest,
     DlqActionResponse,
     DlqListResponse,
     ErrorEnvelope,
 )
+from nazokake_core.correction_pairs import get_correction_pairs
 from nazokake_core.database import (
+    NazokakeItemORM,
     async_count_dlq_items,
     async_count_dlq_items_since,
     async_count_pending_items,
@@ -48,8 +53,14 @@ from nazokake_core.database import (
     async_discard_dlq_item,
     async_get_dlq_items,
     async_retry_dlq_item,
+    get_session,
 )
+from nazokake_core.persona_reactions import count_reactions
 from nazokake_core.schemas import SystemCostLog
+
+# persona_feature_plan_v3.md §5.2: tools/extract_training_data.pyのQUALITY_SCORE_MINと
+# 揃える(第1層(構造)の件数サマリが実際の抽出条件と食い違わないようにするため)。
+STRUCTURE_LAYER_QUALITY_SCORE_MIN = 4.0
 
 router = APIRouter()
 
@@ -305,4 +316,67 @@ async def get_api_error_rate(
         error_rate=round(error_rate, 4),
         sample_size=total,
         by_service=by_service,
+    )
+
+
+# ------------------------------------------------------------
+# persona_feature_plan_v3.md Phase8 §6: 3層(構造/反応/訂正)データセット集計
+# ------------------------------------------------------------
+async def _count_structure_layer() -> int:
+    """第1層(構造)の件数 = tools/extract_training_data.pyと同じ抽出条件
+    (s_total >= STRUCTURE_LAYER_QUALITY_SCORE_MIN かつ toku/kokoroが揃っている)を
+    満たすnazokake_items行数。json_extractでresult列のtoku/kokoroキーの有無を
+    直接SQLiteに判定させ、行本体は一切取得しない。
+    """
+    async with get_session() as session:
+        stmt = select(func.count()).select_from(NazokakeItemORM).where(
+            NazokakeItemORM.s_total.is_not(None),
+            NazokakeItemORM.s_total >= STRUCTURE_LAYER_QUALITY_SCORE_MIN,
+            NazokakeItemORM.odai.is_not(None),
+            func.json_extract(NazokakeItemORM.result, "$.toku").is_not(None),
+            func.json_extract(NazokakeItemORM.result, "$.kokoro").is_not(None),
+        )
+        result = await session.execute(stmt)
+        return result.scalar_one()
+
+
+@router.get("/dataset-layer-summary", response_model=DatasetLayerSummaryResponse)
+@handle_exceptions
+async def get_dataset_layer_summary(
+    admin_token: dict = Depends(verify_admin_token), db=Depends(get_db)
+):
+    """3層(構造/反応/訂正)データセットの件数サマリ(§6)。
+
+    - 構造(第1層): tools/extract_training_data.pyと同じ抽出条件を満たす
+      nazokake_items行数(SQLite COUNT、行本体は取得しない)。
+    - 反応(第2層): persona_reactionsコレクションの全件数
+      (nazokake_core.persona_reactions.count_reactions、集計失敗時は内部で
+      0へ縮退するためここでは追加のtry/exceptを要しない)。
+    - 訂正(第3層): 赤ペン添削(nazokake_core.correction_pairs.get_correction_pairs、
+      SQLite user_akapen系統に一本化済み、Phase9)の件数。現状は全件を実際に
+      読み取ってからlen()を取る実装であり、count()集約クエリのような軽量な件数
+      取得ではない(現時点では小規模なため許容、規模が拡大した場合は専用の
+      count専用パスへの分離を検討すること)。
+    """
+    warnings = []
+
+    try:
+        structure_total = await _count_structure_layer()
+    except Exception as e:
+        warnings.append(f"構造(第1層)の集計に失敗しました: {e}")
+        structure_total = 0
+
+    reaction_total = await asyncio.to_thread(count_reactions, db)
+
+    try:
+        correction_total = len(await get_correction_pairs(db))
+    except Exception as e:
+        warnings.append(f"訂正(第3層)の集計に失敗しました: {e}")
+        correction_total = 0
+
+    return DatasetLayerSummaryResponse(
+        structure=DatasetLayerCount(label="第1層(構造)", total=structure_total),
+        reaction=DatasetLayerCount(label="第2層(反応)", total=reaction_total),
+        correction=DatasetLayerCount(label="第3層(訂正)", total=correction_total),
+        warning="; ".join(warnings) if warnings else None,
     )
