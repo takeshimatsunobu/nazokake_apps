@@ -33,7 +33,7 @@ from google import genai
 from google.genai.types import GenerateContentConfig, ThinkingConfig, ThinkingLevel
 from nazokake_core.env_config import get_gemini_api_key
 
-from models.schemas import PersonaSettingsInput
+from models.persona_schemas import PersonaSettingsInput
 from services.cost_logging import log_step_cost
 
 _DRAFT_SCHEMA_DICT = {

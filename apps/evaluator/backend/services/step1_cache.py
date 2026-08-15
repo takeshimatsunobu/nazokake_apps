@@ -40,7 +40,7 @@ from datetime import datetime, timezone
 
 from firebase_admin import firestore
 
-from models.schemas import Step1Result
+from models.persona_schemas import Step1Result
 
 STEP1_CACHE_COLLECTION = "step1_estimation_cache"
 STEP1_SCHEMA_VERSION = "2.0.0"  # Step1Resultを7属性スキーマへ全面改訂(1.0.0からの破壊的変更)

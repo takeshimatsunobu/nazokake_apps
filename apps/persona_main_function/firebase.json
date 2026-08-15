@@ -12,14 +12,14 @@
       {
         "source": "/v1/**",
         "run": {
-          "serviceId": "nazokake-persona-router",
+          "serviceId": "nazokake-api",
           "region": "asia-northeast1"
         }
       },
       {
         "source": "/healthz",
         "run": {
-          "serviceId": "nazokake-persona-router",
+          "serviceId": "nazokake-api",
           "region": "asia-northeast1"
         }
       }

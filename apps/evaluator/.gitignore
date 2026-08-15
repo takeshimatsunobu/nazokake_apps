@@ -17,7 +17,13 @@ cloudflared.exe
 AllCode_Backup.txt
 
 # ローカルLLMモデルデータ・重いキャッシュ(instructions/006 Step 3の除外方針を継続)
-models/
+# 【2026-08-16修正】先頭スラッシュ無しの"models/"はapps/evaluator配下のどの深さの
+# "models"ディレクトリにも誤爆する(パターンにアンカーが無いため)。本来の対象は
+# apps/evaluator直下のLLM重みファイル置き場のみであり、apps/evaluator/backend/models/
+# (Pydanticスキーマを置くPythonパッケージ)を誤って追跡対象外にしていた
+# (persona_schemas.py新設時に発覚)。先頭スラッシュでこのファイルの位置(apps/evaluator/)
+# 基準に固定し、直下の"models/"のみを対象にする。
+/models/
 llama-bin/
 node_modules/
 .mypy_cache/

@@ -69,8 +69,12 @@ from api.routers import (
     feedback,
     generate,
     metrics,
+    persona_generate,
+    personas,
     research,
     submission,
+    timeline,
+    unlock,
     user_feedback,
 )
 
@@ -206,6 +210,12 @@ app.add_middleware(
         # (ハッシュ形式/プロジェクト番号形式)を割り当てるため両方とも列挙する。
         "https://nazokake-api-r6jq2erkta-an.a.run.app",
         "https://nazokake-api-862686676938.asia-northeast1.run.app",
+        # 【統合(案B)】apps/persona_main_function/main.pyが個別に許可していた
+        # フロントエンド開発サーバー(frontend/dev_server.py既定ポート)のオリジンを
+        # マージする。単一Cloud Runサービスへの統合後もこのポートでのローカル
+        # フロントエンド開発を継続できるようにするため。
+        "http://localhost:5500",
+        "http://127.0.0.1:5500",
     ],
     allow_methods=["*"],
     allow_headers=["*"],
@@ -270,6 +280,25 @@ app.include_router(admin_auth.router, prefix="/api/admin", tags=["admin"])
 app.include_router(admin_health.router, prefix="/api/admin", tags=["admin"])
 app.include_router(admin_review.router, prefix="/api/admin", tags=["admin"])
 app.include_router(admin_config.router, prefix="/api/admin", tags=["admin"])
+
+# 【統合(案B): apps/persona_main_function からのマージ】各ルーター内の@router
+# デコレータが既に絶対パス(/v1/personas, /v1/generate等)を宣言しているため、
+# prefixは付与しない(元のapps/persona_main_function/main.pyと同じ登録規約)。
+# generate.py→api/routers/persona_generate.pyへリネーム済み(このファイル自身の
+# 既存generate.router(/api/generate)との名前衝突を避けるため)。
+app.include_router(persona_generate.router, tags=["persona_generate"])
+app.include_router(personas.router, tags=["personas"])
+app.include_router(timeline.router, tags=["persona_timeline"])
+app.include_router(unlock.router, tags=["persona_unlock"])
+
+
+@app.get("/healthz")
+def persona_healthz():
+    """旧apps/persona_main_function/main.pyのヘルスチェックと同一パス・同一応答形状。
+    Cloud Runの起動プローブ設定を変更せずに統合できるよう、/api/healthとは別に
+    このパスも維持する。"""
+    return {"status": "ok"}
+
 
 @app.get("/api/health")
 def healthz():

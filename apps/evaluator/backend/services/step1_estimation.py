@@ -27,7 +27,7 @@ from google import genai
 from google.genai.types import GenerateContentConfig
 from nazokake_core.env_config import get_gemini_api_key
 
-from models.schemas import Step1Result
+from models.persona_schemas import Step1Result
 from services.cost_logging import log_step_cost
 
 _STEP1_SCHEMA_DICT = {

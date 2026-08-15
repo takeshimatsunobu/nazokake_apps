@@ -32,7 +32,7 @@ from google.genai.types import GenerateContentConfig, ThinkingConfig, ThinkingLe
 from nazokake_core.env_config import get_gemini_api_key
 from nazokake_core.fewshots import get_fewshot_pool, sample_fewshot_examples
 
-from models.schemas import Step1Result
+from models.persona_schemas import Step1Result
 from services.cost_logging import log_step_cost
 
 # persona_feature_plan_v3.md §3.2: thinking_levelはGeminiのみ適用対象

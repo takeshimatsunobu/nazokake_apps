@@ -37,7 +37,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.deps import get_db, verify_user_token
-from models.schemas import (
+from models.persona_schemas import (
     NarratorPersonaItem,
     NarratorPersonaListResponse,
     PersonaCreateRequest,

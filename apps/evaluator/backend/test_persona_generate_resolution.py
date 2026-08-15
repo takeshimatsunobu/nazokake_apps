@@ -1,9 +1,15 @@
-"""test_generate_persona_resolution.py
+"""test_persona_generate_resolution.py
 ========================================
 persona_feature_plan_v3.md Phase5「生成パスへの記録」の単体テスト。
 
+【2026-08-16: 統合モノリス化(案B)に伴う移設】元は
+apps/persona_main_function/test_generate_persona_resolution.py。バックエンド
+ロジック(api/routers/generate.py→persona_generate.py、models/schemas.py→
+persona_schemas.py)がapps/evaluator/backendへ統合されたことに伴い、このテストも
+同じ場所へ移設した。検証内容自体は変更していない。
+
 apps/evaluator/backend/test_fail_closed.py と同じ配置規約(アプリディレクトリ直下、
-`cd apps/persona_main_function && pytest test_generate_persona_resolution.py`で実行)。
+`cd apps/evaluator/backend && pytest test_persona_generate_resolution.py`で実行)。
 Firestore/Gemini実サービスへは接続しない(unittest.mockでFirestoreドキュメント
 スナップショットを模擬する)。
 
@@ -23,8 +29,8 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi import HTTPException
 
-from api.routers.generate import _resolve_persona_for_generation
-from models.schemas import GenerateRoutedRequest
+from api.routers.persona_generate import _resolve_persona_for_generation
+from models.persona_schemas import GenerateRoutedRequest
 from nazokake_core.personas import PERSONAS
 from services.step2_generation import _compose_persona_prompt
 

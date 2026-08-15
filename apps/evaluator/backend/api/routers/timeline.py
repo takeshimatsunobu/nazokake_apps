@@ -18,8 +18,8 @@ from fastapi import APIRouter, Depends, HTTPException
 from firebase_admin import firestore
 
 from api.deps import get_db
-from api.routers.generate import RESULTS_COLLECTION
-from models.schemas import TimelineItem, TimelineResponse, ZabutonResponse
+from api.routers.persona_generate import RESULTS_COLLECTION
+from models.persona_schemas import TimelineItem, TimelineResponse, ZabutonResponse
 from nazokake_core.narrator_personas import get_persona
 from nazokake_core.persona_reactions import add_reaction, effective_reaction_count
 

@@ -13,13 +13,16 @@
   5ペイン管理コクピット（招待制認証・DLQ管理・直談判レビュー・コスト管理・ペルソナ設定、
   コミット`f56776a`）、ユーザー評価×Few-shotの5段階フィードバックループ
   （`golden`/`good`/`hmm`/`tolerable`/`troll`、コミット`846cbe5`）。
-- **apps/persona_main_function**: 新規サービスとして一式実装済み（Step1属性推定＋Step2生成の
-  2段パイプライン、Route A/B分岐、few-shot注入、Firestoreキャッシュ、荒らし対策の
-  段階的ブロック、赤ペン訂正受付API）。2026-08-15に`apps/persona_router`から改名。
-  マイペルソナ（narrator_personas）を使った生成・ドラフト自動生成・並替・削除も
-  実装済み（詳細は`docs/persona_feature_plan_v3.md`§12.1）。テストは
-  `apps/persona_main_function/test_generate_persona_resolution.py`（ペルソナ解決ロジックの
-  単体テスト6件）のみ追加済みで、依然として大部分は未整備（後述、§2課題B更新）。
+- **apps/persona_main_function → 2026-08-16、apps/evaluator/backendへ統合済み（案B）**:
+  Step1属性推定＋Step2生成の2段パイプライン、Route A/B分岐、few-shot注入、
+  Firestoreキャッシュ、荒らし対策の段階的ブロック、マイペルソナCRUD・Geminiドラフト
+  自動生成・並替・削除機能一式を`apps/evaluator/backend`へ統合し、単一のCloud Run
+  サービスとして稼働する構成へ変更した（詳細は`docs/persona_feature_plan_v3.md`§12.3）。
+  `apps/persona_main_function`ディレクトリはフロントエンド（`frontend/`）とFirebase
+  Hosting設定のみが残る。バックエンドテストは`apps/evaluator/backend/
+  test_persona_generate_resolution.py`（6件）へ移設済み。依然として大部分（Route A/B
+  分岐・few-shot注入・段階的ブロック・マイペルソナCRUD本体）はテスト未整備
+  （後述、§2課題B）。
 - **packages/shared_core**: SQLite SSoT + Firestore同期の基盤、Alembicマイグレーション
   11本、few-shotプール、persona定義SSoT、品質サーキットブレーカーが整備済み。
 - **CI/CD**: PRゲート（Dockerビルド+脆弱性スキャン、pytest、Pyrightラチェット型検査）、

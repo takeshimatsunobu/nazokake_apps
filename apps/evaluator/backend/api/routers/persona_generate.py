@@ -18,7 +18,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 
 from api.deps import get_db
-from models.schemas import GenerateRoutedRequest, GenerateRoutedResponse
+from models.persona_schemas import GenerateRoutedRequest, GenerateRoutedResponse
 from nazokake_core import narrator_personas
 from nazokake_core.personas import get_personas
 from services.penalty import build_blocked_response, check_block_status, record_route_b

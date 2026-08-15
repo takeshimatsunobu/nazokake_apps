@@ -701,6 +701,22 @@ CI（`pyright_check.yml`）が `tests/` を実行するため `tests/persona_mai
 - 解決した4フィールドは`_process_job()`の成功パス・`_mark_immediate_failure()`の失敗パスの両方で、**ワーカー自身のローカルSQLite（`local_fields`）にのみ**追加する。Firestore側（`scoped_fields`、`_ELYZA_JOB_SCOPED_FIELDS`の厳格な許可リスト）には含めない（Firestore側は`generate_ai()`の最初の書き込みで既に正しい値を持っているため触れる必要が無く、含めると`_write_scoped_fields_sync`がスコープ外フィールドとして例外を送出してしまうため）。
 - `workers/test_narrator_persona_fields.py`を新設（単体テスト8件、ビルトイン/マイペルソナ/未指定/不正ID/例外安全性/Firestoreスコープ非混入を検証、全件PASS）。実際の一時SQLiteファイルへの書き込みも別途スクリプトで検証済み（成功パス・失敗パスとも期待通りの値が記録されることを確認）。
 
+### 12.3 2026-08-16 統合モノリス化（案B）: apps/persona_main_functionをapps/evaluator/backendへ統合
+
+**背景**: Cloud Run上でFastAPIを安定・自動稼働させるため、ドメイン・CORS・認証の二重管理を解消する目的で、`apps/persona_main_function`のバックエンドロジック（`/v1/personas`・`/v1/generate`等）を本番バックエンド`apps/evaluator/backend`へ統合した（ユーザー指示による「案B」）。
+
+**統合内容**:
+- `apps/persona_main_function/{api,services,models}/`を`apps/evaluator/backend/`へコピーし、ファイル名衝突（`api/routers/generate.py`→`persona_generate.py`、`models/schemas.py`→`models/persona_schemas.py`）のみリネーム、他は元の名前のまま。認証依存（`verify_user_token`/`get_db`）は重複実装を作らず、evaluator既存の`api/deps.py`をそのまま利用（完全に同一シグネチャだったため）。
+- `apps/evaluator/backend/main.py`に4ルーター（`persona_generate`/`personas`/`timeline`/`unlock`）を`prefix`無しでマウント（各ルーター内の`@router`デコレータが既に`/v1/...`の絶対パスを宣言しているため）。CORS `allow_origins`に`localhost:5500`/`127.0.0.1:5500`（フロントエンド開発サーバー）を追加。`/healthz`エンドポイントを追加（旧アプリのヘルスチェックパスと互換維持）。
+- Dockerfile/pyproject.tomlの変更は**不要**（依存関係は元々evaluator側に揃っており、Dockerfileは`apps/evaluator/backend/`を丸ごとCOPYする構成のため新規ファイルも自動的に含まれる）。
+- 旧`apps/persona_main_function/{api,services,models,main.py,env.py,pyproject.toml,uv.lock,Dockerfile}`は削除。**フロントエンド（`frontend/`）とFirebase Hosting設定（`.firebaserc`/`firebase.json`）のみ現状維持**し、`config.js`のAPI接続先と`firebase.json`のrewrite先（`nazokake-persona-router`→`nazokake-api`）を統合先へ向け直した。
+- `.github/workflows/deploy_persona_router.yml`・`cloudbuild.persona-router.yaml`（旧アプリ専用のCI/CD）を削除。
+- `test_generate_persona_resolution.py`は`apps/evaluator/backend/test_persona_generate_resolution.py`へ移設（import先を新しいモジュール配置に合わせて更新、検証内容自体は変更なし）。
+
+**意図的にスコープ外としたもの**: 実際に稼働中のCloud Runサービス`nazokake-persona-router`およびFirebase Hostingサイト`persona-router`自体の削除（`gcloud`/`firebase` CLIによるインフラ的な削除）は行っていない。リポジトリからは再デプロイできなくなったが、既存のデプロイ済みリビジョンはユーザーが明示的に削除するまで稼働し続ける。
+
+**検証**: ローカルで`apps/evaluator/backend`を起動し、`/healthz`・`/v1/personas`(認証あり/なし)・`/v1/personas/draft`（実Gemini呼び出し）・`/v1/generate`（実Gemini呼び出し+Firestore保存）を実際のHTTPリクエストで確認、全件成功（検証データは削除済み）。フロントエンド（`localhost:5500`）から統合バックエンド（`127.0.0.1:8000`）へのクロスオリジンGETも、CORSプリフライト含め実際に確認済み。evaluator/backend単体の全pytest（`test_fail_closed.py`＋移設した6件）もPASS。
+
 ---
 
 ## 付録: Claude Code への依頼方法

@@ -24,7 +24,7 @@ from firebase_admin import firestore
 from google.cloud.firestore_v1.base_query import FieldFilter
 
 from api.deps import get_db
-from models.schemas import UnlockRequestCreate, UnlockRequestResponse
+from models.persona_schemas import UnlockRequestCreate, UnlockRequestResponse
 from services.penalty import check_block_status
 
 router = APIRouter()
