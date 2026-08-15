@@ -1,13 +1,10 @@
 """tests/conftest.py
 =====================
-pytest実行時、本番Firestore(nazokakeapp-137e5)を誤って汚さないよう、
-FIRESTORE_EMULATOR_HOSTを自動設定する(未設定時のみ、既存の値があれば尊重する)。
-
-firebase_admin.firestore.client()を含むGoogle Cloud Firestoreクライアント
-ライブラリは、この環境変数が設定されている場合、本番資格情報を検証せず
-自動的にそのホストへ接続する(公式SDK共通の規約)。実際にエミュレータが
-起動していない状態でもこのfixture自体は失敗しない(接続はテストが実際に
-Firestore操作を行った時点で初めて発生するため)。
+pytest実行時、Firestoreエミュレータが実際に起動している場合のみ
+FIRESTORE_EMULATOR_HOSTを自動設定する(未設定・到達不能時は本物のFirestoreへ
+接続する既存動作を維持する)。詳細な経緯はapps/evaluator/backend/conftest.pyの
+docstring参照(2026-08-16、無条件設定が原因でtest_fail_closed.pyが25分ハング
+する回帰を実際に踏んだため、到達性チェックを追加した)。
 
 エミュレータの起動: scripts/start_firestore_emulator.ps1
 (`firebase emulators:start --only firestore`、既定ポート8080)
@@ -15,13 +12,31 @@ Firestore操作を行った時点で初めて発生するため)。
 from __future__ import annotations
 
 import os
+import socket
 
 import pytest
 
 _DEFAULT_FIRESTORE_EMULATOR_HOST = "localhost:8080"
+_REACHABILITY_TIMEOUT_SEC = 0.5
+
+
+def _emulator_reachable(host_port: str) -> bool:
+    try:
+        host, port_str = host_port.rsplit(":", 1)
+        port = int(port_str)
+    except (ValueError, IndexError):
+        return False
+    try:
+        with socket.create_connection((host, port), timeout=_REACHABILITY_TIMEOUT_SEC):
+            return True
+    except OSError:
+        return False
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _use_firestore_emulator():
-    os.environ.setdefault("FIRESTORE_EMULATOR_HOST", _DEFAULT_FIRESTORE_EMULATOR_HOST)
+    if "FIRESTORE_EMULATOR_HOST" not in os.environ and _emulator_reachable(
+        _DEFAULT_FIRESTORE_EMULATOR_HOST
+    ):
+        os.environ["FIRESTORE_EMULATOR_HOST"] = _DEFAULT_FIRESTORE_EMULATOR_HOST
     yield
