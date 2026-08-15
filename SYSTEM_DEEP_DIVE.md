@@ -17,7 +17,7 @@
 ## 目次
 
 1. システム全体像(3アプリ + shared_core + tools/エージェント基盤)
-2. なぞかけ生成のデュアルAIパイプライン(evaluator / persona_router)
+2. なぞかけ生成のデュアルAIパイプライン(evaluator / persona_main_function)
 3. データ層: SQLite SSoT + Firestore Push同期
 4. tools/ 配下の自律修復・MLOpsエージェント基盤(3層構造)
 5. インフラ・CI/CD
@@ -33,7 +33,7 @@
 ```
 apps/
   evaluator/       本番Webアプリ(なぞかけ生成・11軸評価・フィード・管理コクピット)
-  persona_router/  ペルソナ(語り手キャラクター)別なぞかけ生成マイクロサービス
+  persona_main_function/  ペルソナ(語り手キャラクター)別なぞかけ生成マイクロサービス
   batch_factory/   オフラインの大量生成・モデル学習(DPO/SFT)パイプライン
                    ★別のgitリポジトリが埋め込まれている(gitlink)。本書のスコープ外。
   tactical_cic/    なぞかけと直接関係のない別サブシステム(bda_worker.py, mdmp_engine.py
@@ -53,9 +53,10 @@ run/               実行時生成物(監査ログ、デッドレター、実験
                    すべての可変な状態(state)はこのディレクトリへ分離される。
 ```
 
-`apps/evaluator` が最も活発に開発されている本番アプリ、`apps/persona_router` は
+`apps/evaluator` が最も活発に開発されている本番アプリ、`apps/persona_main_function` は
 2026-08-11に新規追加された新しいマイクロサービス(この監査時点で独自のCI/CD
-`deploy_persona_router.yml` が構築済み)。`apps/batch_factory` は独立した `.git` を
+`deploy_persona_router.yml` が構築済み。デプロイ識別子(ワークフロー名・Cloud Run
+サービス名・Firebase Hostingターゲット)はディレクトリ改名後も意図的に旧名のまま維持している)。`apps/batch_factory` は独立した `.git` を
 持つ埋め込みリポジトリで、正式な git submodule ではなく git がいう「埋め込みリポジトリ」
 (gitlink, mode 160000)として扱われている(**未確認**: なぜ独立リポジトリなのか、
 意図的な設計かは不明)。
@@ -69,11 +70,11 @@ run/               実行時生成物(監査ログ、デッドレター、実験
 
 ### アプリ間の依存関係
 
-3アプリ(evaluator / persona_router / batch_factory)はすべて `packages/shared_core`
+3アプリ(evaluator / persona_main_function / batch_factory)はすべて `packages/shared_core`
 を `nazokake-core` というローカルパス依存(`uv` の `editable = true`)として参照する。
 これによりDB接続・Firestore同期・persona定義・few-shotプールなどのロジックの重複を
 避けている。ただしこの設計のため、各アプリの Docker ビルドはリポジトリルートを
-ビルドコンテキストにする必要があり(`apps/persona_router/Dockerfile` 等)、
+ビルドコンテキストにする必要があり(`apps/persona_main_function/Dockerfile` 等)、
 Cloud Build の構成が単純な「アプリディレクトリ単体ビルド」にできない制約を生んでいる。
 
 ---
@@ -102,7 +103,7 @@ Cloud Build の構成が単純な「アプリディレクトリ単体ビルド�
   「ELYZAの出力」というラベルのデータに実際には Gemini の出力が混入するデータ完全性の
   問題を解消するため。
 
-### 2.2 apps/persona_router(ペルソナ別生成マイクロサービス)
+### 2.2 apps/persona_main_function(ペルソナ別生成マイクロサービス)
 
 - `api/routers/generate.py` が `POST /v1/generate` の中核オーケストレーション
   (Step1推定 → Step2生成)。
@@ -115,7 +116,7 @@ Cloud Build の構成が単純な「アプリディレクトリ単体ビルド�
   操作)。
 - `services/cost_logging.py`: Gemini呼び出しのコスト/レイテンシ計測。
 - `main.py` は `apps/evaluator/backend` と同じ DDD 規約(api/routers, models, services)
-  に従う。起動時のカレントディレクトリが `apps/persona_router` であることが前提
+  に従う。起動時のカレントディレクトリが `apps/persona_main_function` であることが前提
   (絶対import規約のため)。
 
 ---
@@ -296,8 +297,10 @@ DB claim・VMキックを一切行わず判定結果のみをログする安全�
 
 - **本番Webアプリ(evaluator)**: GCP Cloud Run(バックエンド) + Firebase Hosting
   (フロントエンドSPA)。
-- **persona_router**: 独自の `apps/persona_router/Dockerfile` + `cloudbuild.
+- **persona_main_function**: 独自の `apps/persona_main_function/Dockerfile` + `cloudbuild.
   persona-router.yaml` + `.github/workflows/deploy_persona_router.yml` を保有
+  (ワークフローファイル名・Cloud Runサービス名・Firebase Hostingターゲットは
+  ディレクトリ改名後も意図的に `persona_router`/`persona-router` のまま維持)
   (このリポジトリ検分時点で確認。CLAUDE.md の記述時点ではこのワークフローの有無が
   「未確認」とされていたが、本書作成時点では存在を確認済み)。
 - **VRAM排他制御と `--workers 1` 固定**: `run_api.ps1` はローカルGPU (RTX 4060 8GB) で
@@ -310,7 +313,8 @@ DB claim・VMキックを一切行わず判定結果のみをログする安全�
 - **CI/CDワークフロー**(`.github/workflows/`): `ci_pr_check.yml`(PR時のDockerビルド+
   脆弱性スキャン、デプロイなし)、`deploy_cloud_run.yml`(mainへのpush時、evaluatorの
   ビルド・脆弱性スキャン・Cloud Run/Firebase Hostingデプロイ)、
-  `deploy_persona_router.yml`(persona_router用の同種デプロイ)、
+  `deploy_persona_router.yml`(persona_main_function用の同種デプロイ。ワークフロー名は
+  デプロイ識別子維持のため旧名のまま)、
   `pyright_check.yml`(PR時、`tests/`のpytest実行→変更行のみのPyrightラチェット型検査)、
   `cron_cleanup.yml`(毎日UTC 18:00、マージ済みブランチ/worktreeの掃除)。
 - **型チェックのラチエット方式**: `tools/pyright_tool.py --gate` は「変更行のみ」を
@@ -391,19 +395,19 @@ CLAUDE.md にも同様の一覧があるが、本書はエージェント基盤(
 
 | 変数名 | 用途 | 主な使用箇所 |
 |---|---|---|
-| `GEMINI_API_KEY` | Gemini API認証 | evaluator, persona_router, batch_factory 共通 |
+| `GEMINI_API_KEY` | Gemini API認証 | evaluator, persona_main_function, batch_factory 共通 |
 | `ANTHROPIC_API_KEY` | Claude API認証(Layer 1のClaudeパイプライン・Layer 2のCTOエスカレーション) | tools/nazo_agent.py, tools/agent_graph.py |
 | `NAZOKAKE_DB_PATH` | SQLite DBファイルの絶対パス(SSoT、既定 `nazokake_local.db`) | shared_core, evaluator, workers共通 |
 | `VRAM_LOCK_PATH` | ELYZA(Ollama)呼び出し排他制御ロックファイルパス(既定 `.vram.lock`) | evaluator, workers, tools/mlops_common.py |
 | `OLLAMA_HOST` | Ollamaクライアントの接続先(既定 `http://127.0.0.1:11434`)。サーバーbind用アドレス(`0.0.0.0`等)を設定するとFail-Fastで拒否される | tools/config.py 経由で各tools/*.pyが参照 |
 | `LLMJP_MODEL` | ELYZA/LLM-JPモデル名(既定 `elyza:8b`) | evaluator |
 | `EVALUATOR_MODEL_NAME` | 評価用Geminiモデル名 | evaluator |
-| `STEP1_MODEL` / `STEP2_MODEL` | persona_routerの各ステップで使うGeminiモデル名 | persona_router |
+| `STEP1_MODEL` / `STEP2_MODEL` | persona_main_functionの各ステップで使うGeminiモデル名 | persona_main_function |
 | `CF_CLIENT_ID` / `CF_CLIENT_SECRET` | Cloudflare Access(ELYZA呼び出し経路) | evaluator |
 | `SMTP_USER` / `SMTP_PASSWORD` | 管理者招待メール送信(Gmailアプリパスワード) | evaluator |
 | `OWNER_EMAIL` | 管理者ブートストラップ用メールアドレス | evaluator, CI/CD |
 | `GCP_BILLING_EXPORT_TABLE` / `GCP_COST_SYNC_SECRET` | GCPコスト集計機能 | evaluator |
-| `MONTHLY_BUDGET_JPY` / `GCP_PROJECT_ID` | コスト管理・GCPプロジェクト特定 | evaluator, persona_router |
+| `MONTHLY_BUDGET_JPY` / `GCP_PROJECT_ID` | コスト管理・GCPプロジェクト特定 | evaluator, persona_main_function |
 | `GOOGLE_APPLICATION_CREDENTIALS` | GCPサービスアカウント認証 | 各種スクリプト |
 | `HF_TOKEN` | Hugging Face認証 | batch_factory学習パイプライン(スコープ外) |
 | `MAX_ERROR_LOG_LINES` / `MAX_TOTAL_CONTEXT_CHARS` | Cognitive Load Auditor(Layer 1)の閾値。既定300行・40000文字 | tools/nazo_agent.py |

@@ -24,7 +24,7 @@ Firestoreを SSoT とする(§3.1)。2つのコレクションを扱う:
 
 【現時点のスコープ(Phase4)】
 本モジュールはデータ層の基盤のみを提供する。実際の参照経路の切り替え
-(apps/evaluator/backend・workers/ondemand_elyza_worker.py・apps/persona_router
+(apps/evaluator/backend・workers/ondemand_elyza_worker.py・apps/persona_main_function
 の生成パスがこのコレクションを実際に読みに行くようにする配線)はPhase5
 「生成パスへの記録」の対象であり、本モジュールでは行わない。Phase4時点での
 本モジュールの唯一の呼び出し元は tools/seed_narrator_personas.py(組み込み
@@ -198,7 +198,7 @@ def save_persona_settings(db, persona_id: str, settings: dict[str, Any]) -> str:
 
 
 # ------------------------------------------------------------------
-# persona_feature_plan_v3.md Phase6: マイペルソナAPI(apps/persona_router)向けの
+# persona_feature_plan_v3.md Phase6: マイペルソナAPI(apps/persona_main_function)向けの
 # 読み取り・軽量な状態更新ヘルパー。
 #
 # 【create_persona/save_persona_settingsとの関係】モジュール冒頭のdocstringが
@@ -208,7 +208,7 @@ def save_persona_settings(db, persona_id: str, settings: dict[str, Any]) -> str:
 # 禁じる)。ここに追加する関数群はnarrator_personas文書自身の付随フィールド
 # (deleted_at/sort_order)のみを更新し、バージョン内容には一切触れないため、
 # その制約の対象外として扱う(いずれもこのモジュールに閉じ込め、
-# apps/persona_router側から生のFirestore書き込みをさせないという設計原則は
+# apps/persona_main_function側から生のFirestore書き込みをさせないという設計原則は
 # 維持する)。
 # ------------------------------------------------------------------
 
@@ -226,7 +226,7 @@ def get_persona_version(db, version_id: str) -> dict | None:
     (存在しなければNone)。settings(map)を取り出すための読み取り専用ヘルパー。
 
     【persona_feature_plan_v3.md Phase7で追加】編集フォームへ現在の設定値を
-    プリフィルする(apps/persona_router/api/routers/personas.py::_to_item経由)
+    プリフィルする(apps/persona_main_function/api/routers/personas.py::_to_item経由)
     ために必要になった。9エンドポイントの契約自体は変えず、既存の
     GET /v1/personasのレスポンスを拡充する形で使う。
     """

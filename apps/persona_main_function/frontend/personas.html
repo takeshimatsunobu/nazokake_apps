@@ -15,12 +15,12 @@
     <script type="importmap">
     {
         "imports": {
-            "config": "/config.js?v=20260813a",
-            "state": "/state.js?v=20260813a",
-            "api": "/api.js?v=20260813a",
-            "firebase-config": "/firebase-config.js?v=20260813a",
-            "ui/auth": "/ui/auth.js?v=20260813a",
-            "ui/personas": "/ui/personas.js?v=20260813a",
+            "config": "/config.js?v=20260815a",
+            "state": "/state.js?v=20260815a",
+            "api": "/api.js?v=20260815a",
+            "firebase-config": "/firebase-config.js?v=20260815a",
+            "ui/auth": "/ui/auth.js?v=20260815a",
+            "ui/personas": "/ui/personas.js?v=20260815a",
             "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
             "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
         }
@@ -31,6 +31,9 @@
         html, body { height: 100%; }
         body { height: 100dvh; overscroll-behavior-y: none; }
         #tooltip-sheet { padding-bottom: max(1rem, env(safe-area-inset-bottom)); }
+        /* ドラッグハンドル: タッチ操作時にブラウザの縦スクロールへ奪われないよう
+           touch-action:noneを明示する(これが無いとモバイルでD&Dが始まらない)。 */
+        .drag-handle { touch-action: none; }
     </style>
 </head>
 <body class="bg-slate-100 flex flex-col overflow-hidden">
@@ -228,6 +231,6 @@
         </div>
     </div>
 
-    <script type="module" src="/ui/personas.js?v=20260813a"></script>
+    <script type="module" src="/ui/personas.js?v=20260815a"></script>
 </body>
 </html>

@@ -1,11 +1,11 @@
 # cloudbuild.persona-router.yaml
 # ================================
-# apps/persona_router 用の手動デプロイビルド定義。cloudbuild.yaml(apps/evaluator用)と
+# apps/persona_main_function 用の手動デプロイビルド定義。cloudbuild.yaml(apps/evaluator用)と
 # 全く同じ構造・同じ理由で分離ファイルにしている。
 #
-# 【なぜ `gcloud run deploy --source apps/persona_router` を使わないか】
+# 【なぜ `gcloud run deploy --source apps/persona_main_function` を使わないか】
 # 素の `gcloud run deploy --source <dir>` は <dir> をそのままビルドコンテキストに
-# するため、apps/persona_router/Dockerfile が要求する「リポジトリルートを
+# するため、apps/persona_main_function/Dockerfile が要求する「リポジトリルートを
 # ビルドコンテキストとした packages/shared_core への相対パス参照」を解決できず
 # ビルド失敗する(apps/evaluator側でcloudbuild.yamlを導入する原因になった障害と
 # 同一パターン。apps/evaluator/Dockerfileのヘッダーコメント参照)。
@@ -31,7 +31,7 @@ steps:
     args:
       - build
       - -f
-      - apps/persona_router/Dockerfile
+      - apps/persona_main_function/Dockerfile
       - -t
       - asia-northeast1-docker.pkg.dev/nazokakeapp-137e5/nazo-agent/nazokake-persona-router:${_TAG}
       - .

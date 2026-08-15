@@ -21,7 +21,7 @@ AIが自動生成・自動評価するプロジェクト。「和風スチーム
 | アプリ | 役割 | 状態 |
 |---|---|---|
 | `apps/evaluator` | 本番Webアプリ（生成・評価・フィード・管理コクピット） | 稼働中・開発が最も活発 |
-| `apps/persona_router` | 「ペルソナ」（語り手キャラクター）別になぞかけを生成する独立マイクロサービス | 2026-08-11に新規追加されたばかり |
+| `apps/persona_main_function` | 「ペルソナ」（語り手キャラクター）別になぞかけを生成する独立マイクロサービス | 2026-08-11に新規追加されたばかり |
 | `apps/batch_factory` | オフラインの大量生成・モデル学習（DPO/SFT）用バッチパイプライン | 独立したgitリポジトリとして同居（後述） |
 
 ## 2. 技術スタック
@@ -44,7 +44,7 @@ Python 3.11+ の各アプリの一次情報は `pyproject.toml`。
 - devDependencies: `openapi-typescript ^7.4.0`, `typescript ^5.6.0`
   （バックエンドのOpenAPI契約から型を静的生成し検査する用途）
 
-### apps/persona_router
+### apps/persona_main_function
 - Python `>=3.11`
 - fastapi `0.141.1`（`[standard]`）/ uvicorn `0.52.1`（`[standard]`）
 - pydantic `2.13.4` / firebase-admin `7.5.0` / google-genai `2.17.0`
@@ -79,7 +79,7 @@ Python 3.11+ の各アプリの一次情報は `pyproject.toml`。
 ```
 apps/
   evaluator/       本番Webアプリ（backend: FastAPI, frontend: Vanilla JS SPA）
-  persona_router/  ペルソナ別なぞかけ生成マイクロサービス（独立Cloud Runデプロイ）
+  persona_main_function/  ペルソナ別なぞかけ生成マイクロサービス（独立Cloud Runデプロイ）
   batch_factory/   オフライン大量生成・DPO/SFT学習パイプライン（★独立gitリポジトリ、下記参照）
   tactical_cic/    未調査。今回の引き継ぎ範囲外（★未確認）
 packages/
@@ -130,7 +130,7 @@ services/*.py
 models/schemas.py   Pydanticスキーマ定義（全モデルのSSoT）
 ```
 
-### 3.2 apps/persona_router/ の内部構成
+### 3.2 apps/persona_main_function/ の内部構成
 
 ```
 api/routers/generate.py    POST /v1/generate（Step1推定→Step2生成の中核オーケストレーション）
@@ -154,7 +154,7 @@ database.py        SQLite(SSoT)接続管理。SQLAlchemy 2.0 + aiosqlite。単�
                     QualityCircuitBreakerStateORM, ResearchArticleORM
 firestore_sync.py   ローカルSQLite→Firestoreへの一方向Push同期、および起動時Pull復元
 fewshots.py         レビューで承認された「Golden」few-shot例の共有プール
-personas.py         語り手ペルソナ定義のSSoT（evaluator/persona_router/batch_factory共通）
+personas.py         語り手ペルソナ定義のSSoT（evaluator/persona_main_function/batch_factory共通）
 parser.py           LLM出力（ELYZA系）からなぞかけ結果を頑健抽出する共通パーサー
 cost_calculator.py  トークン使用量→JPYコスト換算
 quality_circuit_breaker.py  推論品質のサイレント劣化を検知するスライディングウィンドウ検知器
@@ -235,11 +235,11 @@ make mlops-pipeline      # 上記2つを連結
 - **best-of-3 → best-of-1への変更**: 同じくコミット`42a2297`で、ELYZA生成の並列3本勝負
   （best-of-3、最高得点をDPO選好ペアとして記録）方式を廃止し、1回勝負（best-of-1、
   「一発入魂」）に変更。レイテンシ最適化（ポーリング間隔8.0秒→2.0秒等）が目的。
-- **リポジトリ直下の`packages/shared_core`を共有パッケージ化**: evaluator/persona_router/
+- **リポジトリ直下の`packages/shared_core`を共有パッケージ化**: evaluator/persona_main_function/
   batch_factoryの3アプリすべてが、DB接続・Firestore同期・persona定義・few-shotプール等の
   共通ロジックを`nazokake-core`パッケージとして`pyproject.toml`のローカルパス依存
   （editable install）で参照する。ロジックの重複を避ける意図。ただしDockerビルド時は
-  リポジトリルートをビルドコンテキストにする必要があり(`apps/persona_router/Dockerfile`等)、
+  リポジトリルートをビルドコンテキストにする必要があり(`apps/persona_main_function/Dockerfile`等)、
   このためCloud Buildの構成が単純な「アプリディレクトリ単体ビルド」にできない制約が生じている。
 - **PowerShell起動スクリプトの`-EncodedCommand`化**: `start_dev.ps1`は旧版で手組みの
   クォートエスケープ付き`-Command`文字列を使っていたが、ネストが壊れると子プロセスが
@@ -278,7 +278,7 @@ make mlops-pipeline      # 上記2つを連結
 
 ### 外部API/サービス
 - **Google Gemini API**（`google-genai`経由）: なぞかけ生成の主軸・11軸評価・
-  persona_routerのStep1/Step2生成すべてで使用
+  persona_main_functionのStep1/Step2生成すべてで使用
 - **Ollama（ローカル）**: ELYZA（`elyza:8b` / LLM-JP系）モデルのローカル推論エンドポイント
   （既定 `http://localhost:11434`）
 - **Firebase Admin SDK / Firestore**: 認証・データ同期・掲示板・ジョブキュー
@@ -296,20 +296,20 @@ make mlops-pipeline      # 上記2つを連結
 
 | 変数名 | 用途 | 使用箇所 |
 |---|---|---|
-| `GEMINI_API_KEY` | Gemini API認証 | evaluator, persona_router, batch_factory 共通 |
+| `GEMINI_API_KEY` | Gemini API認証 | evaluator, persona_main_function, batch_factory 共通 |
 | `ANTHROPIC_API_KEY` | Anthropic API認証 | CD/tools系（詳細未確認） |
 | `HF_TOKEN` | Hugging Face認証 | batch_factory学習パイプライン |
 | `NAZOKAKE_DB_PATH` | SQLite DBファイルの絶対パス（SSoT） | shared_core, evaluator, workers共通 |
 | `VRAM_LOCK_PATH` | ELYZA(Ollama)呼び出し排他制御ロックファイルパス | evaluator, workers |
 | `LLMJP_MODEL` | ELYZA/LLM-JPモデル名（既定 `elyza:8b`） | evaluator |
 | `EVALUATOR_MODEL_NAME` | 評価用Geminiモデル名 | evaluator |
-| `STEP1_MODEL` / `STEP2_MODEL` | persona_routerの各ステップで使うGeminiモデル名 | persona_router |
+| `STEP1_MODEL` / `STEP2_MODEL` | persona_main_functionの各ステップで使うGeminiモデル名 | persona_main_function |
 | `CF_CLIENT_ID` / `CF_CLIENT_SECRET` | Cloudflare Access（ELYZA呼び出し経路） | evaluator |
 | `SMTP_USER` / `SMTP_PASSWORD` | 管理者招待メール送信（Gmailアプリパスワード） | evaluator |
 | `OWNER_EMAIL` | 管理者ブートストラップ用メールアドレス | evaluator, CI/CD |
 | `ADMIN_FRONTEND_URL` | 招待URL組み立て用フロントエンド基点URL | evaluator |
 | `GCP_BILLING_EXPORT_TABLE` / `GCP_COST_SYNC_SECRET` | GCPコスト集計機能 | evaluator |
-| `MONTHLY_BUDGET_JPY` / `GCP_PROJECT_ID` | コスト管理・GCPプロジェクト特定 | evaluator, persona_router |
+| `MONTHLY_BUDGET_JPY` / `GCP_PROJECT_ID` | コスト管理・GCPプロジェクト特定 | evaluator, persona_main_function |
 | `GOOGLE_APPLICATION_CREDENTIALS` | GCPサービスアカウント認証 | 各種スクリプト |
 | `OLLAMA_ENDPOINT` / `VLLM_ENDPOINT` / `VLLM_API_KEY` / `LLMJP_URL` | ローカル/リモート推論エンドポイント | batch_factory |
 | `FIRESTORE_COLLECTION` | 書き込み先Firestoreコレクション名 | batch_factory |
@@ -331,7 +331,7 @@ make mlops-pipeline      # 上記2つを連結
   （CRITICAL/HIGHで失敗）。デプロイはしない
 - `deploy_cloud_run.yml`: `main`へのpush時、WIF経由でビルド・脆弱性スキャン・
   Cloud Runデプロイ・Firebase Hostingデプロイまで実施（evaluatorのみ対象。
-  persona_routerはこのワークフローの対象外、**未確認**: 別途自動デプロイがあるか）
+  persona_main_functionはこのワークフローの対象外、**未確認**: 別途自動デプロイがあるか）
 - `pyright_check.yml`: PR時、`tests/`のpytest実行 → 変更行のみのPyright型チェック
 - `cron_cleanup.yml`: 毎日UTC 18:00、`tools/cleanup_git_resources.py`でマージ済み
   ブランチ/worktreeを掃除

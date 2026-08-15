@@ -14,7 +14,7 @@ Firestoreの等価フィルタ(`.where("is_valid_for_training", "==", True)`)は
 そのため判定は「フェッチ後にPython側でこの関数を通す」方式に統一する。
 フィールドが存在しない場合は「汚染される前から存在する安全なデータ」として
 Trueにフォールバックし(=学習対象に含めてよい)、明示的に `False` が書き込まれて
-いる場合(apps/persona_router/api/routers/generate.py のルートB等)のみを除外する。
+いる場合(apps/persona_main_function/api/routers/generate.py のルートB等)のみを除外する。
 """
 from __future__ import annotations
 

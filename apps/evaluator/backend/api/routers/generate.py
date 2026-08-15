@@ -586,7 +586,7 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
     # 【persona_feature_plan_v3.md Phase4 §7.2/§7.3】ハードコードのPERSONASを
     # 直接参照する代わりにget_persona_or_raise(id, db)を経由することで、
     # 管理コクピット(admin_config.py)からの動的上書きを自動的に反映する
-    # (persona_router::generate_routed()と同じ経路)。存在しないIDへ
+    # (persona_main_function::generate_routed()と同じ経路)。存在しないIDへ
     # PERSONAS[1]へ黙ってフォールバックすることも廃止し、404を返す。
     try:
         persona = get_persona_or_raise(req.persona_id, db)

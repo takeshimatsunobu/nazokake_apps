@@ -1,5 +1,5 @@
 [project]
-name = "nazokake-persona-router"
+name = "nazokake-persona-main-function"
 version = "0.1.0"
 description = "お題属性推定とルーティングシステム(Step1キャッシュ + Step2生成、Cloud Run)"
 requires-python = ">=3.11"
@@ -11,6 +11,11 @@ dependencies = [
     "google-genai",
     "python-dotenv",
     "nazokake-core",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=9.1.1",
 ]
 
 # 【教訓(apps/batch_factory構築時): pip freezeの丸写しによるバージョン競合回避】

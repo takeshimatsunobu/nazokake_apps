@@ -26,5 +26,5 @@ class NoCacheHTTPRequestHandler(http.server.SimpleHTTPRequestHandler):
 
 if __name__ == "__main__":
     port = int(sys.argv[1]) if len(sys.argv) > 1 else 5500
-    print(f"🚀 persona_router frontend (No-Cache dev server) on http://127.0.0.1:{port}")
+    print(f"🚀 persona_main_function frontend (No-Cache dev server) on http://127.0.0.1:{port}")
     http.server.test(HandlerClass=NoCacheHTTPRequestHandler, port=port)

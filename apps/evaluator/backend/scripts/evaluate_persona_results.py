@@ -1,6 +1,6 @@
-"""nazokake_results (apps/persona_router 由来) の事後評価バッチ（Phase4）。
+"""nazokake_results (apps/persona_main_function 由来) の事後評価バッチ（Phase4）。
 
-apps/persona_router/api/routers/generate.py は生成と同時に評価を行わない
+apps/persona_main_function/api/routers/generate.py は生成と同時に評価を行わない
 (同期APIのレイテンシを増やさないための設計判断)。そのため nazokake_results の
 各ドキュメントは書き込まれた時点では scores/s_total を持たない。このスクリプトは
 未評価のドキュメントを走査し、apps/evaluator/backend/services/evaluation.py の

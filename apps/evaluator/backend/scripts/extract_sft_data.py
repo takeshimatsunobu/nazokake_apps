@@ -232,12 +232,12 @@ def main(dry_run: bool = False, out_path: str = OUTPUT_PATH):
                     )
                 )
 
-    # 【Phase4追加】apps/persona_router が書き込む nazokake_results コレクションも
+    # 【Phase4追加】apps/persona_main_function が書き込む nazokake_results コレクションも
     # SFT抽出の対象に含める。is_golden_data/is_approved/statusの概念がこのコレクションには
     # 存在しないため、自動昇格パス(THRESHOLD_AUTO以上)相当の単一ゲートのみを適用する。
     # 未評価(s_totalが無い)ドキュメントはscripts/evaluate_persona_results.pyによる
     # 事後評価バッチが走るまで自然にスキップされる。
-    print("⏳ 「nazokake_results (persona_router版)」をスキャン中...")
+    print("⏳ 「nazokake_results (persona_main_function版)」をスキャン中...")
     persona_sft_count = 0
     for doc in db.collection("nazokake_results").stream():
         item = doc.to_dict() or {}
@@ -253,7 +253,7 @@ def main(dry_run: bool = False, out_path: str = OUTPUT_PATH):
 
         # nazokake_resultsにはnarrator_persona_id専用フィールドが無く、
         # persona_idそのものを論理参照として使う設計(Phase5の既存方針、
-        # apps/persona_router/api/routers/generate.pyのコメント参照)。
+        # apps/persona_main_function/api/routers/generate.pyのコメント参照)。
         item_for_envelope = dict(item)
         item_for_envelope["narrator_persona_id"] = item.get("persona_id")
         sft_samples.append(

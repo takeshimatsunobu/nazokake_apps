@@ -28,7 +28,7 @@ function _isNewSince(timestampIso) {
 
 // 【persona_feature_plan_v3.md Phase2】評価軸コード→表示ラベル。
 // apps/evaluator/backend/services/evaluation.pyのAXES(11軸)と対応させる
-// (persona_router/frontend側のresult.jsのuiAxisLabelsと同じ役割)。
+// (persona_main_function/frontend側のresult.jsのuiAxisLabelsと同じ役割)。
 // Few-shot採用時の評価軸タグ選択に使う。
 const AXIS_LABELS = {
     S_nat: '自然さ', S_tech: '技巧', S_rhy: 'リズム', S_prosody: '韻律',
@@ -254,7 +254,7 @@ export async function authFetch(url, options = {}, _retryCount = 0) {
     if (!res.ok) {
         if (res.status === 401) { logout(); throw new Error("認証切れ"); }
         // バックエンド(HTTPException)の detail をできる限り拾う
-        // (persona_router/frontend/api.jsのfetchAPIと同じフォールバック規約)。
+        // (persona_main_function/frontend/api.jsのfetchAPIと同じフォールバック規約)。
         let detail = `APIエラー: ${res.status}`;
         try {
             const body = await res.json();
@@ -361,7 +361,7 @@ export async function discardDlqItem(docId) {
 
 // ------------------------------------------------------------
 // 【Phase2新設】Ⅱレビュー: 直談判(unlock_requests)。
-// バックエンド(admin_review.py)は apps/persona_router が所有する
+// バックエンド(admin_review.py)は apps/persona_main_function が所有する
 // unlock_requests/user_penalties コレクションを直接読み書きする
 // (共有Firestoreプロジェクト経由、cross-serviceのHTTP呼び出しは無い)。
 // ------------------------------------------------------------
@@ -1459,7 +1459,7 @@ const PERSONA_MODE_LABELS = {
     temporary: { text: '時限上書き中', badge: 'bg-amber-100 text-amber-700 border-amber-300' },
 };
 
-// 直談判ブロック画面(apps/persona_router/frontend/app.js::formatRemaining)と
+// 直談判ブロック画面(apps/persona_main_function/frontend/app.js::formatRemaining)と
 // 同じ考え方の残り時間フォーマッタ(このファイル内で完結させる、共有モジュール化は
 // 別サービスをまたぐため見送る)。
 function _formatPersonaRemaining(expiresAtIso) {

@@ -4,11 +4,11 @@ nazokake_core/correction_pairs.py
 persona_feature_plan_v3.md Phase8 §5.6 / Phase9クリーンアップ: 第3層(訂正)
 データセット基盤。
 
-「赤ペン」添削は歴史的に2系統(persona_router版Firestore `corrections`コレクション
+「赤ペン」添削は歴史的に2系統(persona_main_function版Firestore `corrections`コレクション
 ＝系統A、evaluator道場破りフィードのSQLite `nazokake_items` origin_type=
 "user_akapen"行＝系統B)に分かれていたが、実件数を比較した結果いずれも0件
 (未使用)であったため、Phase9クリーンアップで**系統Bへ一本化**した
-(persona_router側のPOST /v1/corrections・corrections コレクションへの書き込みは
+(persona_main_function側のPOST /v1/corrections・corrections コレクションへの書き込みは
 廃止済み)。本モジュールは単一系統(系統B)のみを読む、Phase8時点の
 「2系統統合読み取り」から簡素化したロジックを提供する。§5.1の共通エンベロープ
 でラップして返す点は変わらない。

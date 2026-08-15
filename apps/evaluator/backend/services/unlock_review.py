@@ -2,15 +2,15 @@
 ==============================
 Ⅱレビュー: 直談判(unlock_requests)への「赦す/リセット/却下」アクション(Phase2)。
 
-apps/persona_router が所有するFirestoreコレクション(unlock_requests・
+apps/persona_main_function が所有するFirestoreコレクション(unlock_requests・
 user_penalties)を、同一Firestoreプロジェクトを共有するevaluator/backend側から
 直接操作する(cross-serviceのHTTP呼び出しは行わない。管理コクピットが他の
 Firestoreネイティブなコレクション(admin_users等)を直接読み書きしているのと
 同じ「共有Firestoreへの直接アクセス」パターン)。
 
-【なぜ apps/persona_router/services/penalty.py と同名にしなかったか】
+【なぜ apps/persona_main_function/services/penalty.py と同名にしなかったか】
 このファイルは別サービス(evaluator/backend)に属し、役割は近いが実装は別の
-penalty.pyというモジュールが既にpersona_router側に存在する。import時の混同を
+penalty.pyというモジュールが既にpersona_main_function側に存在する。import時の混同を
 避けるため、このファイルは処理対象(直談判レビュー)に即した名前にした。
 
 【「赦す」と「リセット」の違い】

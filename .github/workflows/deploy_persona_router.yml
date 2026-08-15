@@ -1,32 +1,32 @@
 # .github/workflows/deploy_persona_router.yml
 # ============================================
-# apps/persona_router 用のGitOpsデプロイパイプライン。deploy_cloud_run.yml
+# apps/persona_main_function 用のGitOpsデプロイパイプライン。deploy_cloud_run.yml
 # (apps/evaluator用)と同一の設計方針(WIF、脆弱性スキャンのハード・フェイルゲート、
 # 後段でのFirebase Hostingデプロイ)を踏襲する。cloudbuild.persona-router.yaml
 # (ビルド+Artifact Registryへのpushのみ、手動運用向け)の内容をベースに、
 # ビルド〜Cloud Runへの反映〜フロントエンド配信までを自動化する。
 #
-# 【なぜビルドコンテキストがリポジトリルートか】apps/persona_router/Dockerfile自身の
-# ヘッダーコメントの通り、`gcloud run deploy --source apps/persona_router`のような
+# 【なぜビルドコンテキストがリポジトリルートか】apps/persona_main_function/Dockerfile自身の
+# ヘッダーコメントの通り、`gcloud run deploy --source apps/persona_main_function`のような
 # ディレクトリ単体をビルドコンテキストにする手段は使えない([tool.uv.sources]の
 # nazokake-core = { path = "../../packages/shared_core" }を解決できずビルド失敗する)。
 # deploy_cloud_run.ymlと同じく、リポジトリルートをビルドコンテキストとして明示する。
 #
 # 【CPUスロットリングについて】apps/evaluator用ワークフローはBackgroundTasks
 # (レスポンス送出後も継続する非同期生成処理)のために--no-cpu-throttlingを付与
-# しているが、persona_routerのPOST /v1/generateはリクエスト処理内で完結する同期
+# しているが、persona_main_functionのPOST /v1/generateはリクエスト処理内で完結する同期
 # 処理(services/step2_generation.pyのdocstring参照)であり、レスポンス送出後に
 # 継続するバックグラウンド処理を持たないため、この設定は不要(現行の手動デプロイ
 # 済みリビジョンも既定のCPUスロットリングのままであることを実機で確認済み)。
 
-name: Deploy persona_router to Cloud Run (WIF)
+name: Deploy persona_main_function to Cloud Run (WIF)
 
 on:
   workflow_dispatch:
   push:
     branches: [main]
     paths:
-      - "apps/persona_router/**"
+      - "apps/persona_main_function/**"
       # packages/shared_core(nazokake_core)はDockerビルドがCOPYで取り込む実行時
       # 依存(uv.lockの[tool.uv.sources]参照)であり、この変更だけでも再デプロイが
       # 必要になる。deploy_cloud_run.ymlで実際にこのパスの欠落によりCDが起動せず
@@ -43,7 +43,7 @@ env:
   REGION: asia-northeast1
   REPOSITORY: nazo-agent
   SERVICE_NAME: nazokake-persona-router
-  DOCKERFILE_PATH: apps/persona_router/Dockerfile
+  DOCKERFILE_PATH: apps/persona_main_function/Dockerfile
   IMAGE: asia-northeast1-docker.pkg.dev/nazokakeapp-137e5/nazo-agent/nazokake-persona-router
 
 jobs:
@@ -132,10 +132,10 @@ jobs:
       - name: Install firebase-tools
         run: npm install -g firebase-tools
 
-      # apps/persona_router/firebase.json は名前付きターゲット("persona-router")を
-      # 使用しており、apps/persona_router/.firebaserc に .firebaserc/firebase.json
+      # apps/persona_main_function/firebase.json は名前付きターゲット("persona-router")を
+      # 使用しており、apps/persona_main_function/.firebaserc に .firebaserc/firebase.json
       # 双方がそろっているため working-directory をこのディレクトリに固定するだけで
       # 自己完結する(deploy_cloud_run.ymlのapps/evaluator側と同じパターン)。
       - name: Deploy frontend to Firebase Hosting
-        working-directory: apps/persona_router
+        working-directory: apps/persona_main_function
         run: firebase deploy --only hosting:persona-router --project "${{ env.PROJECT_ID }}" --non-interactive

@@ -4,7 +4,7 @@
 // 安全」な識別子であり、サーバ用の GEMINI_API_KEY（課金キー）とは別物。
 //
 // 【persona_feature_plan_v3.md Phase7】§6でFirebase匿名認証の適用範囲をペルソナ関連
-// API全般へ拡張したため(Phase6でapps/persona_router側のAPIが認証必須になった)、
+// API全般へ拡張したため(Phase6でapps/persona_main_function側のAPIが認証必須になった)、
 // これまでFirebase Authを一切使っていなかったこのフロントエンドにも、
 // evaluator/frontendと同じ構成(CDN importmap経由、npm依存の追加なし)で導入する。
 export const firebaseConfig = {

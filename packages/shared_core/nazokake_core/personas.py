@@ -3,7 +3,7 @@ nazokake_core/personas.py
 =============
 なぞかけアプリの語り手キャラクター(ペルソナ)定義。本番アプリ(apps/evaluator/backend)
 とバッチ工場(apps/batch_factory)の両方が参照する単一の情報源(SSoT)。
-元は apps/evaluator/backend/personas.py にあったが、apps/persona_router 等の
+元は apps/evaluator/backend/personas.py にあったが、apps/persona_main_function 等の
 新規サービスも含め複数アプリから共有するため packages/shared_core へ移動した
 (apps/evaluator/backend/personas.py は後方互換のための再エクスポートのみ残す)。
 
@@ -18,7 +18,7 @@ get_system_prompt(persona_id): 指定ペルソナのキャラクター設定とJ
 【Phase4追加: 動的上書き(persona_overrides)とTTLキャッシュ】
 管理コクピット(Ⅳ生成設定ペイン)からペルソナのプロンプトを動的に上書きできる
 ようにするため、Firestoreの persona_overrides/{persona_id} コレクションを
-追加した。生成のホットパス(apps/persona_router::generate_routed、
+追加した。生成のホットパス(apps/persona_main_function::generate_routed、
 apps/evaluator/backend::generation.py)は get_personas() を呼ぶことで、
 「上書きが無ければハードコード値、あればFirestoreの値」がマージされた辞書を
 得られる。Cloud Run実行時のレイテンシ悪化を避けるため、この関数は
@@ -136,7 +136,7 @@ def get_persona_or_raise(persona_id: int | str, db=None) -> dict:
     【型統一についての注記】persona_feature_plan_v3.md §7.3は「persona_idの型を
     文字列に統一する」ことを求めているが、これはFirestoreドキュメントIDとして
     本来文字列であるnarrator_persona_id(nazokake_core.narrator_personas、Phase4で
-    新設)の話であり、既にadmin_config.py/persona_routerが依存している
+    新設)の話であり、既にadmin_config.py/persona_main_functionが依存している
     PERSONAS/get_personas()自体のキー型(int)をここで変更すると両者を壊す
     (実装時に確認して回避)。本関数はint/str両方の入力を許容することで、
     呼び出し元がどちらの型でpersona_idを保持していても同じ経路を使えるようにする。
@@ -265,7 +265,7 @@ _cache_fetched_monotonic: float = 0.0
 def get_personas(db=None) -> dict[int, dict]:
     """生成ロジック(ホットパス)向けの、TTLキャッシュ済みペルソナ辞書。
 
-    apps/persona_router::generate_routed() や apps/evaluator/backend の生成
+    apps/persona_main_function::generate_routed() や apps/evaluator/backend の生成
     パイプラインは、モジュールレベル定数 PERSONAS を直接参照する代わりに
     この関数を呼ぶことで、管理コクピットからの動的上書きを自動的に反映できる。
 

@@ -12,11 +12,11 @@ slang_level/wordplay_flexibility/topic_scale/is_seasonal)であり、ペルソ�
 
 apps/evaluator/backend と同じDDD再編規約(api/routers, models, services)に
 従う。起動時のカレントディレクトリは必ずこのファイルのあるディレクトリ
-(apps/persona_router)であること(下記「起動」参照。api.*/models.*/services.*
+(apps/persona_main_function)であること(下記「起動」参照。api.*/models.*/services.*
 はこのディレクトリを起点とした絶対importのため、cwdがズレるとModuleNotFoundError
 になる)。
 
-起動: (apps/persona_router で) uv run fastapi dev main.py --port 8080
+起動: (apps/persona_main_function で) uv run fastapi dev main.py --port 8080
 """
 from __future__ import annotations
 
@@ -39,13 +39,13 @@ if sys.platform == "win32":
 # 【重要: importの順序を変えないこと】api.routers(→services.step1_estimation等
 # →nazokake_core.env_config)を先にimportすることで、env_config側の自動.env
 # 読み込み(モジュールimport時に1回だけ発火する副作用、リポジトリルートの.envを
-# 読む)を先に完了させる。その"後"で load_persona_router_env() を呼ぶことで、
+# 読む)を先に完了させる。その"後"で load_persona_main_function_env() を呼ぶことで、
 # override=Trueの後勝ち原則により、このアプリ固有の値(STEP1_MODEL/STEP2_MODEL/
 # GCP_PROJECT_ID)が正しく優先される(env.pyのdocstring参照)。
 from api.routers import generate, personas, timeline, unlock
-from env import load_persona_router_env
+from env import load_persona_main_function_env
 
-load_persona_router_env()
+load_persona_main_function_env()
 
 import firebase_admin  # noqa: E402
 from fastapi import FastAPI  # noqa: E402
@@ -68,7 +68,7 @@ if not firebase_admin._apps:
 # ブラウザのlocalStorageのみで完結させる設計。フロントエンド実装のファクト
 # チェック回答を参照)ため実害はほぼ無いが、許可オリジンを明示するほうが将来
 # 認証を足した際の事故を未然に防げるため、evaluator/backendの規約を踏襲する。
-app = FastAPI(title="Nazokake Persona Router", version="0.1.0")
+app = FastAPI(title="Nazokake Persona Main Function", version="0.1.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[

@@ -7,7 +7,7 @@ Few-shot例文プールの共有アクセス基盤(Phase5/6: フィードバッ�
 タグ(fewshot_axis_tag)が確定したなぞかけを、apps/evaluator/backend側が
 Firestoreの FEWSHOT_COLLECTION コレクションへPushする(services/generation.py
 から呼ぶ側ではなくapi/routers/admin_review.pyが書き手)。実際にプロンプトへ
-注入する側(apps/persona_router、およびapps/evaluator/backend自身の生成
+注入する側(apps/persona_main_function、およびapps/evaluator/backend自身の生成
 パイプライン)は、本モジュールの get_fewshot_pool(db) 経由でTTLキャッシュ付きに
 読む。
 
@@ -25,13 +25,13 @@ Firestoreの FEWSHOT_COLLECTION コレクションへPushする(services/generat
 nazokake_core/personas.py の get_personas()/persona_overrides と全く同じ設計
 (Firestoreをホットパスで直接叩かない、TTL遅延評価、失敗時は直前のキャッシュまたは
 空プールへフォールバック)を踏襲する。SQLite(apps/evaluator/backend専用のLocal
-SSoT)には一切依存しない(apps/persona_routerはSQLiteを持たないステートレスな
+SSoT)には一切依存しない(apps/persona_main_functionはSQLiteを持たないステートレスな
 Cloud Runサービスのため、このモジュールを介してのみFew-shotデータへアクセスできる)。
 
 【保持するデータ形状について】ここで保持するエントリは、apps/evaluator/backend
 既存の services/generation.py が旧来使っていた_FEWSHOT_POOL(CoT全工程
 [associations/kakekotoba/shared_essence/surprise_check]を含む重量級の辞書、
-Gemini/ELYZA二枚看板の生成スキーマ向け)とは異なり、apps/persona_router
+Gemini/ELYZA二枚看板の生成スキーマ向け)とは異なり、apps/persona_main_function
 services/step2_generation.py の出力スキーマ(toku/kokoro/nazokake_text)に
 合わせた軽量な辞書(odai/toku/kokoro/nazokake_text/fewshot_axis_tag)のみを
 保持する。generation.py側もPhase5/6でこのモジュールへ統一されたため、CoT
@@ -113,7 +113,7 @@ _cache_fetched_monotonic: float = 0.0
 def get_fewshot_pool(db=None) -> list[dict[str, Any]]:
     """生成ロジック(ホットパス)向けの、TTLキャッシュ済みFew-shotプール。
 
-    apps/persona_router::services/step2_generation.py や
+    apps/persona_main_function::services/step2_generation.py や
     apps/evaluator/backend::services/generation.py は、Firestoreを直接叩く代わりに
     この関数を呼ぶ。FEWSHOT_CACHE_TTL_SECONDS(既定300秒)ごとにしかFirestoreへ
     問い合わせない(Cloud Run実行時、リクエストのたびにFirestore読み取りが発生して

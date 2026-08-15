@@ -69,12 +69,13 @@ from dotenv import load_dotenv  # noqa: E402
 from firebase_admin import firestore  # noqa: E402
 from google.api_core.exceptions import GoogleAPICallError, RetryError  # noqa: E402
 
+from nazokake_core import narrator_personas  # noqa: E402
 from nazokake_core.database import async_upsert_item, ensure_db_ready  # noqa: E402
 from nazokake_core.firestore_sync import (  # noqa: E402
     _ensure_firebase_app,
     _resolve_collection,
 )
-from nazokake_core.personas import get_persona_or_raise  # noqa: E402
+from nazokake_core.personas import get_persona_or_raise, get_personas  # noqa: E402
 from services.evaluation import run_evaluation  # noqa: E402
 from services.generation import (  # noqa: E402
     _try_acquire_vram_lock,
@@ -152,6 +153,87 @@ def _compose_text(odai: str, result: dict) -> str:
     しすぎるため、この1関数だけ意図的に複製する。
     """
     return f"「{odai}」とかけて、「{result.get('toku', '')}」と解く。\nその心は、{result.get('kokoro', '')}"
+
+
+_NARRATOR_PERSONA_FALLBACK: dict[str, str] = {
+    "narrator_persona_id": "No_Data",
+    "narrator_persona_version_id": "No_Data",
+    "narrator_persona_name": "No_Data",
+    "data_origin": "no_data",
+}
+
+
+def _resolve_narrator_persona_fields(
+    db, persona_id: Any, version_id_snapshot: str | None
+) -> dict[str, str]:
+    """narrator_persona_id/_version_id/_name/data_originの4列値を解決する。
+
+    【既知のギャップ(docs/persona_feature_plan_v3.md §12)の恒久対応】
+    apps/evaluator/backend/api/routers/generate.py::generate_ai()は、なぞかけ
+    生成リクエストを受けた"最初の書き込み"の時点でこの4列を設定するが、それは
+    Cloud Run自身の一時SQLite(`/tmp`、インスタンス終了で消える)に対してであり、
+    このワーカーが動くローカルマシンの`nazokake_local.db`とは別ファイルである。
+    ワーカーがジョブをclaimする段階では、そのdoc_idはワーカー側ローカルDBに
+    まだ一度も存在しないため、_mark_job_outcome()のasync_upsert_item()は
+    新規行として挿入する(upsert_item()のexisting is Noneの枝)。その際に渡す
+    payloadにこの4列が含まれていなければ、スキーマのserver_default("No_Data"/
+    "no_data")のまま記録され続けてしまう。さらにFirestore側の"persona"スナップ
+    ショット(_claim_job_sync参照)にはnarrator_persona_name/data_originが
+    元々含まれていないため、ワーカー側で改めて解決する必要がある。
+
+    generate_ai()と同じ規約(narrator_persona_id=str(persona_id)、
+    narrator_persona_version_idはnazokake_core.narrator_personas.compute_version_id
+    の内容ハッシュ形式、data_originは"builtin"/"custom"/"no_data")に揃える。
+
+    【安全策】persona_idが未指定・不正・解決不能ないずれの場合も例外を送出せず、
+    "No_Data"/"no_data"へフォールバックする(このワーカー自体をクラッシュさせない
+    ための安全策。呼び出し元のtry節がさらに全体を覆っているが、ここでも二重に
+    防御する)。
+    """
+    if persona_id is None:
+        return dict(_NARRATOR_PERSONA_FALLBACK)
+
+    try:
+        # ビルトイン("1"〜"10"): get_personas(db)経由(管理コクピットの動的
+        # 上書きを反映、generate_ai()と同じ経路)。
+        try:
+            numeric_id = int(persona_id)
+        except (TypeError, ValueError):
+            numeric_id = None
+
+        if numeric_id is not None:
+            builtin = get_personas(db).get(numeric_id)
+            if builtin is not None:
+                resolved_id = str(numeric_id)
+                version_id = version_id_snapshot or narrator_personas.compute_version_id(
+                    resolved_id,
+                    {"display_name": builtin["name"], "prompt": builtin["prompt"]},
+                )
+                return {
+                    "narrator_persona_id": resolved_id,
+                    "narrator_persona_version_id": version_id,
+                    "narrator_persona_name": builtin["name"],
+                    "data_origin": "builtin",
+                }
+
+        # マイペルソナ(UUID文字列): 現時点でapps/evaluator/frontendはビルトイン
+        # のみを送信する想定だが、将来ここ経由でも選択可能になった場合の保険として
+        # 対応しておく(apps/persona_main_function/api/routers/generate.py::
+        # _resolve_persona_for_generationと同じ二段構え)。
+        custom = narrator_personas.get_persona(db, str(persona_id))
+        if custom is not None and not custom.get("deleted_at"):
+            return {
+                "narrator_persona_id": str(persona_id),
+                "narrator_persona_version_id": (
+                    version_id_snapshot or custom.get("current_version_id") or "No_Data"
+                ),
+                "narrator_persona_name": custom.get("display_name") or "No_Data",
+                "data_origin": "custom",
+            }
+    except Exception as e:
+        _log(f"⚠️ narrator_persona情報の解決に失敗しました(No_Dataへフォールバックします): {e}")
+
+    return dict(_NARRATOR_PERSONA_FALLBACK)
 
 
 def _stale_cutoff_iso() -> str:
@@ -291,10 +373,19 @@ async def _process_job(db, collection: str, job: dict[str, Any]) -> None:
     odai = job['odai']
     dpo_pair_id = job.get('dpo_pair_id')
     temperature = job.get('temperature')
+    # 【docs/persona_feature_plan_v3.md §12既知ギャップの恒久対応】このワーカー
+    # 自身のローカルSQLiteにも4列を記録できるよう、成功/失敗いずれの書き戻し
+    # パスでも使えるようここで一度だけ解決する(_resolve_narrator_persona_fields
+    # 自体は例外を送出せず安全にフォールバックする)。
+    narrator_fields = _resolve_narrator_persona_fields(
+        db, job.get('persona_id'), job.get('narrator_persona_version_id')
+    )
 
     if not odai:
         _log(f'⚠️ [{doc_id}] odaiが空のため生成をスキップし、即時失敗として扱います。')
-        await _mark_immediate_failure(db, collection, doc_id, odai, dpo_pair_id, 'odai is empty')
+        await _mark_immediate_failure(
+            db, collection, doc_id, odai, dpo_pair_id, 'odai is empty', narrator_fields
+        )
         return
 
     # 【1発入魂アルゴリズム(爆速化)】best-of-3(N=3並行生成→最高得点選抜)を廃止し、
@@ -345,13 +436,24 @@ async def _process_job(db, collection: str, job: dict[str, Any]) -> None:
             'elyza_job_locked_at': None,
             'elyza_job_retry_count': 0
         }
-        await _mark_job_outcome(db, collection, doc_id, odai, local_fields={**fields, 'dpo_pair_id': dpo_pair_id}, scoped_fields=fields)
+        # 【重要】narrator_persona_*の4列はscoped_fields(Firestore、_ELYZA_JOB_SCOPED_FIELDS
+        # の厳格な許可リストを持つ)には含めない。Firestore側は既にgenerate_ai()の
+        # 最初の書き込みで正しい値を持っているため触れる必要が無く、含めると
+        # _write_scoped_fields_syncがスコープ外フィールドとして例外を送出する。
+        # local_fields(このワーカー自身のローカルSQLite)にのみ追加する。
+        await _mark_job_outcome(
+            db, collection, doc_id, odai,
+            local_fields={**fields, 'dpo_pair_id': dpo_pair_id, **narrator_fields},
+            scoped_fields=fields,
+        )
         _log(f'✅ [{doc_id}] ELYZA生成・評価・Firestore書き戻しが完了しました。')
     except Exception as e:
         _log(f'⚠️ [{doc_id}] ELYZA処理に失敗したため、即時failedとして書き戻します: {e}')
         traceback.print_exc(file=sys.stderr)
         try:
-            await _mark_immediate_failure(db, collection, doc_id, odai, dpo_pair_id, str(e))
+            await _mark_immediate_failure(
+                db, collection, doc_id, odai, dpo_pair_id, str(e), narrator_fields
+            )
         except Exception as mark_err:
             # 【最終防衛ライン】failed状態への書き戻し自体が失敗した場合(例:
             # 元の失敗原因がFirestoreへの通信不能そのものだった場合)も、ここで
@@ -367,6 +469,7 @@ async def _mark_immediate_failure(
     odai: str,
     dpo_pair_id: str | None,
     error_message: str,
+    narrator_fields: dict[str, str] | None = None,
 ) -> None:
     """【爆速化】1発入魂+内部リトライ(generate_via_llmjpの_MAX_OUTPUT_RETRIES)を
     尽くしてもELYZA生成が成立しなかった場合、次のポーリング周期での"pending"再
@@ -378,6 +481,10 @@ async def _mark_immediate_failure(
     タイムアウトを30〜35秒へ短縮)と相反する遅延要因だった。ジョブレベルの
     再キューを廃し、失敗はここで一度確定させる(それでもユーザー体験としては
     クラウド側がGemini Flash Liteへ即座に代打させるため、失敗が露呈することはない)。
+
+    narrator_fields: _resolve_narrator_persona_fields()の解決結果。呼び出し元が
+    未解決のまま渡してきた場合(呼び出しがodai空チェック等、persona解決より前の
+    早期リターン経路の場合)も、安全にNo_Data側へフォールバックする。
     """
     fields: dict[str, Any] = {
         "elyza_job_status": "dead_letter",
@@ -391,7 +498,11 @@ async def _mark_immediate_failure(
         collection,
         doc_id,
         odai,
-        local_fields={**fields, "dpo_pair_id": dpo_pair_id},
+        local_fields={
+            **fields,
+            "dpo_pair_id": dpo_pair_id,
+            **(narrator_fields or _NARRATOR_PERSONA_FALLBACK),
+        },
         scoped_fields=fields,
     )
 

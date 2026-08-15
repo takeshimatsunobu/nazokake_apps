@@ -18,7 +18,7 @@ v1 / v2 を置き換える確定版。以降はアジャイルにフェーズ単
 
 ### 紛らわしい命名の是正
 
-`apps/persona_router` は `main.py:4` および `models/schemas.py:4` で自らを
+`apps/persona_main_function` は `main.py:4` および `models/schemas.py:4` で自らを
 **「ペルソナ推定とルーティングシステム」**と名乗っているが、Step1が推定しているのは
 **お題の言語的性質7属性**であり、ペルソナでもユーザー属性でもない。
 
@@ -63,10 +63,10 @@ Route A/B 分岐の根拠は `is_valid_input` の1つのみ。ユーザー属性
 いずれも persona 情報を参照していない（参照ゼロを grep で確認済み）。
 
 ### 1.4 インフラ
-- Cloud Run は evaluator / persona_router とも **max-instances=20** → SQLite は共有不可
+- Cloud Run は evaluator / persona_main_function とも **max-instances=20** → SQLite は共有不可
 - `firestore_sync.py` の同期対象は **`nazokake_items` のみ**
 - `firestore.rules` は全コレクション deny-all。全アクセスは Admin SDK 経由（ルールを迂回）
-- 結果格納先が2系統: `nazokake_items`（evaluator）/ `nazokake_results`（persona_router）
+- 結果格納先が2系統: `nazokake_items`（evaluator）/ `nazokake_results`（persona_main_function）
 - Firebase 匿名認証は実装済み（`ui/auth.js`）だが利用は掲示板投稿のみ
 
 ---
@@ -396,7 +396,7 @@ Firebase 匿名認証は実装済み。**適用範囲を拡張する**（新規�
 
 ## 7. API
 
-### 7.1 エンドポイント（`apps/persona_router`）
+### 7.1 エンドポイント（`apps/persona_main_function`）
 
 | メソッド | パス | 内容 |
 |---|---|---|
@@ -413,7 +413,7 @@ Firebase 匿名認証は実装済み。**適用範囲を拡張する**（新規�
 ### 7.2 既存バグの同時修正
 
 管理コクピットの上書き機能（`admin_config.py` が書く `persona_overrides`）は
-**persona_router にしか反映されていない**。evaluator の `generate.py:575` と
+**persona_main_function にしか反映されていない**。evaluator の `generate.py:575` と
 `ondemand_elyza_worker.py:280` はハードコード辞書を直読みしている。
 
 **全経路を `get_personas(db)` 相当に寄せることで、この上書き機能が本来の意図通り動く。**
@@ -543,7 +543,7 @@ Push・起動時Pull復元の両方を対象にする。
 
 ### 9.5 デプロイ
 
-persona_router の CI/CD は `33ab466` で新設済み。**新規タスクなし**。ただし確認:
+persona_main_function の CI/CD は `33ab466` で新設済み。**新規タスクなし**。ただし確認:
 
 - `packages/shared_core/**` の変更が**両サービスのデプロイを起動する**パスフィルタか
 - Alembic マイグレーションの実行主体が1つに絞られているか（同時実行は競合する）
@@ -567,7 +567,7 @@ persona_router の CI/CD は `33ab466` で新設済み。**新規タスクなし
 1. DBパスを絶対パス解決に変更、起動時ログ出力
 2. 孤児DBを zip 保管のうえ削除、`.gitignore` に `*.db`
 3. `firestore_sync.py` をマルチコレクション対応にし、4テーブルを同期対象に追加
-4. `persona_router` の docstring を「お題属性推定とルーティングシステム」に修正
+4. `persona_main_function` の docstring を「お題属性推定とルーティングシステム」に修正
 5. ORM の `persona` 列 docstring に「廃止済み・書き込み禁止」を明記
 
 **完了条件**: 再起動後も4テーブルの内容が復元されること
@@ -605,7 +605,7 @@ persona_router の CI/CD は `33ab466` で新設済み。**新規タスクなし
 
 ### Phase 5: 生成パスへの記録
 
-1. 3経路（persona_router / evaluator / ELYZAワーカー）で version_id を記録
+1. 3経路（persona_main_function / evaluator / ELYZAワーカー）で version_id を記録
 2. **ジョブペイロードに version_id とプロンプトのスナップショットを追加**（§3.4）
 3. `pipeline_id` にペルソナIDを含める（§5.4）
 
@@ -645,8 +645,8 @@ persona_router の CI/CD は `33ab466` で新設済み。**新規タスクなし
 
 ## 11. テスト
 
-`apps/persona_router` にはテストが存在しない。本機能を機に基盤を導入する。
-CI（`pyright_check.yml`）が `tests/` を実行するため `tests/persona_router/` に置けば自動で回る。
+`apps/persona_main_function` にはテストが存在しない。本機能を機に基盤を導入する。
+CI（`pyright_check.yml`）が `tests/` を実行するため `tests/persona_main_function/` に置けば自動で回る。
 
 | 分類 | 内容 |
 |---|---|
@@ -677,6 +677,29 @@ CI（`pyright_check.yml`）が `tests/` を実行するため `tests/persona_rou
 | 3 | `human_evaluations` の旧8件（現行コードと非互換、事実上デッド） |
 | 4 | `research_articles` / `trigger_state` の物理スキーマとORM宣言の型不一致（DATETIME vs String） |
 | 5 | `PROJECT_CORE.md` のDB構成記述が実装と乖離 |
+| 6 | ~~`workers/ondemand_elyza_worker.py`がnarrator_persona_id等を生成時点で記録しない~~ **→ 2026-08-16対応完了(§12.2参照)** |
+
+### 12.1 2026-08-15 実施記録（本ドキュメントとは別軸の改修依頼、参考記録）
+
+ユーザーからの別途の改修依頼により、以下を実施した（本計画のPhase番号とは対応しない、依頼側の独自Phase1〜5）:
+
+1. **アプリ名称変更**: `apps/persona_router` → `apps/persona_main_function`。ディレクトリ・import・Dockerfile・cloudbuild/GitHub Actionsのローカルパス参照を更新。**Cloud Runサービス名`nazokake-persona-router`・Firebase Hosting target`persona-router`・Artifact Registryイメージパスは意図的に変更していない**（実デプロイ資源のため）。
+2. **マイペルソナの生成解放**: `apps/persona_main_function`のPOST /v1/generateがpersona_id: str（組み込み"1"〜"10"＋マイペルソナUUID）を受理するよう改修。マイペルソナのprompt/first_person/speech_style/tone/favorite_topics/taboo/thinking_levelを生成プロンプトへ注入する経路（`services/step2_generation.py::_compose_persona_prompt`）を新設。不明なpersona_idは404（黙示フォールバック廃止）。
+3. **フロントエンド**: 生成画面（`index.html`）でマイペルソナ選択を解放。**副次的に発見した既存バグ**（生成画面がFirebase匿名認証を確立せず`GET /v1/personas`を呼んでいたため常時401だった）も修正。`personas.html`にPointer EventsベースのD&D並び替え（↑↓ボタンは維持）・長押し削除（バイブレーション＋確認ダイアログ、組み込み10体は🔒保護）を追加。
+4. **SQLiteバックフィル**: `nazokake_local.db`の`nazokake_items`テーブルに対し`tools/migrate_phase3_narrator_persona_link.py`を再実行（前回実行後に発生した2件を追加救済）。全5,447件中133件が`narrator_persona_id`設定済み、残り5,314件は`"No_Data"`のまま（NULL/未設定の残存は0件）。
+5. **E2E検証**: ドラフト生成→登録→並替→生成→Firestore記録確認→削除保護/削除、全項目で実際のHTTP経路（FastAPI TestClient、DB/Gemini呼び出しは実物）による検証を実施し全件成功。
+
+**注意**: この開発環境にはFirestoreエミュレータが構成されておらず、`.env`が本番プロジェクト`nazokakeapp-137e5`を直接指している。上記2・5の動作確認時に本番Firestoreへテストデータを書き込んでしまう場面があったが、検証後に都度削除しクリーンアップ済み。今後この環境で同様の検証を行う際は、エミュレータ導入を検討すること。
+
+### 12.2 2026-08-16 ELYZAワーカーの既知ギャップ対応（§12表6行目 → 対応完了）
+
+**根本原因の特定**: `apps/evaluator/backend/api/routers/generate.py::generate_ai()`はなぞかけ生成リクエストの最初の書き込み時点でnarrator_persona_id等の4列を正しく設定するが、それは**Cloud Run自身の一時SQLite**（`/tmp`、インスタンス終了で消える）に対してであり、`workers/ondemand_elyza_worker.py`が動くユーザーのローカルマシンの`nazokake_local.db`とは別ファイルである。ワーカーがジョブをclaimする段階では、そのdoc_idはワーカー側ローカルDBにまだ一度も存在しないため、`_mark_job_outcome()`の`async_upsert_item()`は新規行として挿入する（`upsert_item()`の`existing is None`の枝）。渡すpayloadに4列が含まれていなければ、スキーマのserver_default（`"No_Data"`/`"no_data"`）のまま記録され続ける。さらにFirestore側の`persona`スナップショット（`_claim_job_sync`参照）には元々`narrator_persona_name`/`data_origin`が含まれていないため、ワーカー側で独自に解決する必要があった。
+
+**対応内容**:
+- `workers/ondemand_elyza_worker.py`に`_resolve_narrator_persona_fields(db, persona_id, version_id_snapshot)`を新設。`apps/evaluator/backend/api/routers/generate.py::generate_ai()`と同じ規約（`narrator_persona_id=str(persona_id)`、`narrator_persona_version_id`は`nazokake_core.narrator_personas.compute_version_id`の内容ハッシュ形式、`data_origin`は`"builtin"`/`"custom"`/`"no_data"`）に揃えた。ビルトイン（"1"〜"10"）は`get_personas(db)`経由（管理コクピットの動的上書きを反映）、マイペルソナ（UUID文字列）は`narrator_personas.get_persona(db, persona_id)`経由で解決する二段構え。
+- `persona_id`が未指定・不正・解決不能のいずれでも例外を送出せず`"No_Data"`/`"no_data"`へフォールバックする（ワーカーをクラッシュさせない安全策、内部で全例外を捕捉）。
+- 解決した4フィールドは`_process_job()`の成功パス・`_mark_immediate_failure()`の失敗パスの両方で、**ワーカー自身のローカルSQLite（`local_fields`）にのみ**追加する。Firestore側（`scoped_fields`、`_ELYZA_JOB_SCOPED_FIELDS`の厳格な許可リスト）には含めない（Firestore側は`generate_ai()`の最初の書き込みで既に正しい値を持っているため触れる必要が無く、含めると`_write_scoped_fields_sync`がスコープ外フィールドとして例外を送出してしまうため）。
+- `workers/test_narrator_persona_fields.py`を新設（単体テスト8件、ビルトイン/マイペルソナ/未指定/不正ID/例外安全性/Firestoreスコープ非混入を検証、全件PASS）。実際の一時SQLiteファイルへの書き込みも別途スクリプトで検証済み（成功パス・失敗パスとも期待通りの値が記録されることを確認）。
 
 ---
 

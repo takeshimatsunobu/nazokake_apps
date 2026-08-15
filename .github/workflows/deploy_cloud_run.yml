@@ -35,7 +35,7 @@ on:
       # infra/ や tools/ の変更ではクラウドへのデプロイを実行しない(instructions/004)。
       - "apps/**"
       # Phase5.5: packages/shared_core(nazokake_core)はapps/evaluator/backend・
-      # apps/persona_router双方のDockerビルドがCOPYで取り込む実行時依存であり、
+      # apps/persona_main_function双方のDockerビルドがCOPYで取り込む実行時依存であり、
       # このパスだけを変更してもapps/**に触れないため従来はCDが起動しなかった
       # (実機で本番の記憶喪失バグ修正が自動デプロイされず、workflow_dispatchでの
       # 手動救済を要した障害を受けて追加)。

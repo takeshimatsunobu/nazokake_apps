@@ -3,7 +3,7 @@
 Ⅱ ユーザーの投稿に基づく評価・承認(Phase2、Phase5/6でフィードバックループ統合)。
 
 - GET  /unlock-requests                      : status=="pending"の直談判一覧
-  (apps/persona_router が所有するFirestoreコレクションを直接読む。詳細は
+  (apps/persona_main_function が所有するFirestoreコレクションを直接読む。詳細は
   services/unlock_review.py のモジュールdocstring参照)。
 - POST /unlock-requests/{request_id}/action  : 赦す(pardon)/リセット(reset)/却下(reject)。
 - POST /nazokake-items/{doc_id}/review       : 5段階評価(review_status)の確定(Phase5/6)。
@@ -11,7 +11,7 @@
 - POST /nazokake-items/{doc_id}/fewshot      : Few-shot採用フラグ+評価軸タグの更新。
   「承認待ちデータ」「RLHFレビュー」の両カードから共通で呼ばれる(どちらも最終的には
   同じnazokake_itemsの1行を指すため)。①🏆Golden(review_status=="golden")と評価
-  済みの行のみ採用可能(Phase5/6)。採用が確定した瞬間、apps/persona_router側の
+  済みの行のみ採用可能(Phase5/6)。採用が確定した瞬間、apps/persona_main_function側の
   生成へ注入するためFirestore(nazokake_fewshots)へPushする(D)。
 """
 from __future__ import annotations
@@ -158,7 +158,7 @@ async def update_fewshot_selection(
 ):
     """「承認待ちデータ」「RLHFレビュー」双方のカードから共通で呼ばれる、Few-shot
     採用フラグ+評価軸タグの更新。①🏆Golden(review_status=="golden")と評価済みの
-    行のみ採用可能(Phase5/6の確定仕様)。採用が確定した瞬間、apps/persona_router
+    行のみ採用可能(Phase5/6の確定仕様)。採用が確定した瞬間、apps/persona_main_function
     側の生成へ注入するためFirestore(nazokake_fewshots)へPushする(D、実データは
     nazokake_core.fewshots.get_fewshot_pool()経由でTTLキャッシュ付きに読まれる)。
     """

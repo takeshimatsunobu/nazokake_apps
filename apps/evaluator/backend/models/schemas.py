@@ -381,7 +381,7 @@ class UnlockRequestReviewItem(BaseModel):
     client_uuid: str
     message: str
     blocked_until_snapshot: Optional[str] = None
-    # apps/persona_router/api/routers/unlock.py::_find_offending_generation()が
+    # apps/persona_main_function/api/routers/unlock.py::_find_offending_generation()が
     # 申し立て時点でnazokake_resultsから逆引き・スナップショットしたもの。
     # 見つからなかった場合(まだ一度もルートBを引かずに直談判が送られてきた等の
     # 想定外の経路)はどちらもnull。

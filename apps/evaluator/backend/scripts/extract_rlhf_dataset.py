@@ -332,7 +332,7 @@ def main(
                             }
                             direct_count += 1
 
-        # 【Phase4追加】apps/persona_router が書き込む nazokake_results コレクションの
+        # 【Phase4追加】apps/persona_main_function が書き込む nazokake_results コレクションの
         # 直接スキャン。従来このコレクションはどの抽出スクリプトからも参照されておらず、
         # is_valid_for_training=false(荒らし入力を「エンタメ化」した非学習対象生成物)が
         # 立っていても、それを見る下流処理が存在しなかった。ここで初めて接続する。
@@ -364,16 +364,16 @@ def main(
                 "score": score,
                 "score_type": "ai_eval",
                 "human_comment": None,
-                "user_slug": "persona_router",
+                "user_slug": "persona_main_function",
                 "doc_id": doc_id,
                 "system_prompt": system_prompt,
-                # persona_router側にdpo_pair_idの概念は無い(1お題=1回生成、対になる
+                # persona_main_function側にdpo_pair_idの概念は無い(1お題=1回生成、対になる
                 # rejected応答が存在しない)ため空文字とする。DPO用の選好ペアは
                 # 代わりにPhase3の添削(corrections)データ(元AI応答=rejected /
                 # 添削後=chosen)から別途構成する設計とする。
                 "dpo_pair_id": "",
                 "is_golden_data": False,
-                "data_source": "persona_router",
+                "data_source": "persona_main_function",
             }
             persona_results_count += 1
         print(f"📥 nazokake_results からの直接スキャン: {persona_results_count} 件")

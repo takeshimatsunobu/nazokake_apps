@@ -3,7 +3,7 @@ nazokake_core/persona_reactions.py
 =====================================
 persona_feature_plan_v3.md Phase8 §5.5: 第2層(反応)データセット基盤。
 
-【設計変更の背景】従来のapps/persona_router/api/routers/timeline.pyは、
+【設計変更の背景】従来のapps/persona_main_function/api/routers/timeline.pyは、
 「座布団」リアクションを nazokake_results.{doc_id}.zabuton_count への単純な
 firestore.Increment(1)で数えていた。この方式は合計値(集計後の数値)しか
 残らず、「誰が」「いつ」「どの語り手ペルソナの作品に」反応したかという
@@ -19,7 +19,7 @@ firestore.Increment(1)で数えていた。この方式は合計値(集計後の
 persona_reactionsの件数、で算出する(effective_reaction_count参照)。
 
 書き込み口はこのモジュールの add_reaction() のみとし、呼び出し元
-(apps/persona_router)がFirestoreへ直接書き込むことはしない
+(apps/persona_main_function)がFirestoreへ直接書き込むことはしない
 (narrator_personas.pyと同じ設計原則)。
 """
 

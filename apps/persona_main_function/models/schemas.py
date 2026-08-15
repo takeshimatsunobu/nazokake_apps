@@ -56,13 +56,28 @@ class GenerateRoutedRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     odai: str = Field(..., min_length=1, max_length=200, description="ユーザーが入力したお題")
-    persona_id: int = Field(..., ge=1, le=10, description="nazokake_core.personas.PERSONASのキー(1〜10)")
+    # 【persona_feature_plan_v3.md Phase5 §7.3】persona_idの型をstrへ統一する。
+    # 組み込みは"1"〜"10"の数字文字列、マイペルソナ(narrator_personas)はUUID文字列。
+    # 既存クライアント(int送信)との互換のため、mode="before"バリデータでintを
+    # 受理しstrへ正規化する(Union型にして呼び出し側全体にint|strの分岐を
+    # 波及させないための設計判断)。
+    persona_id: str = Field(
+        ..., min_length=1, max_length=64,
+        description="組み込みは\"1\"〜\"10\"の数字文字列、マイペルソナはUUID文字列(intも互換のため受理)",
+    )
     # 【段階的ブロック機能で追加】frontend/state.js::ensureUid()がlocalStorageで
     # 生成・保持する匿名UUIDをそのまま送る。認証情報ではなくただの識別文字列であり、
     # クリアされれば別人として扱われる(スプーフィング耐性は低いが、軽量な匿名
     # システムとして許容する設計判断)。services/penalty.pyのブロック判定・
     # ルートBカウントの主キーとして使う。
     client_uuid: str = Field(..., min_length=1, max_length=100, description="クライアント側で生成・保持する匿名UUID")
+
+    @field_validator("persona_id", mode="before")
+    @classmethod
+    def _normalize_persona_id(cls, v: object) -> object:
+        if isinstance(v, int):
+            return str(v)
+        return v
 
 
 class GenerateRoutedResponse(BaseModel):
@@ -75,7 +90,7 @@ class GenerateRoutedResponse(BaseModel):
         description="Firestore(nazokake_results)に保存したドキュメントID。route='BLOCKED'の場合は生成自体が行われないため空文字",
     )
     odai: str
-    persona_id: int
+    persona_id: str
     route: Literal["A", "B", "BLOCKED"] = Field(
         ...,
         description="A=正常入力 / B=異常入力(is_valid_input=false) / BLOCKED=段階的ペナルティによる一時退場中",
@@ -112,7 +127,10 @@ class TimelineItem(BaseModel):
 
     doc_id: str
     odai: str
-    persona_id: int
+    # 【persona_feature_plan_v3.md Phase5】マイペルソナ(narrator_personas)のUUID
+    # 文字列を保持したなぞかけも同じコレクションに保存されるため、int固定では
+    # ValidationErrorになる(timeline.py::_to_timeline_item参照)。
+    persona_id: str
     route: Literal["A", "B"]
     toku: str
     kokoro: str
@@ -306,7 +324,7 @@ class NarratorPersonaItem(BaseModel):
     updated_at: str
     # 【persona_feature_plan_v3.md Phase7で追加】current_version_idが指す
     # narrator_persona_versions文書のsettings(§3.2)をそのまま同梱する。
-    # 編集フォーム(apps/persona_router/frontend/ui/personas.js)がPATCH前に
+    # 編集フォーム(apps/persona_main_function/frontend/ui/personas.js)がPATCH前に
     # 現在値をプリフィルするために必要(9エンドポイントに単体GETが無いため、
     # 既存のGET /v1/personasのレスポンスを拡充する形で対応する)。
     # バージョン文書が何らかの理由で見つからない場合はNone(呼び出し元は

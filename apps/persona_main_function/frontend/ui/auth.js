@@ -2,7 +2,7 @@
 // Firebase匿名認証(apps/evaluator/frontend/public/ui/auth.js と同じパターン)。
 //
 // 【persona_feature_plan_v3.md Phase6/Phase7】マイペルソナAPI(/v1/personas系)は
-// Firebase IDトークンによる認証を必須とするため(apps/persona_router/api/deps.py::
+// Firebase IDトークンによる認証を必須とするため(apps/persona_main_function/api/deps.py::
 // verify_user_token)、このフロントエンドでも匿名サインインを行い、APIリクエストの
 // Authorizationヘッダーへ都度トークンを載せる(api.js::authHeader参照)。
 //

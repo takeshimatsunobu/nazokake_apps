@@ -14,7 +14,7 @@ COUNT なのか】このアプリはLocal-First(ローカルSQLiteが正、Fires
 バックアップ)アーキテクチャを採用しており、DLQ(sync_status)・承認待ちデータ
 (gemini_status/elyza_status)はSQLite側のカラムでしか判定できない(sync_status
 はそもそも「Firestoreへ同期できたか」を表す値であり、Firestore側には存在
-しない/信頼できない)。一方 unlock_requests(apps/persona_router管理)・
+しない/信頼できない)。一方 unlock_requests(apps/persona_main_function管理)・
 admin_users は元からFirestoreネイティブなコレクションなので、要件で指定された
 通りFirestoreのcount()集約クエリ(ドキュメント本体を取得しない軽量なもの)を使う。
 """

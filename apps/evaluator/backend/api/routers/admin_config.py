@@ -13,7 +13,7 @@ PUT    /personas/{id}  : ①登録(時限)/②上書き(永続)を作成・更�
 から除外した上で、BackgroundTasksを使ってレスポンス送出後にFirestoreから
 ベストエフォート削除する(リクエストのレイテンシには一切影響させない)。
 判定・マージのロジック本体(merge_persona_overrides)はI/Oを含まない純粋関数
-としてnazokake_core.personas側に置き、apps/persona_router側の生成ホットパス
+としてnazokake_core.personas側に置き、apps/persona_main_function側の生成ホットパス
 (get_personas())とこのAPIの両方から再利用する(ロジックの二重実装を防ぐ、
 SSoT原則)。
 

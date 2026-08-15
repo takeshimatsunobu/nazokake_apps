@@ -1,6 +1,6 @@
 # 引き継ぎメモ（docs/handoff.md）
 
-> 作成日: 2026-08-12。作成時点のHEADコミット: `42a2297`（apps/evaluator, apps/persona_router,
+> 作成日: 2026-08-12。作成時点のHEADコミット: `42a2297`（apps/evaluator, apps/persona_main_function,
 > packages/shared_core側）。`apps/batch_factory`は独立gitリポジトリのため別途記載（§6）。
 > プロジェクト概要・技術スタック・設計判断は [`CLAUDE.md`](../CLAUDE.md) を参照。
 > このファイルは「今どうなっているか」「次に何をすべきか」に特化する。
@@ -13,9 +13,13 @@
   5ペイン管理コクピット（招待制認証・DLQ管理・直談判レビュー・コスト管理・ペルソナ設定、
   コミット`f56776a`）、ユーザー評価×Few-shotの5段階フィードバックループ
   （`golden`/`good`/`hmm`/`tolerable`/`troll`、コミット`846cbe5`）。
-- **apps/persona_router**: 新規サービスとして一式実装済み（Step1属性推定＋Step2生成の
+- **apps/persona_main_function**: 新規サービスとして一式実装済み（Step1属性推定＋Step2生成の
   2段パイプライン、Route A/B分岐、few-shot注入、Firestoreキャッシュ、荒らし対策の
-  段階的ブロック、赤ペン訂正受付API）。ただし**テストコードが一切存在しない**（後述）。
+  段階的ブロック、赤ペン訂正受付API）。2026-08-15に`apps/persona_router`から改名。
+  マイペルソナ（narrator_personas）を使った生成・ドラフト自動生成・並替・削除も
+  実装済み（詳細は`docs/persona_feature_plan_v3.md`§12.1）。テストは
+  `apps/persona_main_function/test_generate_persona_resolution.py`（ペルソナ解決ロジックの
+  単体テスト6件）のみ追加済みで、依然として大部分は未整備（後述、§2課題B更新）。
 - **packages/shared_core**: SQLite SSoT + Firestore同期の基盤、Alembicマイグレーション
   11本、few-shotプール、persona定義SSoT、品質サーキットブレーカーが整備済み。
 - **CI/CD**: PRゲート（Dockerビルド+脆弱性スキャン、pytest、Pyrightラチェット型検査）、
@@ -88,7 +92,7 @@
 **再現手順**:
 1. `scripts\start_elyza_worker.ps1`（または`start_dev.ps1`経由）でワーカーを起動する。
 2. `run/audit_reports/start_elyza_worker.log`を`tail -f`相当で監視する。
-3. なぞかけ生成をevaluatorのUIまたはpersona_router経由で複数連続実行する。
+3. なぞかけ生成をevaluatorのUIまたはpersona_main_function経由で複数連続実行する。
 
 **未確認/要調査**:
 - ネットワークエラー（1）が、ユーザーメモリにある「NortonによるTLS中間者検査が
@@ -105,10 +109,23 @@
   継続しているのかは**このログだけでは不明**（監視を続けるか、直近の実行状況を
   ユーザーに確認する必要がある）。
 
-### 課題B: apps/persona_routerにテストが存在しない
-`apps/persona_router`配下、および他の場所を`*persona_router*test*`等で検索したが
-テストファイルが1件も見つからなかった。2026-08-11に新規追加されたばかりのサービスで、
-Route A/B分岐やfew-shot注入など複雑なロジックを含むため、テスト未整備はリスク。
+### 課題B: apps/persona_main_functionのテストが依然として大部分未整備（2026-08-15一部更新）
+2026-08-15に`test_generate_persona_resolution.py`（ペルソナ解決・プロンプト合成ロジックの
+単体テスト6件、`cd apps/persona_main_function && pytest test_generate_persona_resolution.py`
+で実行）を追加したが、これはPhase5「生成パスへの記録」まわりのみ。Route A/B分岐・
+few-shot注入・段階的ブロック・マイペルソナCRUD API（作成/更新/削除/並替/引き継ぎコード）
+本体には引き続きテストが無い。`docs/persona_feature_plan_v3.md`§11に定義された
+テスト一覧（認可・上限・不変性・移行・記録・ドラフト・学習・引き継ぎ・論理削除）は
+未着手のまま。
+
+### 課題D（2026-08-15発見 → 2026-08-16対応完了）: workers/ondemand_elyza_worker.pyがnarrator_persona_id等を記録しない
+根本原因は、Cloud Run側`generate_ai()`が書き込む先（一時SQLite、`/tmp`）とELYZA
+ワーカーが動くローカルマシンの`nazokake_local.db`が別ファイルであるため、ワーカーが
+新規行として挿入する際に4列がserver_default（`"No_Data"`/`"no_data"`）のまま
+記録され続けていたこと。`_resolve_narrator_persona_fields()`を新設し、ワーカー
+自身のローカルSQLite書き込み時に独自解決するよう対応済み（詳細は
+`docs/persona_feature_plan_v3.md`§12.2）。単体テスト`workers/test_narrator_persona_fields.py`
+（8件）で検証済み。
 
 ### 課題C: ドキュメント（PROJECT_CORE.md）と実装のDB構成の乖離
 `apps/evaluator/PROJECT_CORE.md`は「データベース: Firestore」とだけ記載しているが、
@@ -196,7 +213,7 @@ RuntimeError: VRAMロックを取得できませんでした(他プロセスがV
    §2課題Cの通り一部実装と乖離している点に注意して読むこと。
 6. `packages/shared_core/alembic/versions/f7a2c9e5b1d4_add_llmjp_pinch_hitter_fields.py`
    （マイグレーションのchain head）— 直近のスキーマ変更内容を知る最短経路。
-7. `apps/persona_router/services/step2_generation.py` — 最も新しく追加されたサービスの
+7. `apps/persona_main_function/services/step2_generation.py` — 最も新しく追加されたサービスの
    中核ロジック。テスト不在（§2課題B）の対象でもある。
 8. `run_api.ps1` / `start_dev.ps1` — 開発環境の起動方法と、そこに埋め込まれた過去の
    トラブル対応（引用符エスケープ問題、BOM無しUTF-8パースエラー等）の記録。

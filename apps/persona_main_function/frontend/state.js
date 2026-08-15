@@ -54,7 +54,7 @@ function ensureUid() {
 
 export const appState = {
     uid: ensureUid(),
-    selectedPersonaId: 1,
+    selectedPersonaId: "1",
     // 【Phase6でGET /v1/personasの形状変更】persona_idは文字列(組み込みは"1"〜"10"、
     // カスタムはUUID)、表示名はdisplay_name。is_builtinで組み込み/カスタムを判別する。
     personas: /** @type {{persona_id:string, display_name:string, is_builtin:boolean}[]} */ ([]),

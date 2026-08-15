@@ -222,7 +222,7 @@ _GEN_FEWSHOT_EXAMPLE = (
 # を静的ロードし、POST /admin/feedbacks/refresh-fewshot Webhookでプロセス内
 # メモリの_FEWSHOT_POOLを手動更新する方式だった(プロセス間でメモリを共有できない
 # ため、複数ワーカー構成では更新が全プロセスへ伝播しない欠陥があった)。
-# apps/persona_router側の生成へも同一のGoldenデータを注入する(D)にあたり、
+# apps/persona_main_function側の生成へも同一のGoldenデータを注入する(D)にあたり、
 # 管理コクピットの「⭐ Few-shot採用」(review_status=="golden" + タグ確定)を起点に
 # Firestore(nazokake_fewshots)へPushし、両サービスが
 # nazokake_core.fewshots.get_fewshot_pool()(TTLキャッシュ、300秒)経由で
@@ -230,7 +230,7 @@ _GEN_FEWSHOT_EXAMPLE = (
 #
 # 【トレードオフ】旧_FEWSHOT_POOLの各エントリはCoT全工程
 # (associations/kakekotoba/shared_essence/surprise_check)を含む重量級の辞書
-# だったが、nazokake_fewshotsは apps/persona_router::step2_generation.py の
+# だったが、nazokake_fewshotsは apps/persona_main_function::step2_generation.py の
 # 出力スキーマに合わせた軽量な辞書(odai/toku/kokoro/nazokake_text)のみを保持する。
 # このためGEN_SCHEMA(本モジュール)が要求するCoTフィールドの「お手本」は
 # 静的な_GEN_FEWSHOT_EXAMPLE(1件、不変)のみとなり、動的抽出分の思考プロセス例は

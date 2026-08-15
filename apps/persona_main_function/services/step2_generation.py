@@ -28,12 +28,46 @@ import json
 import os
 
 from google import genai
-from google.genai.types import GenerateContentConfig
+from google.genai.types import GenerateContentConfig, ThinkingConfig, ThinkingLevel
 from nazokake_core.env_config import get_gemini_api_key
 from nazokake_core.fewshots import get_fewshot_pool, sample_fewshot_examples
 
 from models.schemas import Step1Result
 from services.cost_logging import log_step_cost
+
+# persona_feature_plan_v3.md §3.2: thinking_levelはGeminiのみ適用対象
+# (temperatureはELYZA用のフィールドだが、このサービスはGemini一本のため未使用)。
+_THINKING_LEVEL_MAP = {
+    "low": ThinkingLevel.LOW,
+    "medium": ThinkingLevel.MEDIUM,
+    "high": ThinkingLevel.HIGH,
+}
+
+
+def _compose_persona_prompt(persona: dict) -> str:
+    """persona設定辞書からキャラクター設定文字列を組み立てる。
+
+    ビルトイン({name, prompt}の2キーのみ)は従来どおりpromptだけを使い、
+    既存の生成挙動を一切変えない。マイペルソナ(PersonaSettingsInputの全項目)は
+    first_person/speech_style/tone/favorite_topics/tabooを追記し、口調・トーン
+    設定が実際の生成へ反映されるようにする(persona_feature_plan_v3.md Phase5、
+    改修要件2「マイペルソナの設定を生成パイプラインへ正しく渡す」)。
+    """
+    base = persona.get("prompt", "")
+    extra_lines = []
+    if persona.get("first_person"):
+        extra_lines.append(f"一人称: {persona['first_person']}")
+    if persona.get("speech_style"):
+        extra_lines.append(f"語尾・口調の癖: {persona['speech_style']}")
+    if persona.get("tone"):
+        extra_lines.append(f"全体の雰囲気: {persona['tone']}")
+    if persona.get("favorite_topics"):
+        extra_lines.append(f"得意なお題のジャンル: {'、'.join(persona['favorite_topics'])}")
+    if persona.get("taboo"):
+        extra_lines.append(f"できるだけ避ける話題: {'、'.join(persona['taboo'])}")
+    if not extra_lines:
+        return base
+    return base + "\n【追加の人物設定】\n" + "\n".join(extra_lines)
 
 _STEP2_SCHEMA_DICT = {
     "type": "OBJECT",
@@ -101,7 +135,8 @@ async def generate_step2(
     異常入力系。呼び出し元はis_valid_for_training=falseとして保存すること)。
     """
     model_id = model_id or os.environ.get("STEP2_MODEL", "gemini-2.5-flash")
-    persona_prompt = persona["prompt"]
+    persona_prompt = _compose_persona_prompt(persona)
+    thinking_level = _THINKING_LEVEL_MAP.get(persona.get("thinking_level", ""))
 
     if step1.is_valid_input:
         route = "A"
@@ -119,15 +154,20 @@ async def generate_step2(
 
     def _call():
         client = genai.Client(api_key=get_gemini_api_key(), http_options={"timeout": 60000})
+        config_kwargs = dict(
+            system_instruction=system_instruction,
+            response_mime_type="application/json",
+            response_schema=_STEP2_SCHEMA_DICT,
+            temperature=0.9,
+        )
+        # マイペルソナのthinking_level(§3.2、Geminiのみ)が指定されていれば反映する。
+        # ビルトインpersonaにはthinking_levelキーが無いため、既存の挙動は変わらない。
+        if thinking_level is not None:
+            config_kwargs["thinking_config"] = ThinkingConfig(thinking_level=thinking_level)
         return client.models.generate_content(
             model=model_id,
             contents=odai,
-            config=GenerateContentConfig(
-                system_instruction=system_instruction,
-                response_mime_type="application/json",
-                response_schema=_STEP2_SCHEMA_DICT,
-                temperature=0.9,
-            ),
+            config=GenerateContentConfig(**config_kwargs),
         )
 
     start_time = asyncio.get_running_loop().time()

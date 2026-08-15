@@ -14,6 +14,7 @@ import {
     apiFetchPersonas, apiGenerate, apiFetchTimeline, apiZabuton,
     apiSubmitUnlockRequest,
 } from "api";
+import { ensureAnonAuth } from "ui/auth";
 
 const TIMELINE_PAGE_SIZE = 20;
 const NEW_ITEMS_POLL_MS = 25000;
@@ -61,9 +62,9 @@ function showToast(message, kind = "info") {
 }
 
 function personaName(personaId) {
-    // personaIdはPOST /v1/generateのレスポンス(persona_id: number)由来のため数値。
-    // appState.personasの要素はGET /v1/personas由来でpersona_idが文字列("1"等)の
-    // ため、緩い比較(==)で数値/文字列どちらでも一致させる。
+    // persona_idはPOST /v1/generateのレスポンス・GET /v1/personasの一覧の両方とも
+    // 文字列(persona_feature_plan_v3.md Phase5 §7.3、組み込みは"1"〜"10"、
+    // マイペルソナはUUID)。Stringでの比較は型が食い違うケースへの保険。
     const found = appState.personas.find((p) => String(p.persona_id) === String(personaId));
     return found ? found.display_name : `ペルソナ#${personaId}`;
 }
@@ -71,16 +72,14 @@ function personaName(personaId) {
 // ------------------------------------------------------------
 // ペルソナ選択チップ(下段・生成UI)
 //
-// 【persona_feature_plan_v3.md Phase6以降の変更に伴う対応】GET /v1/personas は
-// 組み込み+マイペルソナの両方を返すようになったが、POST /v1/generate は現時点でも
-// persona_id: int (1〜10、組み込みのみ) しか受け付けない(カスタムペルソナでの
-// 生成統合はこのフェーズの対象外の既知のギャップ)。そのため生成用チップには
-// is_builtin===true の項目のみを表示する(カスタムペルソナはpersonas.htmlの
-// マイペルソナ管理でのみ扱う)。
+// 【persona_feature_plan_v3.md Phase5「生成パスへの記録」で解放】POST /v1/generate が
+// persona_id: str(組み込み"1"〜"10"・マイペルソナのUUID両対応)を受け付けるように
+// なったため、GET /v1/personasが返す一覧(組み込み+自分のマイペルソナ、
+// sort_order順=新規マイペルソナが先頭)をそのまま生成チップとして使う。
 // ------------------------------------------------------------
 
 function generatablePersonas() {
-    return appState.personas.filter((p) => p.is_builtin);
+    return appState.personas;
 }
 
 function renderPersonaChips() {
@@ -88,13 +87,16 @@ function renderPersonaChips() {
     if (!wrap) return;
     wrap.innerHTML = generatablePersonas()
         .map((p) => {
-            const active = Number(p.persona_id) === appState.selectedPersonaId;
+            const active = String(p.persona_id) === String(appState.selectedPersonaId);
             const cls = active
                 ? "bg-indigo-600 text-white border-indigo-600"
                 : "bg-white text-slate-700 border-slate-300";
-            return `<button type="button" data-persona-id="${p.persona_id}"
+            // マイペルソナ(is_builtin===false)には小さな目印を付け、組み込みと
+            // 区別できるようにする。
+            const mineTag = p.is_builtin ? "" : `<span class="mr-1">🎨</span>`;
+            return `<button type="button" data-persona-id="${escapeHtml(p.persona_id)}"
                 class="persona-chip shrink-0 whitespace-nowrap text-xs font-bold px-3 py-1.5 rounded-full border ${cls}">
-                ${escapeHtml(p.display_name)}
+                ${mineTag}${escapeHtml(p.display_name)}
             </button>`;
         })
         .join("");
@@ -103,7 +105,7 @@ function renderPersonaChips() {
 function onPersonaChipsClick(ev) {
     const btn = ev.target.closest("[data-persona-id]");
     if (!btn) return;
-    appState.selectedPersonaId = Number(btn.dataset.personaId);
+    appState.selectedPersonaId = btn.dataset.personaId;
     renderPersonaChips();
 }
 
@@ -489,10 +491,15 @@ async function init() {
     initBlockScreen();
 
     try {
+        // 【バグ修正】GET /v1/personas はPhase6でFirebase匿名認証を必須とする
+        // ようになったが、この生成画面(index.html)側では認証を確立せずに
+        // 呼んでいたため、この一覧取得は常に401で失敗していた
+        // (personas.html側は元々ensureAnonAuth()を呼んでいて問題なかった)。
+        await ensureAnonAuth();
         appState.personas = await apiFetchPersonas();
         const generatable = generatablePersonas();
         if (generatable.length) {
-            appState.selectedPersonaId = Number(generatable[0].persona_id);
+            appState.selectedPersonaId = generatable[0].persona_id;
         }
         renderPersonaChips();
     } catch (e) {

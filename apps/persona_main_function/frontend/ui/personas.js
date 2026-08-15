@@ -3,9 +3,16 @@
 //
 // 【構成】
 //   §8.1 一覧のセクション分離(マイペルソナ/アプリのペルソナ)
-//   §8.2 編集モード(D&D不使用、↑↓🗑ボタン方式)
+//   §8.2 編集モード(↑↓✎🗑ボタン、+ドラッグハンドルによるD&D並び替え)
 //   §8.4 ツールチップ(title属性不使用、ボタン開閉式、GET /v1/personas/schemaから取得)
 //   §8.5 ドラフト生成ボタンの連打防止
+//
+// 【今回の改修でD&D・長押し削除を追加した経緯】persona_feature_plan_v3.md §8.2は
+// 「ジェスチャ判定・長押しタイマー・スクロール競合を避けるため」D&D/長押しを
+// 意図的に不採用としていたが、改修要件で明示的にD&D並び替え・長押し削除が
+// 求められたため、↑↓ボタン(キーボード・スクリーンリーダー用に維持)へ追加する形で
+// 導入する。ドラッグハンドル・長押しはそれぞれ専用のタップ領域/移動許容量で
+// 判定し、既存の①タップ操作(編集を開く・↑↓で並替)と衝突しないようにする。
 import {
     apiFetchPersonas, apiFetchPersonaSchema, apiDraftPersona,
     apiCreatePersona, apiUpdatePersona, apiDeletePersona, apiReorderPersonas,
@@ -13,13 +20,15 @@ import {
 import { ensureAnonAuth } from "ui/auth";
 
 const MAX_PERSONAS = 5; // api/routers/personas.py::MAX_PERSONAS_PER_OWNERと同じ値(表示用)
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
 
 let personas = [];
 let schemaFields = [];
 let editMode = false;
 
 // ------------------------------------------------------------
-// 小さなユーティリティ(apps/persona_router/frontend/app.js と同じ規約)
+// 小さなユーティリティ(apps/persona_main_function/frontend/app.js と同じ規約)
 // ------------------------------------------------------------
 
 function escapeHtml(s) {
@@ -46,8 +55,12 @@ function showToast(message, kind = "info") {
     }, 2600);
 }
 
-function myPersonas() {
-    return personas.filter((p) => !p.is_builtin);
+function myPersonas(orderOverride) {
+    const mine = personas.filter((p) => !p.is_builtin);
+    if (!orderOverride) return mine;
+    // D&Dのドラッグ中プレビュー用: orderOverride(persona_idの配列)の順序で並べ替える。
+    const byId = new Map(mine.map((p) => [p.persona_id, p]));
+    return orderOverride.map((id) => byId.get(id)).filter(Boolean);
 }
 
 function builtinPersonas() {
@@ -60,6 +73,9 @@ function builtinPersonas() {
 
 function myPersonaRowHtml(p, index, total) {
     if (!editMode) {
+        // 通常モード: タップで編集/長押しで削除確認(§改修要件3、
+        // attachLongPressDelegate参照)。削除ボタン自体は存在しないため、
+        // 長押しを知らない・失敗したユーザーには誤爆しない(既存方針を維持)。
         return `<div data-persona-id="${escapeHtml(p.persona_id)}"
             class="persona-row flex items-center justify-between bg-white border border-slate-200 rounded-xl px-3 py-2.5">
             <button type="button" data-action="edit" class="flex-1 min-w-0 text-left text-sm font-bold text-slate-700 truncate">
@@ -67,30 +83,34 @@ function myPersonaRowHtml(p, index, total) {
             </button>
         </div>`;
     }
-    // 編集モード: ↑↓🗑ボタン(D&D・長押しは採用しない、§8.2)。
-    // 上限5件のため最大4タップで端から端まで移動できる。
+    // 編集モード: ↑↓✎🗑ボタン(キーボード・スクリーンリーダー用に維持)に加え、
+    // ドラッグハンドル(⠿)でのD&D並び替えにも対応する。ハンドル・各ボタンは
+    // data-no-longpress を付け、長押し削除の判定対象から除外する
+    // (押している間ドラッグ/クリック操作と競合させないため)。
     return `<div data-persona-id="${escapeHtml(p.persona_id)}"
-        class="persona-row flex items-center justify-between bg-white border border-indigo-200 rounded-xl px-3 py-2 gap-2">
+        class="persona-row flex items-center justify-between bg-white border border-indigo-200 rounded-xl px-3 py-2 gap-1.5">
+        <span data-drag-handle data-no-longpress aria-label="ドラッグして並び替え"
+            class="drag-handle shrink-0 w-7 h-8 flex items-center justify-center text-slate-400 text-base cursor-grab select-none">⠿</span>
         <span class="flex-1 min-w-0 text-sm font-bold text-slate-700 truncate">${escapeHtml(p.display_name)}</span>
         <div class="flex items-center gap-1 shrink-0">
-            <button type="button" data-action="move-up" ${index === 0 ? "disabled" : ""}
+            <button type="button" data-action="move-up" data-no-longpress ${index === 0 ? "disabled" : ""}
                 aria-label="上へ移動"
                 class="w-8 h-8 rounded-full border border-slate-300 text-slate-600 text-sm font-black disabled:opacity-30 disabled:pointer-events-none active:scale-95">↑</button>
-            <button type="button" data-action="move-down" ${index === total - 1 ? "disabled" : ""}
+            <button type="button" data-action="move-down" data-no-longpress ${index === total - 1 ? "disabled" : ""}
                 aria-label="下へ移動"
                 class="w-8 h-8 rounded-full border border-slate-300 text-slate-600 text-sm font-black disabled:opacity-30 disabled:pointer-events-none active:scale-95">↓</button>
-            <button type="button" data-action="edit" aria-label="編集"
+            <button type="button" data-action="edit" data-no-longpress aria-label="編集"
                 class="w-8 h-8 rounded-full border border-indigo-300 text-indigo-600 text-sm font-black active:scale-95">✎</button>
-            <button type="button" data-action="delete" aria-label="削除"
+            <button type="button" data-action="delete" data-no-longpress aria-label="削除"
                 class="w-8 h-8 rounded-full border border-rose-300 text-rose-600 text-sm font-black active:scale-95">🗑</button>
         </div>
     </div>`;
 }
 
-function renderMyPersonas() {
+function renderMyPersonas(orderOverride) {
     const wrap = document.getElementById("my-personas-list");
     if (!wrap) return;
-    const mine = myPersonas();
+    const mine = myPersonas(orderOverride);
     if (!mine.length) {
         wrap.innerHTML = `<p class="text-center text-xs text-slate-400 py-6">まだマイペルソナがありません。下のボタンから作成できます。</p>`;
     } else {
@@ -102,11 +122,15 @@ function renderMyPersonas() {
 function renderBuiltinPersonas() {
     const wrap = document.getElementById("builtin-personas-list");
     if (!wrap) return;
-    // §8.1: 組み込み10体は「編集トグルなし」の固定セクション。
+    // §8.1: 組み込み10体は「編集トグルなし」の固定セクション。削除不可を示す
+    // 🔒バッジを付け、長押ししても削除できないことを視覚的に明示する
+    // (attachLongPressDelegateのonBuiltinLongPress参照)。
     wrap.innerHTML = builtinPersonas()
         .map(
-            (p) => `<div class="bg-white border border-slate-200 rounded-xl px-3 py-2.5">
+            (p) => `<div data-persona-id="${escapeHtml(p.persona_id)}"
+                class="bg-white border border-slate-200 rounded-xl px-3 py-2.5 flex items-center justify-between">
                 <span class="text-sm text-slate-600">${escapeHtml(p.display_name)}</span>
+                <span aria-label="削除不可" title="削除不可">🔒</span>
             </div>`
         )
         .join("");
@@ -144,7 +168,7 @@ async function loadPersonas() {
 }
 
 // ------------------------------------------------------------
-// §8.2: 並べ替え(隣接2件のsort_orderスワップを1リクエスト)
+// 並べ替え: ↑↓ボタン(隣接2件のsort_orderスワップを1リクエスト)
 // ------------------------------------------------------------
 
 async function handleMove(personaId, direction) {
@@ -166,6 +190,90 @@ async function handleMove(personaId, direction) {
 }
 
 // ------------------------------------------------------------
+// 並べ替え: ドラッグ&ドロップ(Pointer Events、マウス・タッチ・ペン共通)
+//
+// 【ポインタキャプチャの対象について】ドラッグ中はプレビューのため毎回
+// renderMyPersonas()でリスト全体のinnerHTMLを再構築する。ドラッグハンドル
+// (行の子要素)自体にsetPointerCaptureすると、その行が再描画で置き換わった
+// 瞬間にキャプチャが失われる(要素がDOMツリーから外れるとブラウザが自動的に
+// キャプチャを解放するため)。再描画されない親コンテナ(#my-personas-list)へ
+// キャプチャすることでこの問題を避ける。
+// ------------------------------------------------------------
+
+let dragState = null; // { personaId, pointerId, order, rowHeight, listTop }
+
+function startDrag(personaId, pointerId, listEl) {
+    const rowEl = listEl.querySelector(`[data-persona-id="${personaId}"]`);
+    if (!rowEl) return;
+    listEl.setPointerCapture(pointerId);
+    dragState = {
+        personaId,
+        pointerId,
+        order: myPersonas().map((p) => p.persona_id),
+        rowHeight: rowEl.getBoundingClientRect().height || 44,
+        listTop: listEl.getBoundingClientRect().top,
+    };
+    markDraggingRow(listEl);
+}
+
+function markDraggingRow(listEl) {
+    if (!dragState) return;
+    const rowEl = listEl.querySelector(`[data-persona-id="${dragState.personaId}"]`);
+    if (rowEl) rowEl.classList.add("opacity-60", "ring-2", "ring-indigo-400");
+}
+
+function updateDrag(ev, listEl) {
+    if (!dragState || ev.pointerId !== dragState.pointerId) return;
+    const relativeY = ev.clientY - dragState.listTop;
+    const targetIndex = Math.max(
+        0,
+        Math.min(dragState.order.length - 1, Math.floor(relativeY / dragState.rowHeight))
+    );
+    const currentIndex = dragState.order.indexOf(dragState.personaId);
+    if (targetIndex !== currentIndex && currentIndex !== -1) {
+        dragState.order.splice(currentIndex, 1);
+        dragState.order.splice(targetIndex, 0, dragState.personaId);
+        renderMyPersonas(dragState.order);
+        markDraggingRow(listEl);
+    }
+}
+
+async function endDrag(ev, listEl) {
+    if (!dragState || ev.pointerId !== dragState.pointerId) return;
+    const { order, personaId, pointerId } = dragState;
+    dragState = null;
+    if (listEl.hasPointerCapture(pointerId)) listEl.releasePointerCapture(pointerId);
+    const rowEl = listEl.querySelector(`[data-persona-id="${personaId}"]`);
+    if (rowEl) rowEl.classList.remove("opacity-60", "ring-2", "ring-indigo-400");
+
+    try {
+        await apiReorderPersonas(order);
+        await loadPersonas();
+    } catch (e) {
+        showToast(`並べ替えに失敗しました: ${e.message}`, "error");
+        await loadPersonas(); // サーバー側の実際の順序へ復元する
+    }
+}
+
+function onMyPersonasListPointerDown(ev) {
+    if (!editMode) return;
+    const handle = ev.target.closest("[data-drag-handle]");
+    if (!handle) return;
+    const row = handle.closest("[data-persona-id]");
+    if (!row) return;
+    ev.preventDefault();
+    startDrag(row.dataset.personaId, ev.pointerId, ev.currentTarget);
+}
+
+function onMyPersonasListPointerMove(ev) {
+    if (dragState) updateDrag(ev, ev.currentTarget);
+}
+
+function onMyPersonasListPointerEnd(ev) {
+    if (dragState) endDrag(ev, ev.currentTarget);
+}
+
+// ------------------------------------------------------------
 // §8.2: 削除(確認ダイアログを必ず挟む)
 // ------------------------------------------------------------
 
@@ -182,6 +290,101 @@ async function handleDelete(personaId, displayName) {
     } catch (e) {
         showToast(`削除に失敗しました: ${e.message}`, "error");
     }
+}
+
+// ------------------------------------------------------------
+// 長押し削除(約500ms、移動許容量を超えたらキャンセル=スクロールと区別)
+//
+// マイペルソナ: 長押し確定時にバイブレーション→handleDelete()(確認ダイアログ
+// 必須)を呼ぶ。ビルトイン: 削除不可であることを短長短のバイブレーションと
+// トーストで伝える(is_deletable===falseのため実際にはAPIを呼ばない)。
+// ------------------------------------------------------------
+
+function triggerVibration(pattern) {
+    if (typeof navigator !== "undefined" && typeof navigator.vibrate === "function") {
+        try {
+            navigator.vibrate(pattern);
+        } catch (e) {
+            // 非対応環境・ユーザー操作外での呼び出し拒否等は無視してよい
+            // (削除確認フロー自体は続行できる)。
+        }
+    }
+}
+
+function attachLongPressDelegate(container, onLongPress) {
+    if (!container) return;
+    let timer = null;
+    let startX = 0;
+    let startY = 0;
+    let activeRow = null;
+    let firedForThisPress = false;
+
+    function cancel() {
+        if (timer) {
+            clearTimeout(timer);
+            timer = null;
+        }
+        activeRow = null;
+    }
+
+    container.addEventListener("pointerdown", (ev) => {
+        if (ev.pointerType === "mouse" && ev.button !== 0) return;
+        // ドラッグハンドル・↑↓✎🗑ボタン上からの押下は長押し判定の対象外にする
+        // (それぞれの専用操作と競合させないため)。
+        if (ev.target.closest("[data-no-longpress]")) return;
+        const row = ev.target.closest("[data-persona-id]");
+        if (!row) return;
+
+        activeRow = row;
+        startX = ev.clientX;
+        startY = ev.clientY;
+        firedForThisPress = false;
+        timer = setTimeout(() => {
+            firedForThisPress = true;
+            timer = null;
+            onLongPress(activeRow);
+        }, LONG_PRESS_MS);
+    });
+
+    container.addEventListener("pointermove", (ev) => {
+        if (!timer) return;
+        const dx = Math.abs(ev.clientX - startX);
+        const dy = Math.abs(ev.clientY - startY);
+        if (dx > LONG_PRESS_MOVE_TOLERANCE_PX || dy > LONG_PRESS_MOVE_TOLERANCE_PX) {
+            cancel(); // スクロール等の意図と判定し、長押しをキャンセルする
+        }
+    });
+
+    ["pointerup", "pointercancel", "pointerleave"].forEach((type) => {
+        container.addEventListener(type, cancel);
+    });
+
+    // 長押しが確定した直後に発火するclickイベント(edit等)を抑止する。
+    container.addEventListener(
+        "click",
+        (ev) => {
+            if (firedForThisPress) {
+                ev.stopPropagation();
+                ev.preventDefault();
+                firedForThisPress = false;
+            }
+        },
+        true
+    );
+}
+
+function onMyPersonaLongPress(row) {
+    const personaId = row.dataset.personaId;
+    const persona = personas.find((p) => p.persona_id === personaId);
+    if (!persona) return;
+    triggerVibration(50);
+    handleDelete(personaId, persona.display_name);
+}
+
+function onBuiltinPersonaLongPress() {
+    // 短-長-短のパターンで「マイペルソナの単発振動」と区別できるようにする。
+    triggerVibration([15, 60, 15]);
+    showToast("🔒 アプリ標準のペルソナは削除できません", "warning");
 }
 
 // ------------------------------------------------------------
@@ -382,7 +585,14 @@ function onMyPersonasListClick(ev) {
 
 async function init() {
     document.getElementById("edit-mode-toggle")?.addEventListener("click", toggleEditMode);
-    document.getElementById("my-personas-list")?.addEventListener("click", onMyPersonasListClick);
+    const myPersonasList = document.getElementById("my-personas-list");
+    myPersonasList?.addEventListener("click", onMyPersonasListClick);
+    myPersonasList?.addEventListener("pointerdown", onMyPersonasListPointerDown);
+    myPersonasList?.addEventListener("pointermove", onMyPersonasListPointerMove);
+    myPersonasList?.addEventListener("pointerup", onMyPersonasListPointerEnd);
+    myPersonasList?.addEventListener("pointercancel", onMyPersonasListPointerEnd);
+    attachLongPressDelegate(myPersonasList, onMyPersonaLongPress);
+    attachLongPressDelegate(document.getElementById("builtin-personas-list"), onBuiltinPersonaLongPress);
     document.getElementById("create-persona-btn")?.addEventListener("click", openCreateForm);
     document.getElementById("persona-form-close")?.addEventListener("click", closeForm);
     document.getElementById("persona-form")?.addEventListener("submit", onFormSubmit);

@@ -1,5 +1,5 @@
 // frontend/api.js
-// バックエンド(apps/persona_router)への薄いfetchラッパー群
+// バックエンド(apps/persona_main_function)への薄いfetchラッパー群
 // (apps/evaluator/frontend/public/api.js と同じ fetchAPI パターンを踏襲)。
 import { API_BASE } from "config";
 import { getFreshIdToken } from "ui/auth";
