@@ -20,7 +20,7 @@ from firebase_admin import firestore
 from api.deps import get_db
 from api.routers.persona_generate import RESULTS_COLLECTION
 from models.persona_schemas import TimelineItem, TimelineResponse, ZabutonResponse
-from nazokake_core.narrator_personas import get_persona
+from nazokake_core.narrator_personas import get_persona, increment_zabuton_count
 from nazokake_core.persona_reactions import add_reaction, effective_reaction_count
 
 router = APIRouter()
@@ -119,6 +119,11 @@ async def add_zabuton(doc_id: str, db=Depends(get_db)):
         owner_uid=owner_uid,
         reaction_type="zabuton",
     )
+
+    # 【みんなの人気ペルソナAPI】マイペルソナ作の座布団のみ、ペルソナ自身の
+    # zabuton_countへ加算する(ランキング用。ベストエフォート)。
+    if data_origin == "custom" and narrator_persona_id:
+        increment_zabuton_count(db, narrator_persona_id)
 
     baseline = data.get("zabuton_count", 0)
     total = effective_reaction_count(db, baseline=baseline, target_doc_id=doc_id)

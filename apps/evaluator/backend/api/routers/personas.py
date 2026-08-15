@@ -50,6 +50,8 @@ from models.persona_schemas import (
     PersonaSchemaField,
     PersonaSchemaResponse,
     PersonaUpdateRequest,
+    PopularPersonaItem,
+    PopularPersonasResponse,
     TransferCodeApplyRequest,
     TransferCodeApplyResponse,
     TransferCodeIssueResponse,
@@ -152,6 +154,35 @@ async def get_personas_schema():
         ),
     ]
     return PersonaSchemaResponse(fields=fields)
+
+
+@router.get("/v1/personas/popular", response_model=PopularPersonasResponse)
+async def list_popular_personas(limit: int = 20, db=Depends(get_db)):
+    """「みんなの人気ペルソナ」: 他のユーザーが作成したカスタムペルソナのうち、
+    利用回数(usage_count)+獲得座布団数(zabuton_count)の合計が多い順に返す
+    (改修要件、最大10〜20件)。
+
+    【認証不要な理由】§6.2の「参照可: is_builtin==true ∪ owner_uid==自分」という
+    プライバシーモデルは、マイペルソナ管理画面(所有者本人のみが見る一覧、
+    prompt等の設定内容込み)に対するもの。本エンドポイントは意図的にその例外
+    として、display_name・カウンタのみ(prompt/settings/owner_uidは含めない、
+    PopularPersonaItem参照)を全ユーザーへ公開する「殿堂」的な位置づけの
+    ランキングであり、他人の作品を安全に発見できるようにする狙いのため。
+    """
+    safe_limit = max(1, min(limit, 20))
+    candidates = narrator_personas.list_popular_personas(db, limit=safe_limit)
+    items = [
+        PopularPersonaItem(
+            persona_id=p.get("persona_id", ""),
+            display_name=p.get("display_name", ""),
+            owner_display_name=p.get("owner_display_name"),
+            usage_count=int(p.get("usage_count", 0)),
+            zabuton_count=int(p.get("zabuton_count", 0)),
+            popularity_score=int(p.get("usage_count", 0)) + int(p.get("zabuton_count", 0)),
+        )
+        for p in candidates
+    ]
+    return PopularPersonasResponse(personas=items)
 
 
 @router.post("/v1/personas/draft", response_model=PersonaDraftResponse)

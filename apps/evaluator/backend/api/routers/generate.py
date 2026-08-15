@@ -254,8 +254,26 @@ async def progressive_generate(
         ローカル開発(K_SERVICE未設定)では従来通り直接Ollama呼び出し(経路A)を試みる。
         """
         if os.getenv("K_SERVICE"):
+            # 【高速フォールバック】まず最大_ELYZA_ACK_TIMEOUT_SEC(8秒)だけ、
+            # ローカルワーカーがジョブをclaimした証跡(elyza_job_statusの遷移)を
+            # 待つ。ここでACKが得られなければワーカーはオフラインと判定し、
+            # 残り時間(最大37秒)を無駄に待たず即座に代打へ切り替える。
             logger.info(
-                f"[{doc_id}] ℹ️ Cloud Run環境のため、オンデマンドジョブキュー(経路B)の完了を"
+                f"[{doc_id}] ℹ️ Cloud Run環境のため、オンデマンドジョブキュー(経路B)からの"
+                f"ACKを最大{_ELYZA_ACK_TIMEOUT_SEC:.0f}秒待機します。"
+            )
+            acked = await _wait_for_elyza_ack(doc_id)
+            if not acked:
+                logger.warning(
+                    f"[{doc_id}] ⚠️ {_ELYZA_ACK_TIMEOUT_SEC:.0f}秒以内にローカルワーカーから"
+                    "ACK(ジョブclaim)が得られなかった(オフラインと判定)ため、"
+                    "Gemini Flash代打へ即座に切り替えます。"
+                )
+                await process_elyza_pinch_hitter()
+                return
+
+            logger.info(
+                f"[{doc_id}] ✅ ローカルワーカーからACKを確認。完了を"
                 f"最大{_ELYZA_WAIT_TIMEOUT_SEC:.0f}秒待機します。"
             )
             worker_result = await _wait_for_elyza_worker_or_none(doc_id)
@@ -267,7 +285,7 @@ async def progressive_generate(
                 return
             logger.warning(
                 f"[{doc_id}] ⚠️ ローカルワーカーが制限時間内に応答しなかった"
-                "(またはdead_letterへ隔離済み)ため、Gemini Flash Lite代打へ切り替えます。"
+                "(またはdead_letterへ隔離済み)ため、Gemini Flash代打へ切り替えます。"
             )
             await process_elyza_pinch_hitter()
             return
@@ -423,6 +441,61 @@ _ELYZA_WAIT_TIMEOUT_SEC = 45.0
 _ELYZA_WAIT_POLL_INTERVAL_SEC = 2.0
 
 
+# 【高速フォールバック(8秒ACK判定)】ローカルワーカーが完全にオフライン(電源断・
+# 回線不調等)の場合、_ELYZA_WAIT_TIMEOUT_SEC(45秒)まるごと待ってから代打へ
+# 切り替えるのはユーザー体験上遅すぎる。ワーカーが実際にジョブをclaimした証跡
+# (elyza_job_statusが"pending"から動く)を短時間だけ先に確認することで、
+# 「オフライン」と「オンラインだが処理に時間がかかっている」を早期に区別する。
+_ELYZA_ACK_TIMEOUT_SEC = 8.0
+
+
+def _fetch_elyza_job_status_sync(doc_id: str) -> str | None:
+    """elyza_job_statusフィールドのみを読み取る軽量クエリ(ACK判定専用)。
+
+    ドキュメント自体が無い、またはFirestoreへの参照に失敗した場合はNoneを返す
+    (呼び出し元はこれを「まだACKされていない」として扱う)。
+    """
+    _ensure_firebase_app()
+    db = firestore.client()
+    snapshot = db.collection(_resolve_collection()).document(doc_id).get()
+    if not snapshot.exists:
+        return None
+    remote = snapshot.to_dict() or {}
+    return remote.get("elyza_job_status")
+
+
+async def _fetch_elyza_job_status(doc_id: str) -> str | None:
+    try:
+        return await asyncio.to_thread(_fetch_elyza_job_status_sync, doc_id)
+    except Exception as e:
+        logger.warning(f"⚠️ [ELYZA ACK判定] Firestoreからの状態取得に失敗: {e}")
+        return None
+
+
+async def _wait_for_elyza_ack(
+    doc_id: str,
+    timeout_sec: float = _ELYZA_ACK_TIMEOUT_SEC,
+    poll_interval_sec: float = _ELYZA_WAIT_POLL_INTERVAL_SEC,
+) -> bool:
+    """elyza_job_statusが"pending"以外(processing/completed/dead_letter)へ
+    遷移するのを、最大timeout_sec秒だけ待つ。ローカルワーカーが実際にジョブを
+    claimした(=オンライン)ことを示す最初の証跡がこの遷移であるため、これを
+    「ACK」とみなす。
+
+    timeout_sec以内にACKを観測できれば True(ワーカーはオンライン、通常の
+    _wait_for_elyza_worker_or_noneへ処理を委ねてよい)、観測できなければ False
+    (ワーカーがオフラインと判定し、即座にGemini Flash代打へ切り替える)。
+    """
+    elapsed = 0.0
+    while elapsed < timeout_sec:
+        status = await _fetch_elyza_job_status(doc_id)
+        if status is not None and status != "pending":
+            return True
+        await asyncio.sleep(poll_interval_sec)
+        elapsed += poll_interval_sec
+    return False
+
+
 async def _wait_for_elyza_worker_or_none(
     doc_id: str,
     timeout_sec: float = _ELYZA_WAIT_TIMEOUT_SEC,
@@ -572,6 +645,22 @@ async def get_status(doc_id: str):
         # 「純国産AI ELYZA」表記を代打表記へ切り替えるための判定に使う。
         "llmjp_model_id": data.get("llmjp_model_id"),
         "llmjp_is_pinch_hitter": bool(data.get("llmjp_is_pinch_hitter")),
+        **_fallback_metadata(data),
+    }
+
+
+def _fallback_metadata(data: dict) -> dict:
+    """8秒ACK判定・Gemini Flash自動フォールバックの応答メタデータを、既存の
+    llmjp_is_pinch_hitter/llmjp_model_idから導出する(新規スキーマ列は追加しない、
+    既存フィールドの別名ビュー)。is_pinch_hitterはprocess_elyza_pinch_hitter()
+    経由(ACKタイムアウト・完了タイムアウトいずれの代打分岐でも)でのみtrueになる。
+
+    純粋関数として切り出し、get_status()を経由せず単体テストできるようにする。
+    """
+    is_fallback = bool(data.get("llmjp_is_pinch_hitter"))
+    return {
+        "fallback_triggered": is_fallback,
+        "engine": "gemini-flash (fallback)" if is_fallback else "elyza",
     }
 
 

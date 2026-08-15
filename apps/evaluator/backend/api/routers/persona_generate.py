@@ -169,6 +169,14 @@ async def generate_routed(req: GenerateRoutedRequest, db=Depends(get_db)):
     }
     db.collection(RESULTS_COLLECTION).document(doc_id).set(doc)
 
+    # 【みんなの人気ペルソナAPI】マイペルソナ(data_origin=="custom")による有効な
+    # 生成(ルートA)のみをusage_countとして計上する(ブロック済み・異常入力の
+    # エンタメ応答は「利用」として数えない)。ベストエフォート(narrator_personas.
+    # increment_usage_count内部で失敗を吸収)のため、失敗しても生成レスポンス
+    # 自体には一切影響しない。
+    if data_origin == "custom" and route == "A":
+        narrator_personas.increment_usage_count(db, narrator_persona_id)
+
     return GenerateRoutedResponse(
         doc_id=doc_id,
         odai=req.odai,

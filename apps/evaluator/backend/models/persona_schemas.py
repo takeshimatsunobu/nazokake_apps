@@ -332,6 +332,31 @@ class NarratorPersonaItem(BaseModel):
     settings: dict | None = None
 
 
+class PopularPersonaItem(BaseModel):
+    """GET /v1/personas/popular の1件分(§改修要件「みんなの人気ペルソナ」)。
+
+    一覧画面での軽量表示に絞り、NarratorPersonaItemが持つsettings/current_version_id
+    等の編集用フィールドは含まない。usage_count/zabuton_countは両方とも
+    nazokake_core.narrator_personasが管理するベストエフォートのカウンタで、
+    ランキング順位はこの2値の合計(popularity_score)で決まる。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    persona_id: str
+    display_name: str
+    owner_display_name: str | None = None
+    usage_count: int
+    zabuton_count: int
+    popularity_score: int
+
+
+class PopularPersonasResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    personas: list[PopularPersonaItem]
+
+
 class NarratorPersonaListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

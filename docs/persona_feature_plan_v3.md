@@ -701,6 +701,22 @@ CI（`pyright_check.yml`）が `tests/` を実行するため `tests/persona_mai
 - 解決した4フィールドは`_process_job()`の成功パス・`_mark_immediate_failure()`の失敗パスの両方で、**ワーカー自身のローカルSQLite（`local_fields`）にのみ**追加する。Firestore側（`scoped_fields`、`_ELYZA_JOB_SCOPED_FIELDS`の厳格な許可リスト）には含めない（Firestore側は`generate_ai()`の最初の書き込みで既に正しい値を持っているため触れる必要が無く、含めると`_write_scoped_fields_sync`がスコープ外フィールドとして例外を送出してしまうため）。
 - `workers/test_narrator_persona_fields.py`を新設（単体テスト8件、ビルトイン/マイペルソナ/未指定/不正ID/例外安全性/Firestoreスコープ非混入を検証、全件PASS）。実際の一時SQLiteファイルへの書き込みも別途スクリプトで検証済み（成功パス・失敗パスとも期待通りの値が記録されることを確認）。
 
+### 12.4 2026-08-16 本番デプロイ・旧インフラ削除・新機能追加（Firestoreエミュレータ／ELYZA高速フォールバック／みんなの人気ペルソナ）
+
+**本番デプロイ**: §12.3の統合コミットを`git push`し、`deploy_cloud_run.yml`経由で`nazokake-api`へ正常デプロイ（GitHub Actions全ステップ成功）。本番`/v1/personas/schema`・既存`/api/health`で疎通確認済み。**`/healthz`のみ本番でGoogle Frontendレベルの404**（ローカルでは200を確認済みのため、アプリのコードバグではなくインフラ・エッジ層の挙動と判定。原因未特定、`/api/health`が実際のCloud Run起動プローブ対象のため実害は無い）。
+
+**旧インフラの削除**: Cloud Runサービス`nazokake-persona-router`を`gcloud run services delete`で削除済み。Firebase Hostingは`.firebaserc`（ルート・`apps/persona_main_function`双方）から`persona-router`ターゲット定義を除去（設定除去のみ、Firebase Hostingサイト`nazokake-persona-router.web.app`自体は削除していない。再度必要になれば`.firebaserc`にターゲットを再定義すれば復帰可能）。
+
+**Firestoreエミュレータ**: `firebase.json`にemulators設定（Firestore port 8080、UI port 4000）、`scripts/start_firestore_emulator.ps1`、`tests/conftest.py`・`apps/evaluator/backend/conftest.py`に`FIRESTORE_EMULATOR_HOST`自動設定fixtureを追加。**この環境のJavaが17系のためfirebase-toolsの要求(21+)を満たせず、実際の起動確認は未実施**（設定自体は完成・レビュー可能な状態）。
+
+**ELYZA高速フォールバック**: `generate.py`に`_wait_for_elyza_ack()`(8秒、`elyza_job_status`が`"pending"`から動くかを確認)を追加。ACK無しなら`_ELYZA_WAIT_TIMEOUT_SEC`(45秒)を待たず即座に`process_elyza_pinch_hitter()`へ切替。`GET /status/{doc_id}`のレスポンスに`fallback_triggered`/`engine`を追加(既存の`llmjp_is_pinch_hitter`/`llmjp_model_id`から導出、新規スキーマ列は追加していない)。
+
+**みんなの人気ペルソナ**: `nazokake_core/narrator_personas.py`に`usage_count`/`zabuton_count`(Firestore `Increment`、ベストエフォート)と`list_popular_personas()`を追加。`persona_generate.py`(ルートA・custom時)・`timeline.py`(zabuton・custom時)から加算。`GET /v1/personas/popular`(認証不要、公開ランキング、prompt等の設定内容は含めない)を`personas.py`に新設。
+
+**検証で発見・修正した実バグ**: マイペルソナで実際に生成した際、`STEP2_MODEL`が統合時に`apps/evaluator/backend/.env`へ引き継がれておらず既定値`gemini-2.5-flash`にフォールバックし、`thinking_config`(マイペルソナのthinking_level)を渡すと`400 Thinking level is not supported for this model`で失敗することをE2E検証で発見。`STEP1_MODEL=gemini-2.5-flash`/`STEP2_MODEL=gemini-3.6-flash`を`.env`・`.env.example`・`deploy_cloud_run.yml`の`env_vars`へ追加して解消（本番Cloud Runにも反映、次回デプロイから有効）。
+
+**テスト**: `apps/evaluator/backend/test_elyza_fallback_and_popular_personas.py`(単体8件)新設、全件PASS。実Firestore/Gemini経由のE2E(マイペルソナ作成→生成→座布団→カウンタ確認→人気一覧反映→クリーンアップ)も実施し成功。
+
 ### 12.3 2026-08-16 統合モノリス化（案B）: apps/persona_main_functionをapps/evaluator/backendへ統合
 
 **背景**: Cloud Run上でFastAPIを安定・自動稼働させるため、ドメイン・CORS・認証の二重管理を解消する目的で、`apps/persona_main_function`のバックエンドロジック（`/v1/personas`・`/v1/generate`等）を本番バックエンド`apps/evaluator/backend`へ統合した（ユーザー指示による「案B」）。

@@ -263,6 +263,64 @@ def list_visible_personas(db, owner_uid: str) -> list[dict]:
     return visible
 
 
+def list_popular_personas(db, limit: int = 20) -> list[dict]:
+    """「みんなの人気ペルソナ」: カスタムペルソナ(is_builtin==False)を
+    usage_count(利用回数)+zabuton_count(獲得座布団数)の合計降順で返す。
+
+    件数の少なさ(list_visible_personasと同じ前提、1ユーザーあたり最大5件)を
+    踏まえてPython側でソートする(Firestoreのorder_byは対象フィールドを持たない
+    ドキュメントを暗黙に除外してしまうため、increment_usage_count/
+    increment_zabuton_countがまだ一度も呼ばれていない新規ペルソナが
+    ランキングから消えてしまう問題を避ける狙いもある)。
+    """
+    docs = (
+        db.collection(NARRATOR_PERSONAS_COLLECTION)
+        .where(filter=_field_filter("is_builtin", "==", False))
+        .stream()
+    )
+    candidates = [d.to_dict() or {} for d in docs]
+    visible = [
+        p for p in candidates if not p.get("deleted_at") and p.get("is_visible", True)
+    ]
+    visible.sort(
+        key=lambda p: p.get("usage_count", 0) + p.get("zabuton_count", 0),
+        reverse=True,
+    )
+    return visible[:limit]
+
+
+def increment_usage_count(db, persona_id: str) -> None:
+    """persona_idのusage_count(なぞかけ生成に使われた回数)を1加算する
+    (persona_feature_plan_v3.md改修要件: みんなの人気ペルソナAPI)。
+
+    Firestoreのfirestore.Increment(1)はフィールドが未存在でも0起点として扱う
+    ため、既存ペルソナ文書への事前バックフィルは不要。呼び出し元(生成API)の
+    本処理を失敗させないよう、失敗はここで吸収する(カウンタ更新はベスト
+    エフォート、なぞかけ生成自体の成否とは独立させる)。
+    """
+    from firebase_admin import firestore
+
+    try:
+        db.collection(NARRATOR_PERSONAS_COLLECTION).document(persona_id).update(
+            {"usage_count": firestore.Increment(1)}
+        )
+    except Exception:
+        pass
+
+
+def increment_zabuton_count(db, persona_id: str) -> None:
+    """persona_idのzabuton_count(獲得座布団数)を1加算する。increment_usage_count
+    と同じ理由でベストエフォート(失敗を握りつぶす)。"""
+    from firebase_admin import firestore
+
+    try:
+        db.collection(NARRATOR_PERSONAS_COLLECTION).document(persona_id).update(
+            {"zabuton_count": firestore.Increment(1)}
+        )
+    except Exception:
+        pass
+
+
 def count_owned_personas(db, owner_uid: str) -> int:
     """owner_uidが所有する(論理削除されていない)ペルソナ数を返す(§6: 上限5件チェック用)。"""
     docs = (

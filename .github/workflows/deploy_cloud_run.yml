@@ -159,10 +159,19 @@ jobs:
           # variables > Actions で OWNER_EMAIL という名前のSecretを事前に登録して
           # おくこと。未設定の場合は空文字列となりブートストラップが機能しない
           # だけで、既存の管理者アクセスには影響しない)。
+          # 【2026-08-16: persona統合(案B)に伴うバグ修正】STEP1_MODEL/STEP2_MODELは
+          # 旧apps/persona_main_function/.envに設定されていたが、バックエンド統合時に
+          # このワークフローへ引き継がれておらず、services/step2_generation.pyの
+          # 既定値(gemini-2.5-flash)にフォールバックしていた。gemini-2.5-flashは
+          # thinking_config(マイペルソナのthinking_level)を受け付けず、本番でも
+          # 「Thinking level is not supported for this model」の400エラーになる
+          # ことをローカルE2E検証で確認したため、明示的に指定する。
           env_vars: |
             EXCHANGE_RATE_USD_JPY=160.0
             SERVER_COST_PER_HOUR_JPY=5.0
             OWNER_EMAIL=${{ secrets.OWNER_EMAIL }}
+            STEP1_MODEL=gemini-2.5-flash
+            STEP2_MODEL=gemini-3.6-flash
 
       # 【instructions/291】instructions/290で確定した「片肺デプロイ」(バックエンドの
       # みが自動デプロイされ、Firebase Hostingへのフロントエンド配信が
