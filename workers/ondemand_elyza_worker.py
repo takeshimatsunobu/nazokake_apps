@@ -348,6 +348,28 @@ def _claim_job_sync(db, collection: str, doc_id: str) -> dict[str, Any] | None:
     return _txn(db.transaction())
 
 
+def _is_still_processing_sync(db, collection: str, doc_id: str) -> bool:
+    """claim直後、実際にELYZA生成(GPU/VRAM)へ着手する直前の再確認用(改修要件:
+    「cancelledジョブ検知とスキップを確実に徹底」)。
+
+    _claim_job_sync()のトランザクションでelyza_job_statusを"processing"へ
+    書き換えてから、実際にgenerate_via_llmjp()を呼び出すまでの短い間隙で、
+    バックエンド側(apps/evaluator/backend/api/routers/generate.py)が8秒ACK
+    タイムアウトにより"cancelled"へ上書きしている可能性がある(claim自体は
+    _is_claimable()の判定タイミングでは間に合っていたが、その直後にバックエンドの
+    ACK監視ポーリングがまだ"processing"を観測できず、ワーカーオフラインと誤判定
+    した場合に起こり得るレース)。ここで一度だけ最新状態を読み直し、まだ自分が
+    書いた"processing"のままであることを確認してから初めてOllama呼び出しに進む。
+    "cancelled"へ書き換えられていた場合はGPU計算(VRAM確保・推論)そのものを
+    始めずに済むため、無駄なバックログ処理を抑制できる。
+    """
+    snapshot = db.collection(collection).document(doc_id).get()
+    if not snapshot.exists:
+        return False
+    remote = snapshot.to_dict() or {}
+    return remote.get("elyza_job_status") == "processing"
+
+
 def _write_scoped_fields_sync(
     db, collection: str, doc_id: str, fields: dict[str, Any]
 ) -> None:
@@ -414,6 +436,19 @@ async def _process_job(db, collection: str, job: dict[str, Any]) -> None:
     # 受け止め、ジョブをfailedとして確定させてプロセス自体はクラッシュさせない。
     # 以前は成功時の書き戻し(_mark_job_outcome)がこのtryの外にあり無防備だった。
     try:
+        # 【改修要件: cancelledジョブ検知とスキップの徹底】claimからここまでの
+        # 間隙でバックエンドが8秒ACKタイムアウトにより"cancelled"へ書き換えて
+        # いないかを、実際にGPU計算(VRAM確保・Ollama推論)を始める直前で
+        # 最終確認する。_is_claimable()によるclaim時点のガードだけでは、claim
+        # 自体は間に合ったがその直後にcancelledされるレースを防げないため、
+        # ここが二重実行防止の第二防衛線となる。
+        if not await asyncio.to_thread(_is_still_processing_sync, db, collection, doc_id):
+            _log(
+                f"⏭️ [{doc_id}] claim後にバックエンドがcancelledへ書き換えたため、"
+                "ELYZA生成をスキップします(無駄なGPUバックログ処理の抑制)。"
+            )
+            return
+
         # 【persona_feature_plan_v3.md Phase5 §3.4: レース対策】投入時点で確定させた
         # プロンプト本文のスナップショットが含まれていれば、それを最優先で使う
         # (Firestoreを引き直さない=投入後に管理者がペルソナを編集してもこの

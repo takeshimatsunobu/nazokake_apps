@@ -18,6 +18,20 @@
         }
       },
       {
+        "source": "/v1/**",
+        "run": {
+          "serviceId": "nazokake-api",
+          "region": "asia-northeast1"
+        }
+      },
+      {
+        "source": "/healthz",
+        "run": {
+          "serviceId": "nazokake-api",
+          "region": "asia-northeast1"
+        }
+      },
+      {
         "source": "**",
         "destination": "/index.html"
       }

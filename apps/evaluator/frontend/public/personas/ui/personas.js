@@ -294,7 +294,7 @@ function onPopularPersonasListClick(ev) {
     setPendingSelectedPersona({ persona_id: personaId, display_name: displayName });
     showToast(`「${displayName}」を選択しました。生成画面へ移動します...`, "info");
     setTimeout(() => {
-        window.location.href = "/index.html";
+        window.location.href = "/personas/index.html";
     }, 500);
 }
 

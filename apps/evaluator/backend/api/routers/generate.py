@@ -625,10 +625,27 @@ async def get_status(doc_id: str):
     # 進捗(completed等)を能動的にPullし、ローカルSQLiteへ上書き同期してから
     # レスポンスを返す(llmjp_status=="completed"の場合は、ローカルの直接生成
     # パスで既に完結しているため、無駄なFirestore問い合わせを行わない)。
-    if data.get("llmjp_status") != "completed" and data.get("elyza_job_status") in (
-        "pending",
-        "processing",
-    ):
+    #
+    # 【改修要件: フォールバック確定後もワーカーの後発完了を拾う】8秒ACK
+    # タイムアウトでelyza_job_status="cancelled"＋Gemini Flash代打を確定させた
+    # 直後に、ワーカーがclaim済みだったジョブを実際に完了させてFirestoreへ
+    # 書き戻すレースが起こり得る(worker側は_is_still_processing_syncで大部分を
+    # 防ぐが、claim〜その確認の間隙は完全には無くせない)。この場合llmjp_status
+    # は既に"completed"(代打の結果)だが、本物のELYZA結果(nazokake_text_llmjp)を
+    # 一度も取り込めていない。破棄せず、確定済みのfallback_triggered/エンジン
+    # 表記はそのまま維持しつつ、本物の結果をDB・レスポンスへ保持できるよう、
+    # この場合に限り再Pullの対象へ加える(本物を取り込めば以降はこの分岐に
+    # 入らなくなるため、無条件の無限リトライにはならない)。
+    fallback_missing_real_result = bool(data.get("llmjp_is_pinch_hitter")) and not data.get(
+        "nazokake_text_llmjp"
+    )
+    should_pull_elyza_progress = data.get("llmjp_status") != "completed" and data.get(
+        "elyza_job_status"
+    ) in ("pending", "processing")
+    should_pull_late_worker_result = (
+        data.get("llmjp_status") == "completed" and fallback_missing_real_result
+    )
+    if should_pull_elyza_progress or should_pull_late_worker_result:
         elyza_job_result = await _fetch_terminal_elyza_job(doc_id)
         if elyza_job_result is not None:
             try:

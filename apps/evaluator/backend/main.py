@@ -216,6 +216,12 @@ app.add_middleware(
         # フロントエンド開発を継続できるようにするため。
         "http://localhost:5500",
         "http://127.0.0.1:5500",
+        # 【フロントエンド完全統合(2026-08-16)】apps/persona_main_function/frontendを
+        # apps/evaluator/frontend/public/personas/ へ移設したことに伴い、独立していた
+        # frontend/dev_server.py(5500番)は廃止し、evaluator既定のdev_server.py
+        # (7300番、frontend/public/dev_server.py)配下の/personas/**として配信される。
+        "http://localhost:7300",
+        "http://127.0.0.1:7300",
     ],
     allow_methods=["*"],
     allow_headers=["*"],

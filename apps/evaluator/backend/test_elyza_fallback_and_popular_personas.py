@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from api.routers import persona_generate
-from api.routers.generate import _fallback_metadata, _wait_for_elyza_ack, progressive_generate
+from api.routers.generate import _fallback_metadata, _wait_for_elyza_ack, get_status, progressive_generate
 from api.routers.personas import list_popular_personas as popular_personas_endpoint
 from models.persona_schemas import GenerateRoutedRequest, Step1Result
 from nazokake_core import narrator_personas
@@ -88,6 +88,106 @@ def test_fallback_metadata_when_field_missing():
     """旧データ(llmjp_is_pinch_hitterキー自体が無い)でも安全にFalse側へ倒れる。"""
     result = _fallback_metadata({})
     assert result == {"fallback_triggered": False, "engine": "elyza", "fallback_reason": None}
+
+
+# ------------------------------------------------------------
+# GET /status/{doc_id}: フォールバック確定後もワーカーの後発完了を拾う
+# (改修要件: ステータス同期＆レースコンディション修正)
+# ------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_get_status_pulls_late_worker_result_after_fallback_already_completed():
+    """8秒ACKタイムアウトでelyza_job_status="cancelled"＋Gemini Flash代打が
+    llmjp_status="completed"として確定した"後"に、ワーカーが実際にELYZA生成を
+    完了させてFirestoreへ書き戻すレースが起きても、その本物の結果(result_llmjp等)
+    を破棄せず取り込むこと。取り込み後もfallback_triggered自体は最初の判定
+    (True)を維持する(既に返した応答を後から覆さない)。"""
+    local_data = {
+        "doc_id": "doc-race",
+        "status": "all_completed",
+        "eval_status": "completed",
+        "llmjp_status": "completed",
+        "elyza_job_status": "cancelled",
+        "llmjp_is_pinch_hitter": True,
+        "llmjp_model_id": "gemini-3.5-flash-lite",
+        "llmjp_fallback_reason": "worker_ack_timeout",
+        "nazokake_text_llmjp": None,
+        "odai": "お題",
+        "message": "完成",
+        "result": {}, "result_gemini": {}, "scores": {}, "reasoning": "", "overall": "",
+        "axis_comments": {}, "s_total": 0.0,
+        "result_llmjp": {}, "scores_llmjp": {}, "overall_llmjp": "", "axis_comments_llmjp": {},
+        "s_total_llmjp": 0.0,
+    }
+    # ワーカーが実際に完了させ、Firestoreへ書き戻した本物の結果(遅れて到着)。
+    late_worker_result = {
+        "elyza_job_status": "completed",
+        "llmjp_status": "completed",
+        "result_llmjp": {"toku": "新幹線", "kokoro": "きどう"},
+        "nazokake_text_llmjp": "本物のELYZA本文",
+        "scores_llmjp": {"S_nat": 0.9},
+        "s_total_llmjp": 4.2,
+        "overall_llmjp": "ok",
+        "axis_comments_llmjp": {},
+        "llmjp_fallback_reason": "worker_ack_timeout",
+    }
+
+    upserts: list[dict] = []
+
+    async def fake_upsert(payload):
+        upserts.append(payload)
+
+    with patch("api.routers.generate.sync_once_safe", new=AsyncMock()), \
+         patch("api.routers.generate.async_get_item", new=AsyncMock(return_value=local_data)), \
+         patch("api.routers.generate.async_upsert_item", side_effect=fake_upsert), \
+         patch(
+             "api.routers.generate._fetch_terminal_elyza_job",
+             new=AsyncMock(return_value=late_worker_result),
+         ) as mock_fetch:
+        response = await get_status("doc-race")
+
+    mock_fetch.assert_awaited_once_with("doc-race")
+    assert response["elyza_job_status"] == "completed"
+    assert response["result_llmjp"] == {"toku": "新幹線", "kokoro": "きどう"}
+    assert response["overall_llmjp"] == "ok"
+    assert response["s_total_llmjp"] == 4.2
+    # 8秒ACKタイムアウトで最初に確定させたfallback判定(True)は覆さない。
+    assert response["fallback_triggered"] is True
+    assert response["fallback_reason"] == "worker_ack_timeout"
+    # ローカルSQLiteへも本物の結果が書き戻されている(破棄されていない)。
+    assert any(u.get("nazokake_text_llmjp") == "本物のELYZA本文" for u in upserts)
+
+
+@pytest.mark.anyio
+async def test_get_status_does_not_repull_once_real_result_already_merged():
+    """一度本物のELYZA結果(nazokake_text_llmjp)を取り込んだ後は、以降の
+    ポーリングでFirestoreへ再Pullしない(無条件の無限リトライを防ぐ)。"""
+    local_data = {
+        "doc_id": "doc-race2",
+        "status": "all_completed",
+        "eval_status": "completed",
+        "llmjp_status": "completed",
+        "elyza_job_status": "completed",
+        "llmjp_is_pinch_hitter": True,
+        "llmjp_fallback_reason": "worker_ack_timeout",
+        "nazokake_text_llmjp": "既に取り込み済みの本物のELYZA本文",
+        "odai": "お題",
+        "message": "完成",
+        "result": {}, "result_gemini": {}, "scores": {}, "reasoning": "", "overall": "",
+        "axis_comments": {}, "s_total": 0.0,
+        "result_llmjp": {"toku": "既存"}, "scores_llmjp": {}, "overall_llmjp": "ok",
+        "axis_comments_llmjp": {}, "s_total_llmjp": 4.0,
+    }
+
+    with patch("api.routers.generate.sync_once_safe", new=AsyncMock()), \
+         patch("api.routers.generate.async_get_item", new=AsyncMock(return_value=local_data)), \
+         patch("api.routers.generate.async_upsert_item", new=AsyncMock()), \
+         patch("api.routers.generate._fetch_terminal_elyza_job", new=AsyncMock()) as mock_fetch:
+        response = await get_status("doc-race2")
+
+    mock_fetch.assert_not_awaited()
+    assert response["result_llmjp"] == {"toku": "既存"}
 
 
 # ------------------------------------------------------------

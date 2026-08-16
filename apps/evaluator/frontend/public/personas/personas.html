@@ -11,17 +11,20 @@
 
     <!-- 【index.htmlと同じ規約】ローカルJSにバージョンクエリを付与し、更新のたびに
          再フェッチさせる。次回このHTMLへ変更を加える際はこのバージョン文字列を
-         更新すること(index.html・personas.html双方の全エントリで統一)。 -->
+         更新すること(index.html・personas.html双方の全エントリで統一)。
+         【2026-08-16: フロントエンド統合(案B)】/personas/配下へ移設したため
+         全エントリを絶対パスに/personas/プレフィックスを付与(index.html側の
+         同種コメント参照)。 -->
     <script type="importmap">
     {
         "imports": {
-            "config": "/config.js?v=20260816a",
-            "state": "/state.js?v=20260816a",
-            "api": "/api.js?v=20260816a",
-            "firebase-config": "/firebase-config.js?v=20260816a",
-            "ui/auth": "/ui/auth.js?v=20260816a",
-            "ui/personas": "/ui/personas.js?v=20260816a",
-            "ui/trivia": "/ui/trivia.js?v=20260816a",
+            "config": "/personas/config.js?v=20260816b",
+            "state": "/personas/state.js?v=20260816b",
+            "api": "/personas/api.js?v=20260816b",
+            "firebase-config": "/personas/firebase-config.js?v=20260816b",
+            "ui/auth": "/personas/ui/auth.js?v=20260816b",
+            "ui/personas": "/personas/ui/personas.js?v=20260816b",
+            "ui/trivia": "/personas/ui/trivia.js?v=20260816b",
             "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
             "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
         }
@@ -45,7 +48,7 @@
     <div id="toast-container" class="fixed top-3 inset-x-0 z-50 flex flex-col items-center gap-2 pointer-events-none px-4"></div>
 
     <header class="shrink-0 bg-indigo-700 text-white px-4 py-2.5 flex items-center gap-2 shadow-md z-10">
-        <a href="/index.html" aria-label="なぞかけ道場に戻る" class="text-white text-lg leading-none px-1 active:scale-95">←</a>
+        <a href="/personas/index.html" aria-label="なぞかけ道場に戻る" class="text-white text-lg leading-none px-1 active:scale-95">←</a>
         <h1 class="text-sm font-black tracking-wide">🎭 マイペルソナ</h1>
     </header>
 
@@ -268,6 +271,6 @@
         </div>
     </div>
 
-    <script type="module" src="/ui/personas.js?v=20260816a"></script>
+    <script type="module" src="/personas/ui/personas.js?v=20260816b"></script>
 </body>
 </html>

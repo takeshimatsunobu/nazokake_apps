@@ -758,6 +758,67 @@ CI（`pyright_check.yml`）が `tests/` を実行するため `tests/persona_mai
   （ルートB時に加算されないことの回帰テストも追加）。evaluator/backend 22件・
   tests+workers 15件、全PASS。
 
+### 12.7 2026-08-16 フロントエンド完全統合＆ELYZAステータス同期・レースコンディション修正
+
+§12.3でバックエンドのみ統合していたが、§12.4以降の調査で本番`nazokakeapp-137e5.web.app`に
+新UI（3タブ・personas.html）が一切デプロイされていない（`deploy_cloud_run.yml`が
+`apps/evaluator`配下でのみ`firebase deploy --only hosting`を実行しており、
+`apps/persona_main_function`には触れていなかった。加えて旧`persona-router`用の
+Hostingサイト自体を既に削除済みで配信先が存在しなかった）ことが判明したため、
+フロントエンドも完全統合した。
+
+**フロントエンド統合**:
+- `apps/persona_main_function/frontend/`の全ファイル（`index.html`/`personas.html`/
+  `app.js`/`api.js`/`state.js`/`config.js`/`firebase-config.js`/`ui/auth.js`/
+  `ui/personas.js`/`ui/trivia.js`）を`apps/evaluator/frontend/public/personas/`へ
+  移設。evaluator側は既に同名ファイル（`index.html`/`app.js`/`api.js`等、旧評価画面用）
+  を持つため、`/personas/`名前空間下へ配置することでパス衝突を回避した。
+- 各HTML内のimportmap・`<script src>`・内部リンク（`href="/index.html"`等）・
+  `window.location.href`（`ui/personas.js`のペルソナ選択後リダイレクト）を、すべて
+  `/personas/`プレフィックス付きの絶対パスへ更新（importmapの解決先はHTML自身の
+  配置場所ではなくサイトルート基準のため、更新しないと誤って`/app.js`等ルート側の
+  無関係なスクリプトを読み込んでしまう）。
+- `apps/evaluator/firebase.json`に`/v1/**`・`/healthz`のCloud Runリライトを追加
+  （従来は`/api/**`のみ）。`/personas/**`配下は実ファイルとして存在するため、
+  Firebase Hostingの「静的ファイルが常にリライトより優先される」仕様により
+  追加のリライト設定なしでSPAキャッチオール（`"**" → "/index.html"`）に吸われず
+  正しく配信される（実機のdev_server.py経由で全パス200を確認済み）。
+- evaluator側`index.html`のヘッダーに新UIへの導線（🎭ペルソナタブ）を追加し、
+  新UI側ヘッダーにも評価画面へ戻る導線を追加（双方向の共存導線）。
+- `apps/evaluator/backend/main.py`のCORS allow_originsに、統合後のローカル開発
+  ポート（evaluator既定のdev_server.py、7300番）を追加。
+- `apps/persona_main_function/`（`.firebaserc`・`.gitignore`・`firebase.json`・
+  `frontend/`一式）を完全削除。
+
+**ELYZAステータス同期・レースコンディション修正**（§12.4の調査で発見した実バグへの対応）:
+- **根本原因**: 8秒ACKタイムアウトで`elyza_job_status="cancelled"`＋Gemini Flash
+  代打が`llmjp_status="completed"`として確定した直後に、ワーカーが（claim自体は
+  タイムアウト前に成功していたため）実際にELYZA生成を完了させFirestoreへ書き戻す
+  レースが発生し得る。旧`GET /status/{doc_id}`の再Pull条件は`llmjp_status !=
+  "completed"`の場合のみだったため、この場合ワーカーの本物の結果は二度と
+  取り込まれず、GPU計算だけが無駄になっていた（実機の10回テストで実際に観測）。
+- **対応1（バックエンド）**: `apps/evaluator/backend/api/routers/generate.py::
+  get_status()`の再Pull条件に、`llmjp_status=="completed"`かつ
+  `llmjp_is_pinch_hitter=True`かつ`nazokake_text_llmjp`が未取得、という条件
+  （`should_pull_late_worker_result`）を追加。既存の条件（`should_pull_elyza_
+  progress`）はそのまま維持し、ORで合成する形にした。本物の結果を一度取り込めば
+  以降のポーリングでは再度Pullしない（無条件の無限リトライにはならない）。
+  最初に確定済みの`fallback_triggered`/`fallback_reason`は上書きしない
+  （既にユーザーへ返した判定は覆さない）。
+- **対応2（ワーカー）**: `workers/ondemand_elyza_worker.py`に`_is_still_processing_
+  sync()`を新設。`_process_job()`内、実際に`generate_via_llmjp()`（VRAM確保・
+  Ollama推論）を呼び出す直前に、Firestoreの`elyza_job_status`を再読み込みし、
+  まだ自分がclaim時に書いた`"processing"`のままであることを確認する（第二防衛線。
+  既存の`_is_claimable()`はclaim時点のガード＝第一防衛線であり、claim成立後に
+  バックエンドがcancelledへ書き換えるレースは防げなかった）。書き換わっていれば
+  GPU計算そのものを開始せずスキップする。
+- **テスト**: `test_get_status_pulls_late_worker_result_after_fallback_already_
+  completed`／`test_get_status_does_not_repull_once_real_result_already_merged`
+  （バックエンド、2件）、`test_is_still_processing_sync_*`（3件）／
+  `test_process_job_skips_ollama_call_when_cancelled_after_claim`／
+  `test_process_job_proceeds_to_ollama_when_still_processing`（ワーカー、5件）を
+  新設。既存分と合わせevaluator/backend 24件・tests+workers 20件、全PASS。
+
 ### 12.3 2026-08-16 統合モノリス化（案B）: apps/persona_main_functionをapps/evaluator/backendへ統合
 
 **背景**: Cloud Run上でFastAPIを安定・自動稼働させるため、ドメイン・CORS・認証の二重管理を解消する目的で、`apps/persona_main_function`のバックエンドロジック（`/v1/personas`・`/v1/generate`等）を本番バックエンド`apps/evaluator/backend`へ統合した（ユーザー指示による「案B」）。
