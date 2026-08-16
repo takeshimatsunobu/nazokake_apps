@@ -87,6 +87,14 @@ export async function apiReorderPersonas(orderedPersonaIds) {
     });
 }
 
+// 【改修要件「みんなの人気ペルソナ」タブ】GET /v1/personas/popular は認証不要の
+// 公開ランキングAPI(api/routers/personas.py参照)。
+export async function apiFetchPopularPersonas(limit = 10, offset = 0) {
+    const params = new URLSearchParams({ limit: String(limit), offset: String(offset) });
+    const data = await fetchAPI(`/v1/personas/popular?${params.toString()}`);
+    return data.personas;
+}
+
 export async function apiGenerate(odai, personaId, clientUuid) {
     return fetchAPI("/v1/generate", {
         method: "POST",

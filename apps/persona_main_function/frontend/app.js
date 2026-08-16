@@ -8,13 +8,14 @@
 // ではなく、経過時間に応じてメッセージを切り替える演出であることを明記しておく。
 import {
     appState, markAsMine, isMine, hasReactedZabuton, markZabutonReacted,
-    getCachedBlockedUntil, setCachedBlockedUntil,
+    getCachedBlockedUntil, setCachedBlockedUntil, consumePendingSelectedPersona,
 } from "state";
 import {
     apiFetchPersonas, apiGenerate, apiFetchTimeline, apiZabuton,
     apiSubmitUnlockRequest,
 } from "api";
 import { ensureAnonAuth } from "ui/auth";
+import { startTriviaCarousel } from "ui/trivia";
 
 const TIMELINE_PAGE_SIZE = 20;
 const NEW_ITEMS_POLL_MS = 25000;
@@ -92,8 +93,10 @@ function renderPersonaChips() {
                 ? "bg-indigo-600 text-white border-indigo-600"
                 : "bg-white text-slate-700 border-slate-300";
             // マイペルソナ(is_builtin===false)には小さな目印を付け、組み込みと
-            // 区別できるようにする。
-            const mineTag = p.is_builtin ? "" : `<span class="mr-1">🎨</span>`;
+            // 区別できるようにする。「みんなのペルソナ」タブから引き継いだ、
+            // 自分の所有ではないペルソナ(is_guest、personas.html参照)には別の
+            // 目印を付け、自分のものと混同しないようにする。
+            const mineTag = p.is_guest ? `<span class="mr-1">🌐</span>` : p.is_builtin ? "" : `<span class="mr-1">🎨</span>`;
             return `<button type="button" data-persona-id="${escapeHtml(p.persona_id)}"
                 class="persona-chip shrink-0 whitespace-nowrap text-xs font-bold px-3 py-1.5 rounded-full border ${cls}">
                 ${mineTag}${escapeHtml(p.display_name)}
@@ -317,8 +320,15 @@ function startLoadingAnimation() {
         stageEl.textContent = LOADING_STAGES[i];
     }, 1200);
 
+    // 【コールドスタート待機演出】ELYZA/Geminiの生成待ち(数秒〜)の体感時間を
+    // 緩和するため、段階メッセージとは別になぞかけ豆知識/名作なぞかけを
+    // ゆっくり(3.5秒間隔)サイクル表示する。
+    const triviaEl = document.getElementById("generating-trivia");
+    const stopTrivia = triviaEl ? startTriviaCarousel(triviaEl) : () => {};
+
     return () => {
         clearInterval(timer);
+        stopTrivia();
         loadingWrap.classList.add("hidden");
     };
 }
@@ -497,16 +507,47 @@ async function init() {
         // (personas.html側は元々ensureAnonAuth()を呼んでいて問題なかった)。
         await ensureAnonAuth();
         appState.personas = await apiFetchPersonas();
-        const generatable = generatablePersonas();
-        if (generatable.length) {
-            appState.selectedPersonaId = generatable[0].persona_id;
+
+        // 【改修要件「みんなの人気ペルソナ」タブ】personas.htmlの「みんなのペルソナ」
+        // タブでカードをタップして遷移してきた場合、そのペルソナを選択状態にする。
+        // GET /v1/personasは組み込み+自分の所有分しか返さない(他人のペルソナは
+        // 含まれない)ため、一覧に無ければチップ表示用のエントリを合成して先頭へ
+        // 差し込む(is_guest: trueで自分の所有物と区別、renderPersonaChips参照)。
+        // 生成自体はバックエンド側がowner_uidを問わずpersona_idを解決するため、
+        // このチップからそのまま生成できる。
+        const pending = consumePendingSelectedPersona();
+        if (pending && pending.persona_id) {
+            const alreadyKnown = appState.personas.some(
+                (p) => String(p.persona_id) === String(pending.persona_id)
+            );
+            if (!alreadyKnown) {
+                appState.personas = [
+                    { persona_id: pending.persona_id, display_name: pending.display_name || "みんなのペルソナ", is_builtin: false, is_guest: true },
+                    ...appState.personas,
+                ];
+            }
+            appState.selectedPersonaId = pending.persona_id;
+        } else {
+            const generatable = generatablePersonas();
+            if (generatable.length) {
+                appState.selectedPersonaId = generatable[0].persona_id;
+            }
         }
         renderPersonaChips();
     } catch (e) {
         showToast(`ペルソナ一覧の取得に失敗しました: ${e.message}`, "error");
     }
 
-    await loadInitialTimeline();
+    // 【コールドスタート待機演出】初回タイムライン取得中(Cloud Runのコールド
+    // スタートで数秒かかることがある)、スケルトン(index.html側に静的配置済み)の
+    // 下でなぞかけ豆知識をサイクル表示する。
+    const coldStartTriviaEl = document.getElementById("cold-start-trivia");
+    const stopColdStartTrivia = coldStartTriviaEl ? startTriviaCarousel(coldStartTriviaEl) : () => {};
+    try {
+        await loadInitialTimeline();
+    } finally {
+        stopColdStartTrivia();
+    }
     setInterval(pollForNewItems, NEW_ITEMS_POLL_MS);
 }
 

@@ -17,12 +17,13 @@
     <script type="importmap">
     {
         "imports": {
-            "config": "/config.js?v=20260815a",
-            "state": "/state.js?v=20260815a",
-            "api": "/api.js?v=20260815a",
-            "app": "/app.js?v=20260815a",
-            "firebase-config": "/firebase-config.js?v=20260815a",
-            "ui/auth": "/ui/auth.js?v=20260815a",
+            "config": "/config.js?v=20260816a",
+            "state": "/state.js?v=20260816a",
+            "api": "/api.js?v=20260816a",
+            "app": "/app.js?v=20260816a",
+            "firebase-config": "/firebase-config.js?v=20260816a",
+            "ui/auth": "/ui/auth.js?v=20260816a",
+            "ui/trivia": "/ui/trivia.js?v=20260816a",
             "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
             "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
         }
@@ -62,9 +63,24 @@
             🆕 新着があります
         </button>
 
+        <!-- 【コールドスタート待機演出】初回タイムライン取得中はスケルトンカード+
+             豆知識サイクルを表示し、レイアウトシフトと手持ち無沙汰を防ぐ
+             (Cloud Runのコールドスタートで数秒かかることがあるため)。 -->
         <div id="timeline-list" class="flex flex-col gap-3">
-            <p class="text-center text-sm text-slate-400 py-10">読み込み中...</p>
+            <div class="animate-pulse rounded-2xl border border-slate-200 bg-white p-4">
+                <div class="h-3 bg-slate-200 rounded w-1/3 mb-3"></div>
+                <div class="h-2.5 bg-slate-100 rounded w-1/2 mb-2"></div>
+                <div class="h-4 bg-slate-200 rounded w-full mb-1"></div>
+                <div class="h-4 bg-slate-200 rounded w-3/4"></div>
+            </div>
+            <div class="animate-pulse rounded-2xl border border-slate-200 bg-white p-4">
+                <div class="h-3 bg-slate-200 rounded w-1/3 mb-3"></div>
+                <div class="h-2.5 bg-slate-100 rounded w-1/2 mb-2"></div>
+                <div class="h-4 bg-slate-200 rounded w-full mb-1"></div>
+                <div class="h-4 bg-slate-200 rounded w-2/3"></div>
+            </div>
         </div>
+        <p id="cold-start-trivia" class="text-center text-[11px] text-indigo-500 font-bold mt-3 px-4"></p>
 
         <button id="load-more-btn" type="button"
             class="hidden w-full mt-3 text-xs font-bold text-slate-500 bg-white border border-slate-200 rounded-full py-2 active:scale-95">
@@ -76,16 +92,22 @@
     <footer id="generator-area" class="shrink-0 bg-white border-t border-slate-200 px-3 pt-3 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] z-10">
         <!-- ペルソナ選択チップ(横スクロール) -->
         <div id="persona-chips" class="flex gap-1.5 overflow-x-auto pb-2 -mx-0.5 px-0.5">
-            <p class="text-xs text-slate-400 py-1.5">ペルソナを読み込み中...</p>
+            <div class="animate-pulse shrink-0 h-7 w-16 bg-slate-200 rounded-full"></div>
+            <div class="animate-pulse shrink-0 h-7 w-20 bg-slate-200 rounded-full"></div>
+            <div class="animate-pulse shrink-0 h-7 w-14 bg-slate-200 rounded-full"></div>
         </div>
 
-        <!-- 段階的ローディング表示(生成中のみ表示) -->
-        <div id="loading-wrap" class="hidden flex items-center gap-2 text-xs font-bold text-indigo-600 pb-2">
-            <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
-                <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
-            </svg>
-            <span id="loading-stage">🔍 お題を解析中...</span>
+        <!-- 段階的ローディング表示(生成中のみ表示)。コールドスタート演出として
+             豆知識/名作なぞかけの行(#generating-trivia)を追加し、体感待ち時間を緩和する。 -->
+        <div id="loading-wrap" class="hidden flex flex-col gap-1 pb-2">
+            <div class="flex items-center gap-2 text-xs font-bold text-indigo-600">
+                <svg class="animate-spin h-4 w-4 shrink-0" viewBox="0 0 24 24" fill="none">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                </svg>
+                <span id="loading-stage">🔍 お題を解析中...</span>
+            </div>
+            <p id="generating-trivia" class="text-[11px] text-slate-400 pl-6"></p>
         </div>
 
         <form id="generate-form" class="flex items-center gap-2 pb-3">
@@ -135,6 +157,6 @@
          書き込み先がevaluator backend側のPOST /feed/evaluate/{doc_id}(SQLite
          user_akapen系統)へ一本化されたため削除した。旧実装はgit履歴を参照。 -->
 
-    <script type="module" src="/app.js?v=20260815a"></script>
+    <script type="module" src="/app.js?v=20260816a"></script>
 </body>
 </html>

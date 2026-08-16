@@ -16,16 +16,27 @@
 import {
     apiFetchPersonas, apiFetchPersonaSchema, apiDraftPersona,
     apiCreatePersona, apiUpdatePersona, apiDeletePersona, apiReorderPersonas,
+    apiFetchPopularPersonas,
 } from "api";
 import { ensureAnonAuth } from "ui/auth";
+import { setPendingSelectedPersona } from "state";
+import { startTriviaCarousel } from "ui/trivia";
 
 const MAX_PERSONAS = 5; // api/routers/personas.py::MAX_PERSONAS_PER_OWNERと同じ値(表示用)
 const LONG_PRESS_MS = 500;
 const LONG_PRESS_MOVE_TOLERANCE_PX = 10;
 
+// api/routers/personas.py::PersonaTone / personas.html作成フォームのtone<select>と
+// 同じ7種を、みんなのペルソナカードの表示用ラベルとして日本語化する。
+const TONE_LABELS = {
+    gentle: "おだやか", energetic: "元気いっぱい", cool: "クール", warm: "あたたかい",
+    sharp: "辛口", playful: "おちゃめ", serious: "まじめ",
+};
+
 let personas = [];
 let schemaFields = [];
 let editMode = false;
+let popularPersonasLoaded = false;
 
 // ------------------------------------------------------------
 // 小さなユーティリティ(apps/persona_main_function/frontend/app.js と同じ規約)
@@ -165,6 +176,126 @@ async function loadPersonas() {
     } catch (e) {
         showToast(`ペルソナ一覧の取得に失敗しました: ${e.message}`, "error");
     }
+}
+
+// ------------------------------------------------------------
+// タブ切り替え(公式/マイペルソナ/みんなのペルソナ)
+// ------------------------------------------------------------
+
+const TAB_IDS = ["official", "mine", "popular"];
+
+function activateTab(tab) {
+    if (!TAB_IDS.includes(tab)) return;
+    TAB_IDS.forEach((id) => {
+        const btn = document.getElementById(`tab-${id}`);
+        const panel = document.getElementById(`panel-${id}`);
+        const active = id === tab;
+        if (btn) {
+            btn.setAttribute("aria-selected", String(active));
+            btn.classList.toggle("bg-indigo-600", active);
+            btn.classList.toggle("text-white", active);
+            btn.classList.toggle("text-slate-500", !active);
+        }
+        if (panel) panel.classList.toggle("hidden", !active);
+    });
+    if (tab === "popular") loadPopularPersonas();
+}
+
+function initTabs() {
+    document.querySelectorAll(".persona-tab").forEach((btn) => {
+        btn.addEventListener("click", () => activateTab(btn.dataset.tab));
+    });
+}
+
+// ------------------------------------------------------------
+// みんなのペルソナ(閲覧・利用専用、GET /v1/personas/popular)
+//
+// 【編集・D&D並び替え・長押し削除を無効化する理由(改修要件)】このタブに並ぶのは
+// 他ユーザーが所有するペルソナであり、自分に更新・削除の権限が無い
+// (api/routers/personas.py §6.2の認可ルール)。カードにはdata-actionを一切
+// 持たせず、タップ=「このペルソナを選んで生成画面へ移動する」の1操作のみに
+// 絞ることで、誤操作や誤解(自分のものだと錯覚して編集を試みる等)を防ぐ。
+// ------------------------------------------------------------
+
+function popularPersonaSkeletonHtml() {
+    return Array.from({ length: 4 })
+        .map(
+            () => `<div class="animate-pulse bg-white border border-slate-200 rounded-xl px-3 py-2.5">
+                <div class="h-3.5 bg-slate-200 rounded w-2/5 mb-2"></div>
+                <div class="h-2.5 bg-slate-100 rounded w-3/5 mb-2"></div>
+                <div class="h-2.5 bg-slate-100 rounded w-1/3"></div>
+            </div>`
+        )
+        .join("");
+}
+
+function popularPersonaCardHtml(p) {
+    const toneLabel = TONE_LABELS[p.tone] || p.tone || "";
+    const firstPersonLabel = p.first_person ? `一人称「${escapeHtml(p.first_person)}」` : "";
+    const author = p.author_name ? escapeHtml(p.author_name) : "名無しの語り手";
+    const voiceLine = [toneLabel, firstPersonLabel].filter(Boolean).join("・");
+
+    return `<button type="button" data-persona-id="${escapeHtml(p.persona_id)}" data-persona-name="${escapeHtml(p.name)}"
+        class="popular-persona-card w-full text-left bg-white border border-slate-200 rounded-xl px-3 py-2.5 active:scale-95">
+        <div class="flex items-center justify-between gap-2 mb-1">
+            <span class="text-sm font-bold text-slate-700 truncate">${escapeHtml(p.name)}</span>
+            <span class="shrink-0 text-[10px] text-slate-400">by ${author}</span>
+        </div>
+        <div class="flex items-center gap-2 text-[11px] text-slate-500 mb-1">
+            <span>🔥 ${Number(p.usage_count) || 0}回利用</span>
+            <span>💺 ${Number(p.zabuton_count) || 0}</span>
+        </div>
+        ${voiceLine ? `<p class="text-[11px] text-indigo-500 truncate">${escapeHtml(voiceLine)}</p>` : ""}
+    </button>`;
+}
+
+function renderPopularPersonas(items) {
+    const wrap = document.getElementById("popular-personas-list");
+    if (!wrap) return;
+    if (!items.length) {
+        wrap.innerHTML = `<p class="text-center text-xs text-slate-400 py-6">まだみんなのペルソナがありません。</p>`;
+        return;
+    }
+    wrap.innerHTML = items.map(popularPersonaCardHtml).join("");
+}
+
+async function loadPopularPersonas() {
+    if (popularPersonasLoaded) return;
+    const wrap = document.getElementById("popular-personas-list");
+    if (wrap) wrap.innerHTML = popularPersonaSkeletonHtml();
+
+    // 【コールドスタート待機演出】取得に数秒かかっても手持ち無沙汰にならないよう、
+    // なぞかけ豆知識/名作なぞかけをスケルトンの下にサイクル表示する。
+    const triviaEl = document.getElementById("personas-cold-start-trivia");
+    const stopTrivia = triviaEl ? startTriviaCarousel(triviaEl) : () => {};
+
+    try {
+        const items = await apiFetchPopularPersonas();
+        popularPersonasLoaded = true;
+        renderPopularPersonas(items);
+    } catch (e) {
+        if (wrap) {
+            wrap.innerHTML = `<p class="text-center text-xs text-rose-400 py-6">みんなのペルソナの取得に失敗しました: ${escapeHtml(e.message)}</p>`;
+        }
+    } finally {
+        stopTrivia();
+    }
+}
+
+function onPopularPersonasListClick(ev) {
+    const card = ev.target.closest("[data-persona-id]");
+    if (!card) return;
+    const personaId = card.dataset.personaId;
+    const displayName = card.dataset.personaName;
+    // 【改修要件】カードクリックでselectedPersonaIdにセットし、生成画面でそのまま
+    // 利用可能にする。personas.htmlとindex.htmlは別ページ(別JSコンテキスト)の
+    // ためappStateを直接書き換えられず、sessionStorage経由の一回性の引き継ぎで
+    // 渡す(state.js::consumePendingSelectedPersona参照)。
+    setPendingSelectedPersona({ persona_id: personaId, display_name: displayName });
+    showToast(`「${displayName}」を選択しました。生成画面へ移動します...`, "info");
+    setTimeout(() => {
+        window.location.href = "/index.html";
+    }, 500);
 }
 
 // ------------------------------------------------------------
@@ -584,6 +715,7 @@ function onMyPersonasListClick(ev) {
 }
 
 async function init() {
+    initTabs();
     document.getElementById("edit-mode-toggle")?.addEventListener("click", toggleEditMode);
     const myPersonasList = document.getElementById("my-personas-list");
     myPersonasList?.addEventListener("click", onMyPersonasListClick);
@@ -593,6 +725,7 @@ async function init() {
     myPersonasList?.addEventListener("pointercancel", onMyPersonasListPointerEnd);
     attachLongPressDelegate(myPersonasList, onMyPersonaLongPress);
     attachLongPressDelegate(document.getElementById("builtin-personas-list"), onBuiltinPersonaLongPress);
+    document.getElementById("popular-personas-list")?.addEventListener("click", onPopularPersonasListClick);
     document.getElementById("create-persona-btn")?.addEventListener("click", openCreateForm);
     document.getElementById("persona-form-close")?.addEventListener("click", closeForm);
     document.getElementById("persona-form")?.addEventListener("submit", onFormSubmit);
@@ -612,7 +745,15 @@ async function init() {
         return;
     }
 
-    await Promise.all([loadPersonas(), loadSchema()]);
+    // 【コールドスタート待機演出】マイペルソナ/公式一覧の初回取得中、
+    // スケルトン(HTML側に静的配置済み)の下でなぞかけ豆知識をサイクル表示する。
+    const triviaEl = document.getElementById("personas-cold-start-trivia");
+    const stopTrivia = triviaEl ? startTriviaCarousel(triviaEl) : () => {};
+    try {
+        await Promise.all([loadPersonas(), loadSchema()]);
+    } finally {
+        stopTrivia();
+    }
 }
 
 init();

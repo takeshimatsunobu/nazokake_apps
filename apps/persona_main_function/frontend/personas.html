@@ -15,12 +15,13 @@
     <script type="importmap">
     {
         "imports": {
-            "config": "/config.js?v=20260815a",
-            "state": "/state.js?v=20260815a",
-            "api": "/api.js?v=20260815a",
-            "firebase-config": "/firebase-config.js?v=20260815a",
-            "ui/auth": "/ui/auth.js?v=20260815a",
-            "ui/personas": "/ui/personas.js?v=20260815a",
+            "config": "/config.js?v=20260816a",
+            "state": "/state.js?v=20260816a",
+            "api": "/api.js?v=20260816a",
+            "firebase-config": "/firebase-config.js?v=20260816a",
+            "ui/auth": "/ui/auth.js?v=20260816a",
+            "ui/personas": "/ui/personas.js?v=20260816a",
+            "ui/trivia": "/ui/trivia.js?v=20260816a",
             "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
             "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
         }
@@ -34,6 +35,9 @@
         /* ドラッグハンドル: タッチ操作時にブラウザの縦スクロールへ奪われないよう
            touch-action:noneを明示する(これが無いとモバイルでD&Dが始まらない)。 */
         .drag-handle { touch-action: none; }
+        /* タブ切り替え(公式/マイペルソナ/みんなのペルソナ)。非選択タブのパネルは
+           単純にhiddenで隠す(SPAルーティングは導入しない、既存規約を踏襲)。 */
+        [role="tabpanel"].hidden { display: none; }
     </style>
 </head>
 <body class="bg-slate-100 flex flex-col overflow-hidden">
@@ -47,19 +51,42 @@
 
     <main class="relative flex-1 overflow-y-auto px-3 pt-3 pb-8">
 
+        <!-- ==================== タブ切り替え(公式/マイペルソナ/みんなのペルソナ) ==================== -->
+        <div role="tablist" aria-label="ペルソナの種類" class="grid grid-cols-3 gap-1 mb-4 bg-slate-200/70 rounded-full p-1">
+            <button type="button" id="tab-official" data-tab="official" role="tab"
+                aria-selected="false" aria-controls="panel-official"
+                class="persona-tab text-xs font-bold rounded-full py-1.5 text-slate-500 active:scale-95">
+                公式
+            </button>
+            <button type="button" id="tab-mine" data-tab="mine" role="tab"
+                aria-selected="true" aria-controls="panel-mine"
+                class="persona-tab text-xs font-bold rounded-full py-1.5 text-white bg-indigo-600 active:scale-95">
+                マイペルソナ
+            </button>
+            <button type="button" id="tab-popular" data-tab="popular" role="tab"
+                aria-selected="false" aria-controls="panel-popular"
+                class="persona-tab text-xs font-bold rounded-full py-1.5 text-slate-500 active:scale-95">
+                みんなのペルソナ
+            </button>
+        </div>
+
         <!-- ==================== マイペルソナ ==================== -->
-        <section aria-labelledby="my-personas-heading" class="mb-6">
+        <section id="panel-mine" role="tabpanel" aria-labelledby="tab-mine">
             <div class="flex items-center justify-between mb-2">
-                <h2 id="my-personas-heading" class="text-sm font-black text-slate-700">マイペルソナ</h2>
+                <h2 class="text-sm font-black text-slate-700">マイペルソナ</h2>
                 <button id="edit-mode-toggle" type="button" aria-pressed="false"
                     class="text-xs font-bold text-indigo-600 bg-indigo-50 border border-indigo-200 rounded-full px-3 py-1 active:scale-95">
                     編集
                 </button>
             </div>
 
+            <!-- 【コールドスタート待機演出】初回ロード中はスケルトン行を表示し、
+                 レイアウトシフトを防ぐ(loadPersonas()完了時にJSが実データへ差し替える)。 -->
             <div id="my-personas-list" class="flex flex-col gap-2">
-                <p class="text-center text-xs text-slate-400 py-6">読み込み中...</p>
+                <div class="animate-pulse bg-slate-200 rounded-xl h-11"></div>
+                <div class="animate-pulse bg-slate-200 rounded-xl h-11"></div>
             </div>
+            <p id="personas-cold-start-trivia" class="mt-2 text-center text-[11px] text-indigo-500 font-bold px-2"></p>
 
             <button id="create-persona-btn" type="button"
                 class="mt-3 w-full text-sm font-bold text-indigo-700 bg-white border-2 border-dashed border-indigo-300 rounded-xl py-3 active:scale-95 disabled:opacity-50 disabled:pointer-events-none">
@@ -68,12 +95,22 @@
             <p id="persona-limit-note" class="mt-1 text-center text-[11px] text-slate-400"></p>
         </section>
 
-        <!-- ==================== アプリのペルソナ(組み込み・固定) ==================== -->
-        <section aria-labelledby="builtin-personas-heading">
-            <h2 id="builtin-personas-heading" class="text-sm font-black text-slate-700 mb-2">アプリのペルソナ</h2>
+        <!-- ==================== 公式ペルソナ(組み込み・固定) ==================== -->
+        <section id="panel-official" role="tabpanel" aria-labelledby="tab-official" class="hidden">
+            <h2 class="text-sm font-black text-slate-700 mb-2">公式ペルソナ</h2>
             <div id="builtin-personas-list" class="flex flex-col gap-1.5">
-                <p class="text-center text-xs text-slate-400 py-6">読み込み中...</p>
+                <div class="animate-pulse bg-slate-200 rounded-xl h-11"></div>
+                <div class="animate-pulse bg-slate-200 rounded-xl h-11"></div>
             </div>
+        </section>
+
+        <!-- ==================== みんなのペルソナ(閲覧・利用専用) ====================
+             §改修要件: 編集・D&D並び替え・長押し削除は無効(カードはボタンだが
+             data-action等は持たせず、タップ=生成画面での選択のみを行う)。 -->
+        <section id="panel-popular" role="tabpanel" aria-labelledby="tab-popular" class="hidden">
+            <h2 class="text-sm font-black text-slate-700 mb-1">みんなのペルソナ</h2>
+            <p class="text-[11px] text-slate-400 mb-2">タップすると、そのペルソナを選んで生成画面へ移動します。</p>
+            <div id="popular-personas-list" class="flex flex-col gap-2"></div>
         </section>
     </main>
 
@@ -231,6 +268,6 @@
         </div>
     </div>
 
-    <script type="module" src="/ui/personas.js?v=20260815a"></script>
+    <script type="module" src="/ui/personas.js?v=20260816a"></script>
 </body>
 </html>

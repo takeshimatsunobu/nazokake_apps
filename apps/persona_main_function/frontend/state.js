@@ -18,6 +18,14 @@ const STORAGE_KEYS = {
     // BLOCKEDが判明したらここに保存し、次回訪問時にリロード一発でブロック画面を
     // 復元できるようにする(サーバーへ問い合わせずに済む)。
     blockedUntil: "nazopr_blocked_until",
+    // 【改修要件「みんなの人気ペルソナ」タブ】personas.htmlの「みんなのペルソナ」
+    // タブでカードを選んだ際、生成画面(index.html)へ「これを使って」と1回だけ
+    // 引き継ぐための一時受け渡し用キー。他ユーザーのペルソナはGET /v1/personas
+    // (組み込み+自分の所有のみ)には出てこないため、persona_idだけでなく
+    // 表示用のnameも一緒に運ぶ(index.html側でチップを合成表示するため)。
+    // タブを閉じれば消えてよい一回性の値のためsessionStorageを使う
+    // (他のキーが使うlocalStorageとはあえて分ける)。
+    pendingPersona: "nazopr_pending_persona",
 };
 
 // 記録の無限肥大化を防ぐ上限(古いものから捨てる)。
@@ -91,5 +99,30 @@ export function setCachedBlockedUntil(isoString) {
         localStorage.setItem(STORAGE_KEYS.blockedUntil, isoString);
     } else {
         localStorage.removeItem(STORAGE_KEYS.blockedUntil);
+    }
+}
+
+// ------------------------------------------------------------
+// 「みんなのペルソナ」カード選択 → 生成画面への一回性の引き継ぎ
+// ------------------------------------------------------------
+
+export function setPendingSelectedPersona(persona) {
+    try {
+        sessionStorage.setItem(STORAGE_KEYS.pendingPersona, JSON.stringify(persona));
+    } catch (e) {
+        // ストレージ書き込み失敗は致命的ではない(生成画面側の自動選択が効かなく
+        // なるだけで、通常のペルソナ選択チップ操作は引き続き使える)。
+    }
+}
+
+// 読み取ると同時に消費する(2回目のアクセスで古い選択が復活しないように)。
+export function consumePendingSelectedPersona() {
+    try {
+        const raw = sessionStorage.getItem(STORAGE_KEYS.pendingPersona);
+        if (!raw) return null;
+        sessionStorage.removeItem(STORAGE_KEYS.pendingPersona);
+        return JSON.parse(raw);
+    } catch (e) {
+        return null;
     }
 }
