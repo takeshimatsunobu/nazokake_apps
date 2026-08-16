@@ -725,6 +725,39 @@ CI（`pyright_check.yml`）が `tests/` を実行するため `tests/persona_mai
 - **二重実行防止**: 8秒ACKタイムアウト時、代打を発火する直前に`elyza_job_status`を`"cancelled"`へ書き換え`sync_once_safe()`で即時同期する。`workers/ondemand_elyza_worker.py`のジョブclaim判定は既存のallowlist方式(`_is_claimable()`として単体テスト可能な形に切り出した。`"pending"`または非stale`"processing"`のみclaim可能)のため、`"cancelled"`は追加コード無しで自動的にclaim対象から除外される。
 - **テスト**: `progressive_generate()`を対象にした結合テスト3件(正常系ACK+完了/フォールバック系/二重実行防止のcancelled書き込み確認)、`workers/test_elyza_fallback_claim_guard.py`(6件、`_is_claimable`の全分岐)を新設。既存分と合わせてevaluator/backend 18件・workers 15件、全PASS(実行時間はいずれも数秒、§12.4のconftest.py修正後の水準を維持)。
 
+### 12.6 2026-08-16 「みんなの人気ペルソナ」API拡張（プロンプト公開・offsetページネーション）
+
+§12.4で実装した`GET /v1/personas/popular`を、改修要件に合わせて拡張した。
+
+- **公開方針の転換（ユーザー承認済み）**: 当初は「他人のprompt/settingsは非公開」という
+  §6.2のプライバシーモデルを踏襲し、`display_name`とカウンタのみを返していた。今回の
+  要件は「他ユーザーのペルソナ設定を参考に自分のペルソナを作れるようにする」ことを
+  明示的な目的として追加したため、実装前にAskUserQuestionでユーザーへ確認のうえ、
+  `system_prompt`/`tone`/`first_person`をレスポンスに含める方針へ転換した
+  （`prompt`保存時の§7.5インジェクション対策検査は引き続き有効なため、公開される
+  内容自体が汚染される心配はない）。
+- **レスポンススキーマ変更**: `PopularPersonaItem`を`persona_id`/`name`/`system_prompt`/
+  `tone`/`first_person`/`usage_count`/`zabuton_count`/`author_name`/`author_slug`/
+  `created_at`へ拡張（`display_name`→`name`、`owner_display_name`→`author_name`に改称、
+  `popularity_score`は廃止）。`author_slug`はユーザー専用のslug/ハンドル管理機能が
+  本システムに存在しないため、既存の`owner_uid`（Firebase匿名認証UID）をそのまま転用。
+- **ランキング基準の変更**: 従来の「usage_count＋zabuton_count合計降順」から、
+  「usage_count降順（同数はcreated_at降順でタイブレーク）」へ変更。zabuton_countは
+  将来的な拡張用にレスポンスへ残すのみで、現時点の並び順には使わない。
+- **ページネーション**: `offset`クエリパラメータを追加（`nazokake_core.narrator_personas.
+  list_popular_personas(db, limit, offset)`）。`limit`の上限ガードを20→50に緩和
+  （デフォルトは20→10へ変更、要件通り）。
+- **利用回数のインクリメント配線**: §12.4時点で`persona_generate.py`のPOST /v1/generate
+  （data_origin=="custom" かつ route=="A"）から`narrator_personas.increment_usage_count()`
+  （内部で`firestore.Increment(1)`）が既に呼ばれており、要件を満たすため今回の変更は無し。
+- **テスト**: `test_elyza_fallback_and_popular_personas.py`に6件追加（既存2件は新ランキング
+  基準/offsetに合わせて更新・追加）。改修要件の3テストケースに対応:
+  テストケース1(人気一覧取得・settings展開込み) = `test_case1_list_popular_personas_endpoint_returns_settings_sorted_by_usage_desc`、
+  テストケース2(削除済み除外) = `test_case2_list_popular_personas_sorts_by_usage_desc_and_excludes_deleted_or_hidden`、
+  テストケース3(利用回数カウントアップ) = `test_generate_routed_increments_usage_count_for_custom_persona_route_a`
+  （ルートB時に加算されないことの回帰テストも追加）。evaluator/backend 22件・
+  tests+workers 15件、全PASS。
+
 ### 12.3 2026-08-16 統合モノリス化（案B）: apps/persona_main_functionをapps/evaluator/backendへ統合
 
 **背景**: Cloud Run上でFastAPIを安定・自動稼働させるため、ドメイン・CORS・認証の二重管理を解消する目的で、`apps/persona_main_function`のバックエンドロジック（`/v1/personas`・`/v1/generate`等）を本番バックエンド`apps/evaluator/backend`へ統合した（ユーザー指示による「案B」）。

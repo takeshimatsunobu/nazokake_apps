@@ -263,15 +263,17 @@ def list_visible_personas(db, owner_uid: str) -> list[dict]:
     return visible
 
 
-def list_popular_personas(db, limit: int = 20) -> list[dict]:
+def list_popular_personas(db, limit: int = 10, offset: int = 0) -> list[dict]:
     """「みんなの人気ペルソナ」: カスタムペルソナ(is_builtin==False)を
-    usage_count(利用回数)+zabuton_count(獲得座布団数)の合計降順で返す。
+    usage_count(利用回数)の降順で返す(同数の場合はcreated_at降順=新しい方を
+    先に出す)。zabuton_count(獲得座布団数)は将来的なランキング拡張用に
+    文書へ持たせたまま返すが、現時点では並び順の決定には使わない。
 
     件数の少なさ(list_visible_personasと同じ前提、1ユーザーあたり最大5件)を
     踏まえてPython側でソートする(Firestoreのorder_byは対象フィールドを持たない
-    ドキュメントを暗黙に除外してしまうため、increment_usage_count/
-    increment_zabuton_countがまだ一度も呼ばれていない新規ペルソナが
-    ランキングから消えてしまう問題を避ける狙いもある)。
+    ドキュメントを暗黙に除外してしまうため、increment_usage_countが
+    まだ一度も呼ばれていない新規ペルソナがランキングから消えてしまう問題を
+    避ける狙いもある)。
     """
     docs = (
         db.collection(NARRATOR_PERSONAS_COLLECTION)
@@ -283,10 +285,10 @@ def list_popular_personas(db, limit: int = 20) -> list[dict]:
         p for p in candidates if not p.get("deleted_at") and p.get("is_visible", True)
     ]
     visible.sort(
-        key=lambda p: p.get("usage_count", 0) + p.get("zabuton_count", 0),
+        key=lambda p: (p.get("usage_count", 0), p.get("created_at", "")),
         reverse=True,
     )
-    return visible[:limit]
+    return visible[offset : offset + limit]
 
 
 def increment_usage_count(db, persona_id: str) -> None:

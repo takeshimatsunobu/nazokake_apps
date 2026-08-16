@@ -12,7 +12,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from api.routers import persona_generate
 from api.routers.generate import _fallback_metadata, _wait_for_elyza_ack, progressive_generate
+from api.routers.personas import list_popular_personas as popular_personas_endpoint
+from models.persona_schemas import GenerateRoutedRequest, Step1Result
 from nazokake_core import narrator_personas
 
 
@@ -236,7 +239,10 @@ async def test_case3_fallback_cancels_original_job_to_prevent_double_execution(m
 # ------------------------------------------------------------
 
 
-def test_list_popular_personas_sorts_by_usage_plus_zabuton():
+def test_case2_list_popular_personas_sorts_by_usage_desc_and_excludes_deleted_or_hidden():
+    """テストケース2(削除済み除外): is_deleted相当(deleted_at)のペルソナ、
+    および非表示(is_visible=False)のペルソナはランキングから除外され、残りは
+    usage_count降順で返ること。"""
     db = MagicMock()
     docs_data = [
         {"persona_id": "a", "is_builtin": False, "usage_count": 3, "zabuton_count": 1},
@@ -258,8 +264,30 @@ def test_list_popular_personas_sorts_by_usage_plus_zabuton():
 
     result = narrator_personas.list_popular_personas(db, limit=20)
     ids = [p["persona_id"] for p in result]
-    # d(削除済み)・e(非表示)は除外され、b(11) > a(4) > c(0) の順。
-    assert ids == ["b", "a", "c"]
+    # d(削除済み)・e(非表示)は除外され、usage_count降順でa(3) > b(1) > c(0)。
+    assert ids == ["a", "b", "c"]
+
+
+def test_list_popular_personas_offset_and_limit_slice_the_ranked_list():
+    db = MagicMock()
+    docs_data = [
+        {"persona_id": pid, "is_builtin": False, "usage_count": count, "zabuton_count": 0}
+        for pid, count in [("a", 5), ("b", 4), ("c", 3), ("d", 2), ("e", 1)]
+    ]
+
+    def _to_dict_factory(data):
+        m = MagicMock()
+        m.to_dict.return_value = data
+        return m
+
+    query = MagicMock()
+    query.where.return_value = query
+    query.stream.return_value = [_to_dict_factory(d) for d in docs_data]
+    db.collection.return_value = query
+
+    result = narrator_personas.list_popular_personas(db, limit=2, offset=1)
+    ids = [p["persona_id"] for p in result]
+    assert ids == ["b", "c"]
 
 
 def test_increment_usage_count_is_best_effort_on_failure():
@@ -268,3 +296,140 @@ def test_increment_usage_count_is_best_effort_on_failure():
     # 例外を送出しないことのみを確認する(呼び出し元の生成レスポンスを道連れにしない)。
     narrator_personas.increment_usage_count(db, "some-id")
     narrator_personas.increment_zabuton_count(db, "some-id")
+
+
+# ------------------------------------------------------------
+# みんなの人気ペルソナ: GET /v1/personas/popular エンドポイント本体
+# ------------------------------------------------------------
+
+
+def _make_snapshot(exists: bool, data: dict | None = None) -> MagicMock:
+    snap = MagicMock()
+    snap.exists = exists
+    snap.to_dict.return_value = data
+    return snap
+
+
+@pytest.mark.anyio
+async def test_case1_list_popular_personas_endpoint_returns_settings_sorted_by_usage_desc():
+    """テストケース1(人気一覧取得): 複数のカスタムペルソナが存在する状態で
+    GET /v1/personas/popular相当のエンドポイント関数を呼び出し、
+    usage_count降順で、かつsystem_prompt/tone/first_personがそれぞれの
+    現行バージョンのsettingsから正しく展開されて返ること。"""
+    persona_docs = {
+        "p-popular": {
+            "persona_id": "p-popular", "is_builtin": False, "usage_count": 10,
+            "zabuton_count": 2, "display_name": "人気者", "owner_uid": "uid-1",
+            "owner_display_name": "たろう", "current_version_id": "p-popular__v1",
+            "created_at": "2026-08-01T00:00:00+00:00", "is_visible": True, "deleted_at": None,
+        },
+        "p-minor": {
+            "persona_id": "p-minor", "is_builtin": False, "usage_count": 2,
+            "zabuton_count": 0, "display_name": "地味な子", "owner_uid": "uid-2",
+            "owner_display_name": None, "current_version_id": "p-minor__v1",
+            "created_at": "2026-08-02T00:00:00+00:00", "is_visible": True, "deleted_at": None,
+        },
+    }
+    version_docs = {
+        "p-popular__v1": {"settings": {"prompt": "人気ペルソナのプロンプト", "tone": "energetic", "first_person": "俺"}},
+        "p-minor__v1": {"settings": {"prompt": "地味なペルソナのプロンプト", "tone": "gentle", "first_person": "私"}},
+    }
+
+    query = MagicMock()
+    query.where.return_value = query
+    query.stream.return_value = [
+        _make_snapshot(True, d) for d in [persona_docs["p-popular"], persona_docs["p-minor"]]
+    ]
+
+    def _collection(name):
+        col = MagicMock()
+        if name == "narrator_personas":
+            col.where.return_value = query
+            col.document.side_effect = lambda pid: MagicMock(get=MagicMock(return_value=_make_snapshot(True, persona_docs[pid])))
+        elif name == "narrator_persona_versions":
+            col.document.side_effect = lambda vid: MagicMock(get=MagicMock(return_value=_make_snapshot(True, version_docs[vid])))
+        return col
+
+    db = MagicMock()
+    db.collection.side_effect = _collection
+
+    response = await popular_personas_endpoint(limit=10, offset=0, db=db)
+
+    assert [p.persona_id for p in response.personas] == ["p-popular", "p-minor"]
+    top = response.personas[0]
+    assert top.name == "人気者"
+    assert top.system_prompt == "人気ペルソナのプロンプト"
+    assert top.tone == "energetic"
+    assert top.first_person == "俺"
+    assert top.usage_count == 10
+    assert top.author_name == "たろう"
+    assert top.author_slug == "uid-1"
+    assert top.created_at == "2026-08-01T00:00:00+00:00"
+
+
+@pytest.mark.anyio
+async def test_generate_routed_increments_usage_count_for_custom_persona_route_a():
+    """テストケース3(利用回数カウントアップ): カスタムペルソナ指定でPOST /v1/generateが
+    成功(ルートA)した場合、narrator_personas.increment_usage_countが対象の
+    persona_idで1回だけ呼ばれること(=次にGET /v1/personas/popularを叩けば
+    usage_countが1増えて見える経路)。"""
+    db = MagicMock()
+    resolved = persona_generate._ResolvedPersona(
+        settings={"prompt": "p", "tone": "warm"},
+        version_id="my-uuid-1__deadbeef",
+        display_name="テストペルソナ",
+        data_origin="custom",
+    )
+    step1 = Step1Result(
+        is_valid_input=True,
+        domain_category="daily_life",
+        vocabulary_difficulty="standard",
+        slang_level="none",
+        wordplay_flexibility="medium",
+        topic_scale="personal",
+        is_seasonal=False,
+    )
+
+    with patch("api.routers.persona_generate.check_block_status", return_value=MagicMock(blocked=False)), \
+         patch("api.routers.persona_generate._resolve_persona_for_generation", return_value=resolved), \
+         patch("api.routers.persona_generate.get_cached_step1", return_value=step1), \
+         patch("api.routers.persona_generate.generate_step2", new=AsyncMock(return_value=("A", "解き", "こころ", "本文", "model-x"))), \
+         patch("api.routers.persona_generate.narrator_personas.increment_usage_count") as mock_incr:
+        req = GenerateRoutedRequest(odai="お題", persona_id="my-uuid-1", client_uuid="u1")
+        result = await persona_generate.generate_routed(req, db=db)
+
+    assert result.route == "A"
+    mock_incr.assert_called_once_with(db, "my-uuid-1")
+
+
+@pytest.mark.anyio
+async def test_generate_routed_does_not_increment_usage_count_for_route_b():
+    """異常入力(ルートB)は「利用」として数えない(既存の設計方針、回帰確認)。"""
+    db = MagicMock()
+    resolved = persona_generate._ResolvedPersona(
+        settings={"prompt": "p", "tone": "warm"},
+        version_id="my-uuid-1__deadbeef",
+        display_name="テストペルソナ",
+        data_origin="custom",
+    )
+    step1 = Step1Result(
+        is_valid_input=False,
+        domain_category="general_unknown",
+        vocabulary_difficulty="standard",
+        slang_level="none",
+        wordplay_flexibility="low",
+        topic_scale="personal",
+        is_seasonal=False,
+    )
+
+    with patch("api.routers.persona_generate.check_block_status", return_value=MagicMock(blocked=False)), \
+         patch("api.routers.persona_generate._resolve_persona_for_generation", return_value=resolved), \
+         patch("api.routers.persona_generate.get_cached_step1", return_value=step1), \
+         patch("api.routers.persona_generate.generate_step2", new=AsyncMock(return_value=("B", "解き", "こころ", "本文", "model-x"))), \
+         patch("api.routers.persona_generate.narrator_personas.increment_usage_count") as mock_incr, \
+         patch("api.routers.persona_generate.record_route_b"):
+        req = GenerateRoutedRequest(odai="お題", persona_id="my-uuid-1", client_uuid="u1")
+        result = await persona_generate.generate_routed(req, db=db)
+
+    assert result.route == "B"
+    mock_incr.assert_not_called()

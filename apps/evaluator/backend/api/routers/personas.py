@@ -157,31 +157,40 @@ async def get_personas_schema():
 
 
 @router.get("/v1/personas/popular", response_model=PopularPersonasResponse)
-async def list_popular_personas(limit: int = 20, db=Depends(get_db)):
-    """「みんなの人気ペルソナ」: 他のユーザーが作成したカスタムペルソナのうち、
-    利用回数(usage_count)+獲得座布団数(zabuton_count)の合計が多い順に返す
-    (改修要件、最大10〜20件)。
+async def list_popular_personas(limit: int = 10, offset: int = 0, db=Depends(get_db)):
+    """「みんなの人気ペルソナ」: 他のユーザーが作成したカスタムペルソナを
+    usage_count(利用回数)の降順(同数はcreated_at降順)で返す(改修要件)。
 
     【認証不要な理由】§6.2の「参照可: is_builtin==true ∪ owner_uid==自分」という
-    プライバシーモデルは、マイペルソナ管理画面(所有者本人のみが見る一覧、
-    prompt等の設定内容込み)に対するもの。本エンドポイントは意図的にその例外
-    として、display_name・カウンタのみ(prompt/settings/owner_uidは含めない、
-    PopularPersonaItem参照)を全ユーザーへ公開する「殿堂」的な位置づけの
-    ランキングであり、他人の作品を安全に発見できるようにする狙いのため。
+    プライバシーモデルは、マイペルソナ管理画面(所有者本人のみが見る一覧)に
+    対するもの。本エンドポイントは意図的にその例外として、他ユーザーの
+    カスタムペルソナ(system_prompt/tone/first_person込み)を全ユーザーへ公開する
+    「殿堂」的な位置づけのランキングであり、他人の作品を安全に発見・参考に
+    できるようにする狙いのため(2026-08-16、ユーザー承認済みの方針転換。
+    PopularPersonaItemのdocstring参照)。
     """
-    safe_limit = max(1, min(limit, 20))
-    candidates = narrator_personas.list_popular_personas(db, limit=safe_limit)
-    items = [
-        PopularPersonaItem(
-            persona_id=p.get("persona_id", ""),
-            display_name=p.get("display_name", ""),
-            owner_display_name=p.get("owner_display_name"),
-            usage_count=int(p.get("usage_count", 0)),
-            zabuton_count=int(p.get("zabuton_count", 0)),
-            popularity_score=int(p.get("usage_count", 0)) + int(p.get("zabuton_count", 0)),
+    safe_limit = max(1, min(limit, 50))
+    safe_offset = max(0, offset)
+    candidates = narrator_personas.list_popular_personas(db, limit=safe_limit, offset=safe_offset)
+    items = []
+    for p in candidates:
+        version_id = p.get("current_version_id", "")
+        version = narrator_personas.get_persona_version(db, version_id) if version_id else None
+        settings = (version or {}).get("settings") or {}
+        items.append(
+            PopularPersonaItem(
+                persona_id=p.get("persona_id", ""),
+                name=p.get("display_name", ""),
+                system_prompt=settings.get("prompt", ""),
+                tone=settings.get("tone", ""),
+                first_person=settings.get("first_person", ""),
+                usage_count=int(p.get("usage_count", 0)),
+                zabuton_count=int(p.get("zabuton_count", 0)),
+                author_name=p.get("owner_display_name"),
+                author_slug=p.get("owner_uid", ""),
+                created_at=p.get("created_at", ""),
+            )
         )
-        for p in candidates
-    ]
     return PopularPersonasResponse(personas=items)
 
 

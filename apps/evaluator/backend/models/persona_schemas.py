@@ -335,20 +335,32 @@ class NarratorPersonaItem(BaseModel):
 class PopularPersonaItem(BaseModel):
     """GET /v1/personas/popular の1件分(§改修要件「みんなの人気ペルソナ」)。
 
-    一覧画面での軽量表示に絞り、NarratorPersonaItemが持つsettings/current_version_id
-    等の編集用フィールドは含まない。usage_count/zabuton_countは両方とも
-    nazokake_core.narrator_personasが管理するベストエフォートのカウンタで、
-    ランキング順位はこの2値の合計(popularity_score)で決まる。
+    【2026-08-16の方針転換】当初は「殿堂」的なランキング表示として
+    display_name・カウンタのみを公開し、system_prompt等は非公開としていたが、
+    改修要件により「他ユーザーの作成したペルソナ設定を参考に自分のペルソナを
+    作れるようにする」ことが明示的な目的として追加されたため、
+    system_prompt/tone/first_personを含める方針へユーザー承認のうえ変更した
+    (narrator_personas.PersonaSettingsInputのprompt保存時検証(§7.5)は
+    引き続き有効なため、公開されるprompt自体もプロンプトインジェクション
+    パターンは含まない)。
+
+    author_slugはowner_uid(Firebase匿名認証UID)をそのまま用いる。本システムに
+    ユーザー専用のslug/ハンドル管理機能が存在しないため、既存の識別子を
+    転用したもの。
     """
 
     model_config = ConfigDict(extra="forbid")
 
     persona_id: str
-    display_name: str
-    owner_display_name: str | None = None
+    name: str
+    system_prompt: str
+    tone: str
+    first_person: str
     usage_count: int
     zabuton_count: int
-    popularity_score: int
+    author_name: str | None = None
+    author_slug: str
+    created_at: str
 
 
 class PopularPersonasResponse(BaseModel):
