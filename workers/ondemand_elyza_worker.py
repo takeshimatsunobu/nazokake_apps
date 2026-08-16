@@ -270,6 +270,25 @@ def _find_claimable_doc_ids(db, collection: str) -> list[str]:
     return doc_ids
 
 
+def _is_claimable(status: str | None, locked_at: str | None, stale_cutoff: str) -> bool:
+    """elyza_job_statusとelyza_job_locked_atからclaim可能かどうかを判定する
+    純粋関数(_claim_job_syncのトランザクション内ロジックを単体テスト可能な形で
+    切り出したもの)。
+
+    【ELYZA高速フォールバック・二重実行防止(改修要件)】このallowlist方式
+    (claimable == "pending"またはstale化した"processing"のみ)により、
+    apps/evaluator/backend/api/routers/generate.pyが8秒ACKタイムアウト時に
+    elyza_job_statusへ書き込む"cancelled"は、pending/processingのいずれにも
+    一致せず構造的にclaim対象から除外される。_find_claimable_doc_idsの
+    Firestoreクエリ自体もpending/processing以外を取得しないため、"cancelled"な
+    ジョブは候補にすら上がらない。denylistではなくallowlistで設計しているため、
+    新しい終端ステータスが増えても自動的に安全側に倒れる。
+    """
+    return status == "pending" or (
+        status == "processing" and (locked_at is None or locked_at < stale_cutoff)
+    )
+
+
 def _claim_job_sync(db, collection: str, doc_id: str) -> dict[str, Any] | None:
     """対象ドキュメントをトランザクションで排他的に"processing"へ遷移させる
     (firestore_sync._push_one_syncと同じread-then-writeのアトミック性)。
@@ -290,11 +309,7 @@ def _claim_job_sync(db, collection: str, doc_id: str) -> dict[str, Any] | None:
         remote = snapshot.to_dict() or {}
         status = remote.get("elyza_job_status")
         locked_at = remote.get("elyza_job_locked_at")
-        claimable = status == "pending" or (
-            status == "processing"
-            and (locked_at is None or locked_at < stale_cutoff)
-        )
-        if not claimable:
+        if not _is_claimable(status, locked_at, stale_cutoff):
             return None
         transaction.update(
             doc_ref,

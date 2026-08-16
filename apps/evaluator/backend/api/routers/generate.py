@@ -174,7 +174,7 @@ async def progressive_generate(
             )
             return False
 
-    async def process_elyza_pinch_hitter() -> None:
+    async def process_elyza_pinch_hitter(reason: str) -> None:
         """【緊急対応】自宅ELYZAワーカーの通信回線不調により、Cloud Run本番でも
         オンデマンドジョブキュー(経路B、workers/ondemand_elyza_worker.py)を
         待たず、その場でGemini Flash Liteに代打生成させる。
@@ -183,6 +183,12 @@ async def progressive_generate(
         モデルをllmjp_model_id/llmjp_is_pinch_hitterへ正確に記録する(「ELYZA」
         という虚偽のデータをどのカラムにも書き込まない)。ペルソナ・温度は
         本来ELYZAが使う予定だったものをそのまま引き継ぐ。
+
+        reason: 代打が発火した理由の機械可読な識別子(llmjp_fallback_reasonへ
+        記録し、GET /status/{doc_id}のfallback_reasonとして公開する)。
+        呼び出し元(process_elyza)が"worker_ack_timeout"
+        (8秒ACKタイムアウト)/"worker_completion_timeout"(ACK後の完了待機
+        タイムアウト)/"worker_dead_letter"(ワーカー自身の恒久失敗確定)を渡す。
         """
         pinch_hitter_model_id = "gemini-3.5-flash-lite"
         try:
@@ -201,6 +207,7 @@ async def progressive_generate(
                     "llmjp_status": "generated",
                     "llmjp_model_id": pinch_hitter_model_id,
                     "llmjp_is_pinch_hitter": True,
+                    "llmjp_fallback_reason": reason,
                     "message": "代打Geminiが作品を採点中...",
                     "dpo_pair_id": pair_id,
                 }
@@ -230,6 +237,7 @@ async def progressive_generate(
                     "llmjp_status": "failed",
                     "llmjp_model_id": pinch_hitter_model_id,
                     "llmjp_is_pinch_hitter": True,
+                    "llmjp_fallback_reason": reason,
                     "message": "代打生成中にエラーが発生しました",
                 }
             )
@@ -269,7 +277,21 @@ async def progressive_generate(
                     "ACK(ジョブclaim)が得られなかった(オフラインと判定)ため、"
                     "Gemini Flash代打へ即座に切り替えます。"
                 )
-                await process_elyza_pinch_hitter()
+                # 【二重実行防止】この時点でelyza_job_statusはまだ"pending"のまま
+                # (ワーカーが一度もclaimしていない)。代打を発火する前に"cancelled"へ
+                # 書き換えることで、後から自宅PCが起動しワーカーがポーリングを
+                # 再開しても、_find_claimable_doc_ids/_claim_job_syncの対象条件
+                # (status=="pending" または stale化したprocessing)のいずれにも
+                # 一致せず、二度とこのジョブをclaimできなくなる
+                # (workers/ondemand_elyza_worker.py::_claim_job_sync参照、
+                # 追加のガード実装は不要でこの1点のみで成立する設計)。
+                # sync_once_safe()でFirestoreへ即時反映し、ワーカーのポーリングとの
+                # 競合窓をできるだけ短くする(generate_ai()の初回書き込みと同じ理由)。
+                await async_upsert_item(
+                    {"doc_id": doc_id, "elyza_job_status": "cancelled"}
+                )
+                await sync_once_safe()
+                await process_elyza_pinch_hitter("worker_ack_timeout")
                 return
 
             logger.info(
@@ -287,7 +309,7 @@ async def progressive_generate(
                 f"[{doc_id}] ⚠️ ローカルワーカーが制限時間内に応答しなかった"
                 "(またはdead_letterへ隔離済み)ため、Gemini Flash代打へ切り替えます。"
             )
-            await process_elyza_pinch_hitter()
+            await process_elyza_pinch_hitter("worker_completion_timeout")
             return
         try:
             raw_result_l = await generate_via_llmjp(odai, persona_prompt, temperature)
@@ -389,6 +411,7 @@ _ELYZA_JOB_MERGE_FIELDS = (
     "s_total_llmjp",
     "overall_llmjp",
     "axis_comments_llmjp",
+    "llmjp_fallback_reason",
 )
 
 
@@ -650,10 +673,12 @@ async def get_status(doc_id: str):
 
 
 def _fallback_metadata(data: dict) -> dict:
-    """8秒ACK判定・Gemini Flash自動フォールバックの応答メタデータを、既存の
-    llmjp_is_pinch_hitter/llmjp_model_idから導出する(新規スキーマ列は追加しない、
-    既存フィールドの別名ビュー)。is_pinch_hitterはprocess_elyza_pinch_hitter()
-    経由(ACKタイムアウト・完了タイムアウトいずれの代打分岐でも)でのみtrueになる。
+    """8秒ACK判定・Gemini Flash自動フォールバックの応答メタデータを導出する。
+    fallback_triggered/engineはllmjp_is_pinch_hitterから(新規スキーマ列を
+    追加しない既存フィールドの別名ビュー)、fallback_reasonはllmjp_fallback_reason
+    (新設列、process_elyza_pinch_hitter()が"worker_ack_timeout"等を記録する)
+    からそのまま返す。is_pinch_hitterはprocess_elyza_pinch_hitter()経由
+    (ACKタイムアウト・完了タイムアウトいずれの代打分岐でも)でのみtrueになる。
 
     純粋関数として切り出し、get_status()を経由せず単体テストできるようにする。
     """
@@ -661,6 +686,7 @@ def _fallback_metadata(data: dict) -> dict:
     return {
         "fallback_triggered": is_fallback,
         "engine": "gemini-flash (fallback)" if is_fallback else "elyza",
+        "fallback_reason": data.get("llmjp_fallback_reason") if is_fallback else None,
     }
 
 

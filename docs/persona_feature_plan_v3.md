@@ -717,6 +717,14 @@ CI（`pyright_check.yml`）が `tests/` を実行するため `tests/persona_mai
 
 **テスト**: `apps/evaluator/backend/test_elyza_fallback_and_popular_personas.py`(単体8件)新設、全件PASS。実Firestore/Gemini経由のE2E(マイペルソナ作成→生成→座布団→カウンタ確認→人気一覧反映→クリーンアップ)も実施し成功。
 
+### 12.5 2026-08-16 ELYZA高速フォールバックの拡張（fallback_reason・二重実行防止）
+
+§12.4で実装した8秒ACK判定・Gemini Flash自動フォールバックに、以下を追加した。
+
+- **`fallback_reason`**: 代打が発火した理由の機械可読な識別子(`"worker_ack_timeout"`=8秒ACKタイムアウト、`"worker_completion_timeout"`=ACK後の完了待機タイムアウト/dead_letter)。新規Alembicマイグレーション`e2c4a8f1d6b3_add_llmjp_fallback_reason_field.py`で`nazokake_items.llmjp_fallback_reason`列(nullable)を追加し、`process_elyza_pinch_hitter(reason: str)`が記録、`GET /status/{doc_id}`の`_fallback_metadata()`で公開する。
+- **二重実行防止**: 8秒ACKタイムアウト時、代打を発火する直前に`elyza_job_status`を`"cancelled"`へ書き換え`sync_once_safe()`で即時同期する。`workers/ondemand_elyza_worker.py`のジョブclaim判定は既存のallowlist方式(`_is_claimable()`として単体テスト可能な形に切り出した。`"pending"`または非stale`"processing"`のみclaim可能)のため、`"cancelled"`は追加コード無しで自動的にclaim対象から除外される。
+- **テスト**: `progressive_generate()`を対象にした結合テスト3件(正常系ACK+完了/フォールバック系/二重実行防止のcancelled書き込み確認)、`workers/test_elyza_fallback_claim_guard.py`(6件、`_is_claimable`の全分岐)を新設。既存分と合わせてevaluator/backend 18件・workers 15件、全PASS(実行時間はいずれも数秒、§12.4のconftest.py修正後の水準を維持)。
+
 ### 12.3 2026-08-16 統合モノリス化（案B）: apps/persona_main_functionをapps/evaluator/backendへ統合
 
 **背景**: Cloud Run上でFastAPIを安定・自動稼働させるため、ドメイン・CORS・認証の二重管理を解消する目的で、`apps/persona_main_function`のバックエンドロジック（`/v1/personas`・`/v1/generate`等）を本番バックエンド`apps/evaluator/backend`へ統合した（ユーザー指示による「案B」）。

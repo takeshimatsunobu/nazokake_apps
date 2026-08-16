@@ -299,6 +299,12 @@ class NazokakeItemORM(Base):
     # 復元処理を全滅させた実例を踏まえた、意図的な設計判断。
     llmjp_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
     llmjp_is_pinch_hitter: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    # 【ELYZA高速フォールバック(8秒ACK判定)】代打が発火した理由の機械可読な識別子
+    # ("worker_ack_timeout"=8秒以内にワーカーからのACKが得られなかった、
+    # "worker_completion_timeout"=ACK後の完了待機がタイムアウトした、
+    # "worker_dead_letter"=ワーカー自身が恒久失敗として確定した)。nullable
+    # (llmjp_is_pinch_hitterと同じ理由、通常のELYZA成功パスでは常にNULL)。
+    llmjp_fallback_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     # --- persona_feature_plan_v3.md Phase3: 語り手ペルソナへの論理参照(§3.5) ---
     # Firestore(narrator_personas/narrator_persona_versions、Phase4で新設予定)を
     # SSoTとするため、ここではFK制約を張らない論理参照カラムとして持つのみ。
@@ -842,6 +848,7 @@ _NAZOKAKE_ITEM_BULK_DEFAULTS: dict[str, Any] = {
     # 踏まえ「意図的にNone」であることを明示するため、念のため追記しておく。
     "llmjp_model_id": None,
     "llmjp_is_pinch_hitter": None,
+    "llmjp_fallback_reason": None,
     # persona_feature_plan_v3.md Phase3で新設したNOT NULL列(server_default有り)。
     # 上記is_fewshot_selectedと全く同じ教訓(このリストへの追記漏れが起動時リストア
     # 全滅の実例を過去に生んでいる)を踏まえ、旧Firestoreドキュメントがこの4キーを
