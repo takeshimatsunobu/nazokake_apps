@@ -34,10 +34,14 @@ Depends(verify_user_token)を要求する。所有者判定は必ずFirebase UID
 
 from __future__ import annotations
 
+import asyncio
+
 from fastapi import APIRouter, Depends, HTTPException
 
-from api.deps import get_db, verify_user_token
+from api.deps import get_db, verify_admin_token, verify_user_token
 from models.persona_schemas import (
+    AdminPersonaAuditItem,
+    AdminPersonaAuditListResponse,
     NarratorPersonaItem,
     NarratorPersonaListResponse,
     PersonaCreateRequest,
@@ -343,3 +347,46 @@ async def apply_persona_transfer_code(
         raise HTTPException(status_code=400, detail=str(e))
 
     return TransferCodeApplyResponse(transferred_count=transferred_count, new_owner_uid=uid)
+
+
+@router.get("/v1/admin/personas", response_model=AdminPersonaAuditListResponse)
+async def list_all_personas_for_admin_audit(
+    admin_token: dict = Depends(verify_admin_token),
+    db=Depends(get_db),
+):
+    """管理コクピットの全ペルソナ監査テーブル向け。narrator_personasの全件
+    (論理削除・非表示・ビルトインを問わず無条件)を、設定内容(system_prompt/
+    tone/first_person)込みで返す。GET /v1/personas/popular(公開ランキング、
+    プロンプト非公開だった旧方針から2026-08-16に公開へ転換済み)とは異なり、
+    管理者専用(verify_admin_token、招待制承認済みアカウントのみ)のため
+    is_deleted・author_slug(owner_uid)も含めて全件返す。
+
+    【ディープ監査#2の教訓を踏襲】narrator_personas.list_all_personas_for_admin()/
+    get_persona_version()はいずれも同期・ブロッキングなFirestore I/Oのため、
+    asyncio.to_threadでラップしイベントループを塞がないようにする。
+    """
+    candidates = await asyncio.to_thread(narrator_personas.list_all_personas_for_admin, db)
+    items: list[AdminPersonaAuditItem] = []
+    for p in candidates:
+        version_id = p.get("current_version_id", "")
+        version = (
+            await asyncio.to_thread(narrator_personas.get_persona_version, db, version_id)
+            if version_id
+            else None
+        )
+        settings = (version or {}).get("settings") or {}
+        items.append(
+            AdminPersonaAuditItem(
+                persona_id=p.get("persona_id", ""),
+                created_at=p.get("created_at", ""),
+                author_slug=p.get("owner_uid", ""),
+                name=p.get("display_name", ""),
+                first_person=settings.get("first_person", ""),
+                tone=settings.get("tone", ""),
+                system_prompt=settings.get("prompt", ""),
+                usage_count=int(p.get("usage_count", 0)),
+                zabuton_count=int(p.get("zabuton_count", 0)),
+                is_deleted=bool(p.get("deleted_at")),
+            )
+        )
+    return AdminPersonaAuditListResponse(personas=items)

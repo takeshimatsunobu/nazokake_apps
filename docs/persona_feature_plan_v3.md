@@ -947,6 +947,45 @@ evaluator/backend 30件・tests+workers 20件、全PASS（合計50件、既存�
 新設。既存分と合わせevaluator/backend 40件・tests+workers 20件、合計60件、全PASS。
 `node --check`で`app.js`の構文エラー無しを確認。
 
+### 12.11 2026-08-17 トップ画面へのペルソナUI統合＆管理コクピット全ペルソナ監査テーブル
+
+**トップ画面（`/index.html`）**: `<select id="persona">`（optgroup方式）を廃止し、
+カテゴリ切替ピルタブ（🏛️公式/👤マイペルソナ/🔥人気）＋水平スクロールチップ＋
+「➕新規作成」チップへ全面刷新した。実際に送信する`persona_id`は非表示input
+(`#persona`)に保持し、`startGeneration()`側の変更は最小限に留めた。チップ選択時に
+`#persona-preview`へ雰囲気・一人称のプレビューを表示する。「➕新規作成」チップは
+`/personas/personas.html`への画面遷移をやめ、`#persona-create-modal`
+（Bottom Sheet）をその場で開くように変更（既存の高度な管理画面(並び替え・削除・
+引き継ぎコード)はヘッダーの🎭リンクから引き続き利用可能）。モーダルは
+`POST /v1/personas/draft`（キーワード→Geminiおまかせ下書き）→`POST /v1/personas`
+（保存）の順で呼び、保存成功時にモーダルを閉じてマイペルソナタブへ切替・
+即座に選択状態へ反映する。この刷新に伴い、旧`<select>`前提だった
+ディープ監査#6（bfcache誤送信ガード）のセンチネル値ガードは構造的に不要になり削除。
+
+**管理コクピット（`/admin.html` Ⅳ生成設定タブ）**: `GET /v1/admin/personas`
+（新設、`verify_admin_token`必須）を追加。`narrator_personas.
+list_all_personas_for_admin()`（論理削除・非表示・ビルトインを問わず無条件に
+全件返す、他の一覧系関数と違い唯一フィルタを持たない関数）で取得した全件に、
+`get_persona_version()`でsettings(prompt/tone/first_person)を展開して返す。
+フロントは「全ペルソナ監査」セクションを新設し、UUID・作成日時・名前・
+一人称/口調・プロンプト(展開表示)・利用回数・座布団数・状態(有効/削除済み)の
+テーブルを描画。名前・UUID・作成者IDでのキーワード検索、削除済み非表示
+チェックボックスによる絞り込みに対応。
+
+**ディープ監査#2の教訓を新規コードにも適用**: 新設した`GET /v1/admin/personas`
+エンドポイント内の`list_all_personas_for_admin()`/`get_persona_version()`
+呼び出しは、いずれも同期・ブロッキングなFirestore I/Oのため`asyncio.to_thread`
+でラップしてイベントループを塞がないようにした(新規実装の時点から健全な
+パターンを踏襲)。
+
+**テスト**: `test_admin_personas_audit.py`(新規4件: 全件取得の無フィルタ確認、
+Firestore障害時の空リスト縮退、ルーターの全フィールド組み立て確認、
+version文書欠落時のフォールバック確認)を追加。既存分と合わせ
+evaluator/backend 44件・tests+workers 20件、合計64件、全PASS。`node --check`で
+`app.js`/`api.js`/`admin.js`/`main_admin.js`の構文エラー無しを確認。
+dev_server.py経由で新UI(チップ・モーダル・監査テーブル)のマークアップが
+正しく配信されることを確認済み。
+
 ### 12.3 2026-08-16 統合モノリス化（案B）: apps/persona_main_functionをapps/evaluator/backendへ統合
 
 **背景**: Cloud Run上でFastAPIを安定・自動稼働させるため、ドメイン・CORS・認証の二重管理を解消する目的で、`apps/persona_main_function`のバックエンドロジック（`/v1/personas`・`/v1/generate`等）を本番バックエンド`apps/evaluator/backend`へ統合した（ユーザー指示による「案B」）。

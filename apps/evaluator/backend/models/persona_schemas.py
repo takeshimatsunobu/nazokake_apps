@@ -369,6 +369,33 @@ class PopularPersonasResponse(BaseModel):
     personas: list[PopularPersonaItem]
 
 
+class AdminPersonaAuditItem(BaseModel):
+    """GET /v1/admin/personas の1件分(管理コクピット向け全ペルソナ監査)。
+
+    PopularPersonaItemと異なり、管理者専用(verify_admin_token)エンドポイントの
+    ため意図的に非公開情報(author_slug=owner_uid、is_deleted)も含める。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    persona_id: str
+    created_at: str
+    author_slug: str
+    name: str
+    first_person: str
+    tone: str
+    system_prompt: str
+    usage_count: int
+    zabuton_count: int
+    is_deleted: bool
+
+
+class AdminPersonaAuditListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    personas: list[AdminPersonaAuditItem]
+
+
 class NarratorPersonaListResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -30,20 +30,20 @@
         <script type="importmap">
         {
             "imports": {
-                "config": "/config.js?v=20260817a",
-                "state": "/state.js?v=20260817a",
-                "api": "/api.js?v=20260817a",
-                "app": "/app.js?v=20260817a",
-                "admin": "/admin.js?v=20260817a",
-                "firebase-config": "/firebase-config.js?v=20260817a",
-                "ui/auth": "/ui/auth.js?v=20260817a",
-                "ui/toast": "/ui/toast.js?v=20260817a",
-                "ui/tabs": "/ui/tabs.js?v=20260817a",
-                "ui/feed": "/ui/feed.js?v=20260817a",
-                "ui/board": "/ui/board.js?v=20260817a",
-                "ui/form": "/ui/form.js?v=20260817a",
-                "ui/result": "/ui/result.js?v=20260817a",
-                "ui/feedback": "/ui/feedback.js?v=20260817a",
+                "config": "/config.js?v=20260818a",
+                "state": "/state.js?v=20260818a",
+                "api": "/api.js?v=20260818a",
+                "app": "/app.js?v=20260818a",
+                "admin": "/admin.js?v=20260818a",
+                "firebase-config": "/firebase-config.js?v=20260818a",
+                "ui/auth": "/ui/auth.js?v=20260818a",
+                "ui/toast": "/ui/toast.js?v=20260818a",
+                "ui/tabs": "/ui/tabs.js?v=20260818a",
+                "ui/feed": "/ui/feed.js?v=20260818a",
+                "ui/board": "/ui/board.js?v=20260818a",
+                "ui/form": "/ui/form.js?v=20260818a",
+                "ui/result": "/ui/result.js?v=20260818a",
+                "ui/feedback": "/ui/feedback.js?v=20260818a",
                 "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
                 "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
             }
@@ -116,26 +116,24 @@
                             <input type="text" id="odaiInput" placeholder="お題を入力 (例: 大谷翔平)" class="w-full px-5 py-4 bg-gray-50 border-2 border-[#C5B358]/30 rounded-xl shadow-inner focus:bg-white focus:outline-none focus:border-[#C5B358] focus:ring-4 focus:ring-[#C5B358]/20 transition-all duration-300 text-lg">
                         </div>
                         <div class="mb-4">
-                            <label for="persona" class="block text-xs font-bold text-gray-600 mb-1">🎭 語り手のペルソナ</label>
-                            <!-- 【2026-08-16改修: マイペルソナ/みんなのペルソナ対応】ビルトイン10体は
-                                 段階的機能向上(progressive enhancement)のため静的に残す(JS未実行/
-                                 API失敗時もこのグループだけは確実に選択できる)。マイペルソナ・
-                                 みんなのペルソナ・＋新規作成の3グループはapp.js::loadPersonaOptions()
-                                 が起動時に動的追加する(personaGroupsBuiltinOptgroup参照)。 -->
-                            <select id="persona" class="w-full px-4 py-3 bg-gray-50 border-2 border-[#C5B358]/30 rounded-xl shadow-inner focus:bg-white focus:outline-none focus:border-[#C5B358] focus:ring-4 focus:ring-[#C5B358]/20 transition-all duration-300 text-sm">
-                                <optgroup label="🏛️ 公式" id="persona-group-builtin">
-                                    <option value="1">1. 昭和生まれの天才漫才師</option>
-                                    <option value="2">2. 辞書の編纂者</option>
-                                    <option value="3">3. アジア系ITエンジニア</option>
-                                    <option value="4">4. 大阪のおばちゃん</option>
-                                    <option value="5">5. 理屈っぽい中学2年生男子</option>
-                                    <option value="6">6. 超ポジティブな高2ギャル</option>
-                                    <option value="7">7. マニアックな大学生</option>
-                                    <option value="8">8. 人間観察が趣味の女子大生</option>
-                                    <option value="9">9. 社会の不条理に揉まれる若手OL</option>
-                                    <option value="10">10. 横文字だらけの中年起業家</option>
-                                </optgroup>
-                            </select>
+                            <label class="block text-xs font-bold text-gray-600 mb-1">🎭 語り手のペルソナ</label>
+                            <!-- 【改修要件: トップ画面へのペルソナUI統合】<select>を廃止し、
+                                 カテゴリ切替ピルタブ+水平スクロールチップへ置き換える。実際に
+                                 送信するpersona_idは非表示inputで保持し(app.js::startGeneration
+                                 側の変更を最小化)、チップクリック時にJSがこの値を更新する。 -->
+                            <input type="hidden" id="persona" value="1">
+                            <div id="persona-category-tabs" class="flex gap-1.5 mb-2" role="tablist" aria-label="ペルソナの種類">
+                                <button type="button" data-category="builtin" class="persona-category-tab text-xs font-bold rounded-full px-3 py-1.5 bg-[#902A19] text-white" aria-selected="true">🏛️ 公式</button>
+                                <button type="button" data-category="mine" class="persona-category-tab text-xs font-bold rounded-full px-3 py-1.5 bg-gray-100 text-gray-600" aria-selected="false">👤 マイペルソナ</button>
+                                <button type="button" data-category="popular" class="persona-category-tab text-xs font-bold rounded-full px-3 py-1.5 bg-gray-100 text-gray-600" aria-selected="false">🔥 人気</button>
+                            </div>
+                            <div id="persona-chip-scroll" class="flex gap-1.5 overflow-x-auto pb-1" style="-ms-overflow-style: none; scrollbar-width: none;">
+                                <button type="button" id="persona-create-chip" class="persona-chip shrink-0 whitespace-nowrap text-xs font-bold px-3 py-1.5 rounded-full border-2 border-dashed border-[#902A19]/40 text-[#902A19]">
+                                    ➕ 新規作成
+                                </button>
+                                <p class="text-xs text-gray-400 py-1.5">読み込み中...</p>
+                            </div>
+                            <div id="persona-preview" class="hidden mt-2 text-[11px] text-gray-500 bg-gray-50 rounded-lg px-3 py-2"></div>
                         </div>
                         <div class="mb-6">
                             <label for="temperature" class="flex justify-between items-center text-xs font-bold text-gray-600 mb-1">
@@ -508,8 +506,70 @@
         <span class="text-[9px] sm:text-[10px] font-bold truncate w-full text-center">掲示板</span>
     </button>
 </nav>
+
+    <!-- 【改修要件: ペルソナ作成スライドインモーダル】画面遷移なしでマイペルソナを
+         作成できる軽量モーダル(Bottom Sheet)。personas/personas.html(高度な管理:
+         並び替え・削除・引き継ぎコード)とは別に、ここでは作成のみをサポートする。 -->
+    <div id="persona-create-modal" class="hidden fixed inset-0 z-40 bg-black/60 flex items-end sm:items-center justify-center">
+        <div class="w-full sm:max-w-md bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl p-4 max-h-[85vh] overflow-y-auto">
+            <div class="flex items-center justify-between mb-3">
+                <h2 class="text-sm font-black text-[#902A19]">🎭 マイペルソナを作る</h2>
+                <button id="persona-create-close" type="button" class="text-gray-400 text-xl leading-none px-1" aria-label="閉じる">&times;</button>
+            </div>
+
+            <div class="flex items-center gap-1 mb-1">
+                <label for="persona-create-keyword" class="text-xs font-bold text-gray-600">キーワードからおまかせ</label>
+            </div>
+            <div class="flex gap-2 mb-4">
+                <input id="persona-create-keyword" type="text" placeholder="例: 江戸っ子の職人" maxlength="30"
+                    class="flex-1 min-w-0 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#902A19]/40">
+                <button id="persona-create-draft-btn" type="button"
+                    class="shrink-0 text-xs font-bold text-white bg-fuchsia-600 rounded-lg px-3 py-2 active:scale-95 disabled:opacity-50 disabled:pointer-events-none flex items-center gap-1.5">
+                    <svg id="persona-create-draft-spinner" class="hidden animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                    </svg>
+                    <span id="persona-create-draft-label">✨ Geminiにおまかせ</span>
+                </button>
+            </div>
+
+            <label for="persona-create-name" class="block text-xs font-bold text-gray-600 mb-1">呼び名</label>
+            <input id="persona-create-name" type="text" maxlength="30" required
+                class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-[#902A19]/40">
+
+            <label for="persona-create-prompt" class="block text-xs font-bold text-gray-600 mb-1">人格の説明</label>
+            <textarea id="persona-create-prompt" rows="4" maxlength="2000" required
+                class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-[#902A19]/40"></textarea>
+
+            <div class="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                    <label for="persona-create-first-person" class="block text-xs font-bold text-gray-600 mb-1">一人称</label>
+                    <input id="persona-create-first-person" type="text" maxlength="30"
+                        class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#902A19]/40">
+                </div>
+                <div>
+                    <label for="persona-create-tone" class="block text-xs font-bold text-gray-600 mb-1">雰囲気</label>
+                    <select id="persona-create-tone" class="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#902A19]/40">
+                        <option value="gentle">おだやか</option>
+                        <option value="energetic">元気いっぱい</option>
+                        <option value="cool">クール</option>
+                        <option value="warm">あたたかい</option>
+                        <option value="sharp">辛口</option>
+                        <option value="playful">おちゃめ</option>
+                        <option value="serious">まじめ</option>
+                    </select>
+                </div>
+            </div>
+
+            <button id="persona-create-save-btn" type="button"
+                class="w-full text-sm font-bold text-white bg-[#902A19] rounded-full py-2.5 active:scale-95 disabled:opacity-50 disabled:pointer-events-none">
+                保存してこのペルソナを選択
+            </button>
+        </div>
+    </div>
+
         <!-- import mapを経由しないエントリーポイント自体もキャッシュバスティング対象に含める -->
-        <script type="module" src="/main_index.js?v=20260817a"></script>
+        <script type="module" src="/main_index.js?v=20260818a"></script>
     </body>
 </html>
 

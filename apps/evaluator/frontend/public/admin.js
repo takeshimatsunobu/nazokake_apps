@@ -1,5 +1,5 @@
 import { firebaseConfig } from "firebase-config";
-import { API_BASE } from "config";
+import { API_BASE, V1_API_BASE } from "config";
 import { uiSwitchTab } from "ui/tabs";
 
 // 【Phase 0】招待URL(?invite=<token>)のトークンをsessionStorageへ退避しておく
@@ -1587,6 +1587,96 @@ export async function clearPersonaConfig(personaId) {
     }
 }
 
+// ------------------------------------------------------------
+// 【改修要件】全ペルソナ監査テーブル(GET /v1/admin/personas)。
+// マイペルソナ/みんなのペルソナ管理(Ⅳペイン既存部分、ビルトインのプロンプト
+// 上書きが対象)とは別物: こちらはユーザーが作成した narrator_personas 文書
+// (論理削除・非表示含む全件)をそのまま一覧監査する。
+// ------------------------------------------------------------
+
+let _personaAuditCache = [];
+const _expandedAuditPromptIds = new Set();
+
+async function loadPersonaAudit() {
+    const tbody = document.getElementById('persona-audit-tbody');
+    if (!tbody) return;
+    try {
+        // GET /v1/admin/personas は /api プレフィックス無しの絶対パス(V1_API_BASE、
+        // config.js参照)であり、既存のadmin系エンドポイント(API_BASE=/api配下)とは
+        // ベースURLが異なる。authFetchは(Bearer付与・503リトライ・401ログアウト)
+        // だけを担う汎用ラッパーのため、URL自体はここで組み立てる。
+        const res = await authFetch(`${V1_API_BASE}/v1/admin/personas`);
+        _personaAuditCache = res.personas || [];
+        renderPersonaAuditTable();
+    } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center py-10 text-red-500">読み込みに失敗しました: ${_escapeHtml(e.message)}</td></tr>`;
+    }
+}
+
+function renderPersonaAuditTable() {
+    const tbody = document.getElementById('persona-audit-tbody');
+    const countEl = document.getElementById('persona-audit-count');
+    if (!tbody) return;
+
+    const keyword = (document.getElementById('persona-audit-search')?.value || '').trim().toLowerCase();
+    const hideDeleted = document.getElementById('persona-audit-hide-deleted')?.checked || false;
+
+    const filtered = _personaAuditCache.filter((p) => {
+        if (hideDeleted && p.is_deleted) return false;
+        if (!keyword) return true;
+        return (
+            (p.name || '').toLowerCase().includes(keyword)
+            || (p.persona_id || '').toLowerCase().includes(keyword)
+            || (p.author_slug || '').toLowerCase().includes(keyword)
+        );
+    });
+
+    if (countEl) {
+        countEl.textContent = `${filtered.length} / ${_personaAuditCache.length}件を表示`;
+    }
+
+    if (!filtered.length) {
+        tbody.innerHTML = '<tr><td colspan="8" class="text-center py-10 text-gray-400">該当するペルソナが見つかりません</td></tr>';
+        return;
+    }
+
+    tbody.innerHTML = filtered.map(renderPersonaAuditRow).join('');
+}
+
+function renderPersonaAuditRow(p) {
+    const expanded = _expandedAuditPromptIds.has(p.persona_id);
+    const prompt = p.system_prompt || '';
+    const promptCell = expanded
+        ? `<div class="max-w-[320px] whitespace-pre-wrap break-words">${_escapeHtml(prompt)}</div>`
+        : `<div class="max-w-[320px] truncate">${_escapeHtml(prompt.slice(0, 40))}${prompt.length > 40 ? '…' : ''}</div>`;
+    const statusBadge = p.is_deleted
+        ? '<span class="text-[10px] font-bold bg-rose-100 text-rose-700 rounded-full px-2 py-0.5">削除済み</span>'
+        : '<span class="text-[10px] font-bold bg-emerald-100 text-emerald-700 rounded-full px-2 py-0.5">有効</span>';
+
+    return `<tr class="border-b border-gray-100 hover:bg-gray-50 align-top">
+        <td class="p-2 font-mono text-[10px] text-gray-500 break-all max-w-[140px]">${_escapeHtml(p.persona_id)}</td>
+        <td class="p-2 whitespace-nowrap text-gray-500">${_escapeHtml((p.created_at || '').slice(0, 19).replace('T', ' '))}</td>
+        <td class="p-2 font-bold text-gray-800">${_escapeHtml(p.name)}</td>
+        <td class="p-2 text-gray-600">${_escapeHtml(p.first_person)} / ${_escapeHtml(p.tone)}</td>
+        <td class="p-2 text-gray-600">
+            ${promptCell}
+            ${prompt ? `<button type="button" data-action="togglePersonaAuditPrompt" data-persona-id="${_escapeHtml(p.persona_id)}" class="text-indigo-600 text-[10px] font-bold underline mt-1">${expanded ? '閉じる' : '全文を見る'}</button>` : ''}
+        </td>
+        <td class="p-2 text-right text-gray-600">${p.usage_count}</td>
+        <td class="p-2 text-right text-gray-600">${p.zabuton_count}</td>
+        <td class="p-2">${statusBadge}</td>
+    </tr>`;
+}
+
+export function togglePersonaAuditPrompt(personaId) {
+    if (_expandedAuditPromptIds.has(personaId)) {
+        _expandedAuditPromptIds.delete(personaId);
+    } else {
+        _expandedAuditPromptIds.add(personaId);
+    }
+    renderPersonaAuditTable();
+}
+
 // 管理画面初期化フック。091のDDD再編でパージされた「アプリ利用状況」
 // 「承認待ちデータ」は、対応するバックエンドAPI(/api/metrics/summary,
 // /api/admin/pending)をmain.py/metrics.py/admin.pyへ新設した上で読込を再実装した。
@@ -1602,6 +1692,9 @@ async function initAdmin() {
     document.getElementById('gcp-costs-reload-btn')?.addEventListener('click', () => loadGcpCosts());
     document.getElementById('personas-reload-btn')?.addEventListener('click', () => loadPersonaConfigs());
     document.getElementById('persona-edit-close')?.addEventListener('click', () => closePersonaEditModal());
+    document.getElementById('persona-audit-reload-btn')?.addEventListener('click', () => loadPersonaAudit());
+    document.getElementById('persona-audit-search')?.addEventListener('input', () => renderPersonaAuditTable());
+    document.getElementById('persona-audit-hide-deleted')?.addEventListener('change', () => renderPersonaAuditTable());
 
     // 【重要】バッジ集計(_previousLoginAtの確定)を他のload*()より先に完了させる。
     // これより後のload*()群(DLQ/承認待ちデータ/承認待ち管理者)は_previousLoginAtを
@@ -1629,5 +1722,6 @@ async function initAdmin() {
         loadApiCosts(),
         loadGcpCosts(),
         loadPersonaConfigs(),
+        loadPersonaAudit(),
     ]);
 }

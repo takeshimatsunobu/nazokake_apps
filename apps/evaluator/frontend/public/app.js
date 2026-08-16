@@ -7,6 +7,7 @@ import { appState } from "state";
 import {
     apiLogEvent, apiGenerate, apiGetStatus, apiSubmitHumanRiddle, apiFetchFeed, apiSubmitFeedEvaluation,
     apiSubmitFeedback, apiFetchBoard, apiPostBoard, apiFetchPersonas, apiFetchPopularPersonas,
+    apiDraftPersona, apiCreatePersona,
 } from "api";
 import { uiSwitchTab } from "ui/tabs";
 import {
@@ -48,85 +49,251 @@ export async function shareText(odai, toku, kokoro, score, isHuman) {
     }
 }
 
-// 【2026-08-16改修: メイン画面のマイペルソナ/みんなのペルソナ対応】
-// ページ読み込み時に一度だけ呼び、<select id="persona">へ「マイペルソナ」
-// 「みんなのペルソナ」「＋新規作成」の3optgroupを動的に追加する。ビルトイン
-// 10体は既にHTML側に静的に存在する(段階的機能向上、API失敗時もそこだけは
-// 確実に選べる)ため、ここでは追加分のみを扱う。
-const PERSONA_CREATE_NEW_VALUE = "__create_new__";
+// ============================================================
+// 【改修要件: トップ画面へのペルソナUI統合】カテゴリ切替ピルタブ(公式/マイ
+// ペルソナ/人気)+水平スクロールチップ+作成モーダル。旧<select>ベースUIを
+// 置き換える。実際に生成へ渡すpersona_idは非表示input(#persona)に保持し、
+// startGeneration()側の変更を最小化する。
+// ============================================================
 
-function appendPersonaOptgroup(select, label, items, { valueKey, labelKey }) {
-    if (!items || !items.length) return;
-    const group = document.createElement('optgroup');
-    group.label = label;
-    items.forEach((item) => {
-        const opt = document.createElement('option');
-        opt.value = String(item[valueKey]);
-        opt.textContent = item[labelKey] || `ペルソナ#${item[valueKey]}`;
-        group.appendChild(opt);
+function escapeHtml(s) {
+    return String(s == null ? "" : s)
+        .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
+}
+
+const PERSONA_TONE_LABELS = {
+    gentle: "おだやか", energetic: "元気いっぱい", cool: "クール", warm: "あたたかい",
+    sharp: "辛口", playful: "おちゃめ", serious: "まじめ",
+};
+
+const BUILTIN_PERSONAS = [
+    { persona_id: "1", display_name: "1. 昭和生まれの天才漫才師" },
+    { persona_id: "2", display_name: "2. 辞書の編纂者" },
+    { persona_id: "3", display_name: "3. アジア系ITエンジニア" },
+    { persona_id: "4", display_name: "4. 大阪のおばちゃん" },
+    { persona_id: "5", display_name: "5. 理屈っぽい中学2年生男子" },
+    { persona_id: "6", display_name: "6. 超ポジティブな高2ギャル" },
+    { persona_id: "7", display_name: "7. マニアックな大学生" },
+    { persona_id: "8", display_name: "8. 人間観察が趣味の女子大生" },
+    { persona_id: "9", display_name: "9. 社会の不条理に揉まれる若手OL" },
+    { persona_id: "10", display_name: "10. 横文字だらけの中年起業家" },
+];
+
+const _personaCache = { builtin: BUILTIN_PERSONAS, mine: [], popular: [] };
+let _personaCategory = 'builtin';
+let _selectedPersona = { persona_id: "1", display_name: BUILTIN_PERSONAS[0].display_name, tone: "", first_person: "" };
+
+function personaToneLabel(tone) {
+    return PERSONA_TONE_LABELS[tone] || tone || "";
+}
+
+function renderPersonaPreview() {
+    const el = document.getElementById('persona-preview');
+    if (!el) return;
+    const toneLabel = personaToneLabel(_selectedPersona.tone);
+    const parts = [];
+    if (toneLabel) parts.push(`雰囲気: ${toneLabel}`);
+    if (_selectedPersona.first_person) parts.push(`一人称: 「${_selectedPersona.first_person}」`);
+    if (!parts.length) {
+        el.classList.add('hidden');
+        el.textContent = '';
+        return;
+    }
+    el.textContent = `🎭 ${_selectedPersona.display_name} — ${parts.join(' / ')}`;
+    el.classList.remove('hidden');
+}
+
+function selectPersona(persona) {
+    _selectedPersona = persona;
+    const input = document.getElementById('persona');
+    if (input) input.value = String(persona.persona_id);
+    renderPersonaChips();
+    renderPersonaPreview();
+}
+
+function renderPersonaChips() {
+    const scroll = document.getElementById('persona-chip-scroll');
+    if (!scroll) return;
+    const items = _personaCache[_personaCategory] || [];
+    const createChipHtml = `<button type="button" id="persona-create-chip" class="persona-chip shrink-0 whitespace-nowrap text-xs font-bold px-3 py-1.5 rounded-full border-2 border-dashed border-[#902A19]/40 text-[#902A19]">➕ 新規作成</button>`;
+
+    if (!items.length) {
+        const emptyLabel = _personaCategory === 'mine' ? 'まだマイペルソナがありません' : '該当するペルソナがありません';
+        scroll.innerHTML = createChipHtml + `<p class="text-xs text-gray-400 py-1.5 shrink-0 whitespace-nowrap">${emptyLabel}</p>`;
+        return;
+    }
+
+    const chipsHtml = items.map((p) => {
+        const active = String(p.persona_id) === String(_selectedPersona.persona_id);
+        const cls = active ? 'bg-[#902A19] text-white border-[#902A19]' : 'bg-white text-gray-700 border-gray-300';
+        const label = p.display_name || p.name || `ペルソナ#${p.persona_id}`;
+        return `<button type="button" data-persona-id="${escapeHtml(p.persona_id)}" class="persona-chip shrink-0 whitespace-nowrap text-xs font-bold px-3 py-1.5 rounded-full border ${cls}">${escapeHtml(label)}</button>`;
+    }).join('');
+
+    scroll.innerHTML = createChipHtml + chipsHtml;
+}
+
+function setActiveCategoryTab(category) {
+    document.querySelectorAll('.persona-category-tab').forEach((btn) => {
+        const active = btn.dataset.category === category;
+        btn.classList.toggle('bg-[#902A19]', active);
+        btn.classList.toggle('text-white', active);
+        btn.classList.toggle('bg-gray-100', !active);
+        btn.classList.toggle('text-gray-600', !active);
+        btn.setAttribute('aria-selected', String(active));
     });
-    select.appendChild(group);
+}
+
+function switchPersonaCategory(category) {
+    _personaCategory = category;
+    setActiveCategoryTab(category);
+    renderPersonaChips();
+}
+
+function onPersonaChipScrollClick(ev) {
+    const createChip = ev.target.closest('#persona-create-chip');
+    if (createChip) {
+        openPersonaCreateModal();
+        return;
+    }
+    const chip = ev.target.closest('[data-persona-id]');
+    if (!chip) return;
+    const source = _personaCache[_personaCategory] || [];
+    const persona = source.find((p) => String(p.persona_id) === chip.dataset.personaId);
+    if (!persona) return;
+    selectPersona({
+        persona_id: persona.persona_id,
+        display_name: persona.display_name || persona.name,
+        tone: persona.tone || '',
+        first_person: persona.first_person || '',
+    });
 }
 
 // ①マイペルソナ(GET /v1/personas、認証必須): 匿名認証は既にモジュール読み込み
 // 時点でensureAnonAuth()が開始済み(app.js冒頭)のため、ここでは完了を待つのみ。
-async function loadMyPersonaOptions(select) {
+async function loadMyPersonas() {
     try {
         const idToken = (auth && auth.currentUser) ? await auth.currentUser.getIdToken() : await ensureAnonAuth();
         const personas = await apiFetchPersonas(idToken);
-        const mine = (personas || []).filter((p) => !p.is_builtin);
-        appendPersonaOptgroup(select, "👤 マイペルソナ", mine, { valueKey: "persona_id", labelKey: "display_name" });
+        _personaCache.mine = (personas || []).filter((p) => !p.is_builtin);
     } catch (e) {
         console.warn("マイペルソナの取得に失敗しました(スキップします):", e);
     }
 }
 
 // ②みんなのペルソナ(GET /v1/personas/popular、認証不要)
-async function loadPopularPersonaOptions(select) {
+async function loadPopularPersonas() {
     try {
-        const popular = await apiFetchPopularPersonas(10);
-        appendPersonaOptgroup(select, "🔥 みんなのペルソナ", popular, { valueKey: "persona_id", labelKey: "name" });
+        _personaCache.popular = await apiFetchPopularPersonas(10) || [];
     } catch (e) {
         console.warn("みんなのペルソナの取得に失敗しました(スキップします):", e);
     }
 }
 
 export async function loadPersonaOptions() {
-    const select = document.getElementById('persona');
-    if (!select) return;
+    renderPersonaChips();
+    renderPersonaPreview();
+    setActiveCategoryTab(_personaCategory);
 
-    // 【ディープ監査#5】従来は①→②の逐次awaitだったため、Firebase匿名認証
-    // (①側)が遅延・スタックすると、認証と無関係な②(公開API)まで表示が
-    // ブロックされていた。Promise.allSettledで独立並行させ、①が遅くても
-    // ②は自分の完了を待たず表示できるようにする。
-    await Promise.allSettled([
-        loadMyPersonaOptions(select),
-        loadPopularPersonaOptions(select),
-    ]);
-
-    // ③＋新規作成(ペルソナ管理画面への一発ショートカット)
-    const createGroup = document.createElement('optgroup');
-    createGroup.label = "➕ 新規作成";
-    const createOpt = document.createElement('option');
-    createOpt.value = PERSONA_CREATE_NEW_VALUE;
-    createOpt.textContent = "＋ 新しいペルソナを作る";
-    createGroup.appendChild(createOpt);
-    select.appendChild(createGroup);
-
-    let lastSafeValue = select.value;
-    select.addEventListener('change', () => {
-        if (select.value === PERSONA_CREATE_NEW_VALUE) {
-            // 【ディープ監査#6】遷移前に選択値を直前の安全な値へ戻しておく。
-            // ブラウザのbfcache(戻る操作)でこのページのDOMがそのまま復元
-            // されると、"__create_new__"が選択されたままの状態で戻ってきて
-            // しまい、ユーザーが気づかず「作る」を押すと不明なpersona_idとして
-            // 送信されてしまうため(startGeneration側にも二重の防御を入れている)。
-            select.value = lastSafeValue;
-            window.location.href = "/personas/personas.html";
-            return;
-        }
-        lastSafeValue = select.value;
+    document.getElementById('persona-chip-scroll')?.addEventListener('click', onPersonaChipScrollClick);
+    document.querySelectorAll('.persona-category-tab').forEach((btn) => {
+        btn.addEventListener('click', () => switchPersonaCategory(btn.dataset.category));
     });
+    initPersonaCreateModal();
+
+    // 【ディープ監査#5と同じ方針】マイペルソナ(認証必須)取得の遅延が、無関係な
+    // みんなのペルソナ(認証不要)の表示をブロックしないよう独立並行させる。
+    await Promise.allSettled([loadMyPersonas(), loadPopularPersonas()]);
+    renderPersonaChips();
+}
+
+// ------------------------------------------------------------
+// 【改修要件】ペルソナ作成スライドインモーダル(画面遷移なし)。
+// 「✨ Geminiにおまかせドラフト生成」→ 微調整 → 「保存してこのペルソナを選択」
+// で、モーダルを閉じ即座に選択状態へ反映する。
+// ------------------------------------------------------------
+
+function openPersonaCreateModal() {
+    const modal = document.getElementById('persona-create-modal');
+    if (!modal) return;
+    document.getElementById('persona-create-keyword').value = '';
+    document.getElementById('persona-create-name').value = '';
+    document.getElementById('persona-create-prompt').value = '';
+    document.getElementById('persona-create-first-person').value = '';
+    document.getElementById('persona-create-tone').value = 'gentle';
+    modal.classList.remove('hidden');
+}
+
+function closePersonaCreateModal() {
+    document.getElementById('persona-create-modal')?.classList.add('hidden');
+}
+
+async function onPersonaCreateDraftClick() {
+    const keyword = document.getElementById('persona-create-keyword')?.value.trim();
+    if (!keyword) {
+        showToast('キーワードを入力してください', 'warning');
+        return;
+    }
+    const btn = document.getElementById('persona-create-draft-btn');
+    const spinner = document.getElementById('persona-create-draft-spinner');
+    const label = document.getElementById('persona-create-draft-label');
+    btn.disabled = true;
+    spinner?.classList.remove('hidden');
+    if (label) label.textContent = '生成中...';
+    try {
+        const idToken = (auth && auth.currentUser) ? await auth.currentUser.getIdToken() : await ensureAnonAuth();
+        const res = await apiDraftPersona(idToken, keyword);
+        const s = res.settings || {};
+        document.getElementById('persona-create-name').value = s.display_name || keyword;
+        document.getElementById('persona-create-prompt').value = s.prompt || '';
+        document.getElementById('persona-create-first-person').value = s.first_person || '';
+        document.getElementById('persona-create-tone').value = s.tone || 'gentle';
+        showToast(res.is_fallback ? 'AI生成に失敗したため空のひな形を入力しました' : 'AIが下書きを作成しました', res.is_fallback ? 'warning' : 'success');
+    } catch (e) {
+        showToast(`下書き生成に失敗しました: ${e.message}`, 'warning');
+    } finally {
+        btn.disabled = false;
+        spinner?.classList.add('hidden');
+        if (label) label.textContent = '✨ Geminiにおまかせ';
+    }
+}
+
+async function onPersonaCreateSaveClick() {
+    const displayName = document.getElementById('persona-create-name')?.value.trim();
+    const prompt = document.getElementById('persona-create-prompt')?.value.trim();
+    const firstPerson = document.getElementById('persona-create-first-person')?.value.trim();
+    const tone = document.getElementById('persona-create-tone')?.value || 'gentle';
+    if (!displayName || !prompt) {
+        showToast('呼び名と人格の説明は必須です', 'warning');
+        return;
+    }
+    const btn = document.getElementById('persona-create-save-btn');
+    btn.disabled = true;
+    try {
+        const idToken = (auth && auth.currentUser) ? await auth.currentUser.getIdToken() : await ensureAnonAuth();
+        const settings = { display_name: displayName, prompt, first_person: firstPerson, tone };
+        const res = await apiCreatePersona(idToken, settings);
+        const newPersona = { persona_id: res.persona_id, display_name: displayName, tone, first_person: firstPerson, is_builtin: false };
+        _personaCache.mine = [newPersona, ..._personaCache.mine];
+        closePersonaCreateModal();
+        switchPersonaCategory('mine');
+        selectPersona(newPersona);
+        showToast(`「${displayName}」を作成し、選択しました`, 'success');
+    } catch (e) {
+        showToast(`作成に失敗しました: ${e.message}`, 'warning');
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+function initPersonaCreateModal() {
+    document.getElementById('persona-create-close')?.addEventListener('click', closePersonaCreateModal);
+    document.getElementById('persona-create-modal')?.addEventListener('click', (ev) => {
+        if (ev.target.id === 'persona-create-modal') closePersonaCreateModal(); // 背景クリックで閉じる
+    });
+    document.getElementById('persona-create-draft-btn')?.addEventListener('click', onPersonaCreateDraftClick);
+    document.getElementById('persona-create-save-btn')?.addEventListener('click', onPersonaCreateSaveClick);
 }
 
 export async function startGeneration() {
@@ -134,15 +301,10 @@ export async function startGeneration() {
     // 【2026-08-16改修】マイペルソナ/みんなのペルソナはUUID文字列のIDを持つため、
     // parseIntすると壊れる(NaN)。ビルトイン("1"〜"10")も含め、常に文字列の
     // ままpersona_idとして送信する(バックエンドはint|str両対応、str化済み)。
+    // 【改修要件: チップUI統合】"＋新規作成"は独立したチップ(#persona-create-chip)
+    // でありselectPersona()経由でこのinputへ値が入ることは無いため、旧<select>
+    // 時代のセンチネル値ガードは不要になった(作成はモーダル内で完結する)。
     const personaId = document.getElementById('persona')?.value || "1";
-    // 【ディープ監査#6・第二防衛線】bfcache復元等で"＋新しいペルソナを作る"の
-    // センチネル値が選択されたまま送信されそうになった場合、生成を送らず
-    // 作成画面へ誘導する(loadPersonaOptions側のchangeハンドラでの復元
-    // (第一防衛線)をすり抜けた場合の保険)。
-    if (personaId === PERSONA_CREATE_NEW_VALUE) {
-        window.location.href = "/personas/personas.html";
-        return;
-    }
     const temperature = parseFloat(document.getElementById('temperature')?.value) || 0.6;
     // UI制御（前回結果のクリア＋ローディング開始）は ui/result.js に委譲。
     uiGenReset();

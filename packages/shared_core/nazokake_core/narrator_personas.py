@@ -258,6 +258,25 @@ def get_persona_version(db, version_id: str) -> dict | None:
     return snapshot.to_dict()
 
 
+def list_all_personas_for_admin(db) -> list[dict]:
+    """管理コクピットの監査テーブル向け: narrator_personasの全件を、論理削除済み
+    (deleted_at is not None)・非表示(is_visible==False)・ビルトインを問わず
+    無条件に返す。
+
+    他の一覧系関数(list_visible_personas/list_popular_personas)はいずれも
+    ユーザー向けの何らかのフィルタ(所有者・削除・可視性)を持つが、この関数
+    だけは「今このFirestoreに存在する全ドキュメントをそのまま見せる」という
+    監査目的のため意図的にフィルタを一切持たない。呼び出し元(GET /v1/admin/
+    personas)は管理者専用(verify_admin_token)であることが前提。
+    """
+    try:
+        docs = db.collection(NARRATOR_PERSONAS_COLLECTION).stream()
+    except Exception as e:
+        logger.warning(f"⚠️ narrator_personasの全件取得に失敗しました: {e}")
+        return []
+    return [d.to_dict() or {} for d in docs]
+
+
 def list_visible_personas(db, owner_uid: str) -> list[dict]:
     """§6.2「参照可: is_builtin==true ∪ owner_uid==自分」に該当する文書を、
     論理削除(deleted_at is not None)を除いてsort_order昇順で返す。

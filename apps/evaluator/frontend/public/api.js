@@ -66,6 +66,25 @@ export async function apiFetchPopularPersonas(limit = 10) {
     return data.personas;
 }
 
+// 【改修要件: トップ画面のペルソナ作成モーダル】POST /v1/personas/draft
+// (名前からGeminiで初期設定案を生成、保存はしない)・POST /v1/personas
+// (実際に作成)。personas/api.jsと同じ契約だが、こちらはV1_API_BASE経由。
+export async function apiDraftPersona(idToken, displayName) {
+    return fetchV1API('/v1/personas/draft', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({ display_name: displayName }),
+    });
+}
+
+export async function apiCreatePersona(idToken, settings) {
+    return fetchV1API('/v1/personas', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${idToken}` },
+        body: JSON.stringify({ settings, base_persona_id: null }),
+    });
+}
+
 export async function apiGetStatus(taskId) {
     return fetchAPI(`/status/${taskId}`);
 }

@@ -27,20 +27,20 @@
     <script type="importmap">
     {
         "imports": {
-            "config": "/config.js?v=20260811a",
-            "state": "/state.js?v=20260811a",
-            "api": "/api.js?v=20260811a",
-            "app": "/app.js?v=20260811a",
-            "admin": "/admin.js?v=20260811a",
-            "firebase-config": "/firebase-config.js?v=20260811a",
-            "ui/auth": "/ui/auth.js?v=20260811a",
-            "ui/toast": "/ui/toast.js?v=20260811a",
-            "ui/tabs": "/ui/tabs.js?v=20260811a",
-            "ui/feed": "/ui/feed.js?v=20260811a",
-            "ui/board": "/ui/board.js?v=20260811a",
-            "ui/form": "/ui/form.js?v=20260811a",
-            "ui/result": "/ui/result.js?v=20260811a",
-            "ui/feedback": "/ui/feedback.js?v=20260811a",
+            "config": "/config.js?v=20260818a",
+            "state": "/state.js?v=20260818a",
+            "api": "/api.js?v=20260818a",
+            "app": "/app.js?v=20260818a",
+            "admin": "/admin.js?v=20260818a",
+            "firebase-config": "/firebase-config.js?v=20260818a",
+            "ui/auth": "/ui/auth.js?v=20260818a",
+            "ui/toast": "/ui/toast.js?v=20260818a",
+            "ui/tabs": "/ui/tabs.js?v=20260818a",
+            "ui/feed": "/ui/feed.js?v=20260818a",
+            "ui/board": "/ui/board.js?v=20260818a",
+            "ui/form": "/ui/form.js?v=20260818a",
+            "ui/result": "/ui/result.js?v=20260818a",
+            "ui/feedback": "/ui/feedback.js?v=20260818a",
             "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
             "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
         }
@@ -58,7 +58,7 @@
         .view-section { display: none; }
         .view-section.active { display: block; }
     </style>
-    <script type="module" src="/main_admin.js?v=20260811a"></script>
+    <script type="module" src="/main_admin.js?v=20260818a"></script>
 </head>
 <body class="bg-gray-100 text-gray-800 p-4 md:p-8 font-sans">
     <div id="toast-container" class="fixed top-5 left-1/2 transform -translate-x-1/2 z-[100] flex flex-col gap-2 pointer-events-none"></div>
@@ -398,6 +398,51 @@
                 <div id="personas-container" class="space-y-3">
                     <div class="text-center py-10 text-gray-500">データを読み込んでいます...</div>
                 </div>
+            </section>
+
+            <!-- 【改修要件: 全ペルソナ監査テーブル】マイペルソナ/みんなのペルソナとして
+                 ユーザーが作成した全narrator_personas文書(論理削除・非表示含む)を
+                 一覧監査する。GET /v1/admin/personas(verify_admin_token専用)。 -->
+            <section class="bg-white p-6 rounded-xl shadow-md border-t-4 border-indigo-600 mt-6">
+                <div class="flex justify-between items-center mb-2">
+                    <h2 class="text-xl font-bold text-gray-800 flex items-center gap-2">
+                        <span>🔍</span> 全ペルソナ監査
+                    </h2>
+                    <button id="persona-audit-reload-btn" class="text-xs bg-gray-100 hover:bg-gray-200 text-gray-600 px-3 py-1 rounded transition border border-gray-200">
+                        🔄 リロード
+                    </button>
+                </div>
+                <p class="text-xs text-gray-500 mb-4">
+                    マイペルソナ・みんなのペルソナとしてユーザーが作成した全ペルソナ(削除済み含む)を監査します。
+                </p>
+                <div class="flex flex-wrap gap-2 mb-4">
+                    <input id="persona-audit-search" type="text" placeholder="🔎 名前・UUID・作成者IDで絞り込み"
+                        class="flex-1 min-w-[220px] text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-indigo-500 focus:border-indigo-500 outline-none">
+                    <label class="flex items-center gap-1.5 text-xs text-gray-600 select-none">
+                        <input id="persona-audit-hide-deleted" type="checkbox">
+                        削除済みを隠す
+                    </label>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full text-xs border-collapse">
+                        <thead>
+                            <tr class="bg-gray-50 text-left text-gray-500 border-b border-gray-200">
+                                <th class="p-2 font-bold">UUID</th>
+                                <th class="p-2 font-bold">作成日時</th>
+                                <th class="p-2 font-bold">名前</th>
+                                <th class="p-2 font-bold">一人称/口調</th>
+                                <th class="p-2 font-bold">プロンプト</th>
+                                <th class="p-2 font-bold text-right">利用回数</th>
+                                <th class="p-2 font-bold text-right">座布団</th>
+                                <th class="p-2 font-bold">状態</th>
+                            </tr>
+                        </thead>
+                        <tbody id="persona-audit-tbody">
+                            <tr><td colspan="8" class="text-center py-10 text-gray-400">データを読み込んでいます...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p id="persona-audit-count" class="text-[11px] text-gray-400 mt-2"></p>
             </section>
 
         </section>

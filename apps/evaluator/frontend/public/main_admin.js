@@ -9,6 +9,7 @@ import {
     submitInvite, approveAdminUser, handleUnlockAction,
     selectReviewStatus, confirmReviewStatus,
     openPersonaEditModal, savePersonaConfig, clearPersonaConfig,
+    togglePersonaAuditPrompt,
 } from "admin";
 import { uiSwitchTab } from "ui/tabs";
 
@@ -36,6 +37,8 @@ const CLICK_ACTIONS = {
     openPersonaEditModal: (el) => openPersonaEditModal(el.dataset.personaId),
     savePersonaConfig: () => savePersonaConfig(),
     clearPersonaConfig: (el) => clearPersonaConfig(el.dataset.personaId),
+    // 【改修要件】全ペルソナ監査テーブルのプロンプト全文展開トグル。
+    togglePersonaAuditPrompt: (el) => togglePersonaAuditPrompt(el.dataset.personaId),
 };
 
 document.addEventListener('click', (e) => {
