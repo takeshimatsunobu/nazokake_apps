@@ -10,7 +10,7 @@
 
 import {
     switchTab, startGeneration, submitFeedback, shareTextResult, switchBoardCategory,
-    submitBoardPost, submitUserEvaluation, submitHumanRiddle,
+    submitBoardPost, submitUserEvaluation, submitHumanRiddle, loadPersonaOptions,
 } from "app";
 import { API_BASE } from "config";
 import { uiInitForm } from "ui/form";
@@ -70,6 +70,9 @@ document.addEventListener('DOMContentLoaded', () => {
     uiInitForm(submitHumanRiddle);
     // 「キャラの暴走度」スライダーの初期値(既定0.6)に対応する一言解説を表示する。
     initTemperatureDescription();
+    // 【2026-08-16改修】マイペルソナ/みんなのペルソナ/＋新規作成をペルソナ
+    // ドロップダウンへ動的追加する(ビルトイン10体は既にHTML側に静的表示済み)。
+    loadPersonaOptions();
 });
 
 // 【Service Worker キルスイッチ】このアプリはService Workerによるキャッシュ機能を

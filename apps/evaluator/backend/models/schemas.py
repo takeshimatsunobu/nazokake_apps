@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from typing import Any, Dict, List, Literal, Optional
 
 
@@ -10,8 +10,24 @@ class HumanSubmitRequest(BaseModel):
 
 class GenerateRequest(BaseModel):
     odai: str
-    persona_id: int = Field(default=1, ge=1, le=10)
+    # 【2026-08-16改修: メイン画面のマイペルソナ/みんなのペルソナ対応】従来は
+    # int(1〜10のビルトインのみ)固定だったが、narrator_personas(マイペルソナ/
+    # みんなのペルソナ)のUUID文字列も受け付けるstrへ拡張する
+    # (models/persona_schemas.py::GenerateRoutedRequestと同じint→str正規化
+    # パターン。既存クライアント(int送信)との互換のため、mode="before"
+    # バリデータでintを受理しstrへ正規化する)。
+    persona_id: str = Field(
+        default="1", min_length=1, max_length=64,
+        description="組み込みは\"1\"〜\"10\"の数字文字列、マイペルソナ/みんなのペルソナはUUID文字列(intも互換のため受理)",
+    )
     temperature: float = Field(default=0.6, ge=0.0, le=1.0)
+
+    @field_validator("persona_id", mode="before")
+    @classmethod
+    def _normalize_persona_id(cls, v: object) -> object:
+        if isinstance(v, int):
+            return str(v)
+        return v
 
 
 class TelemetryLogRequest(BaseModel):

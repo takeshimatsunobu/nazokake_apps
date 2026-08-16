@@ -33,11 +33,11 @@ from firebase_admin import firestore
 
 from api.deps import get_db, handle_exceptions
 from api.routers.admin_costs import is_budget_exceeded
+from api.routers.persona_generate import _resolve_persona_for_generation
 from models.schemas import GenerateRequest
-from nazokake_core.narrator_personas import compute_version_id
-from nazokake_core.personas import PersonaNotFoundError, get_persona_or_raise
 from services.generation import generate_via_gemini, generate_via_llmjp
 from services.evaluation import run_evaluation, AXES
+from services.step2_generation import _compose_persona_prompt
 from nazokake_core.database import async_get_item, async_upsert_item
 from nazokake_core.firestore_sync import (
     _ensure_firebase_app,
@@ -715,27 +715,26 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
     # ローカルDB更新へ記録し、抽出スクリプトがバッチ由来・アプリ由来を同一ロジックで
     # ペア回収できるようにする。
     pair_id = f"dpo-{uuid.uuid4().hex[:12]}"
-    # 【persona_feature_plan_v3.md Phase4 §7.2/§7.3】ハードコードのPERSONASを
-    # 直接参照する代わりにget_persona_or_raise(id, db)を経由することで、
-    # 管理コクピット(admin_config.py)からの動的上書きを自動的に反映する
-    # (persona_main_function::generate_routed()と同じ経路)。存在しないIDへ
-    # PERSONAS[1]へ黙ってフォールバックすることも廃止し、404を返す。
-    try:
-        persona = get_persona_or_raise(req.persona_id, db)
-    except PersonaNotFoundError:
-        raise HTTPException(status_code=404, detail=f"不明なpersona_id: {req.persona_id}")
-    persona_prompt = persona["prompt"]
-    # 【persona_feature_plan_v3.md Phase5 §3.4/§7.3】narrator_persona_id(文字列
-    # 統一済み)と、Phase4で新設したnarrator_personas.pyの内容ハッシュversion_idを
-    # 算出する。settingsのキー名(display_name/prompt)はtools/seed_narrator_personas.py
-    # のシード時と揃える(同一内容なら同一version_idになることを保証するため)。
-    # 【レース対策(§3.4)】ここで確定させたversion_id/persona_promptは、以降の
+    # 【2026-08-16改修: メイン画面のマイペルソナ/みんなのペルソナ対応】従来は
+    # get_persona_or_raise(id, db)経由でビルトイン(int 1〜10)のみを解決していたが、
+    # persona_generate.py::_resolve_persona_for_generation()を再利用し、
+    # narrator_personas(マイペルソナ/みんなのペルソナ)も解決できるようにする。
+    # ビルトイン優先(管理コクピットの動的上書きを反映)・存在しないIDは404、
+    # という既存方針はこの関数内で維持されている(persona_generate.py参照)。
+    # dbは両ルーターとも同じapi.deps.get_db()(Firestoreクライアント)を使うため
+    # そのまま渡せる。
+    resolved = _resolve_persona_for_generation(db, req.persona_id)
+    # 【Phase5 §3.4レース対策の維持】ここで確定させたprompt文字列は、以降の
     # ELYZAジョブペイロード・SQLite行の両方へそのままスナップショットとして
-    # 記録する(ワーカーはFirestoreを引き直さない)。
-    narrator_persona_id = str(req.persona_id)
-    narrator_persona_version_id = compute_version_id(
-        narrator_persona_id, {"display_name": persona["name"], "prompt": persona["prompt"]}
-    )
+    # 記録する(ワーカーはFirestoreを引き直さない)。_compose_persona_prompt()は
+    # ビルトイン(name/promptの2キーのみ)に対してはprompt原文をそのまま返すため、
+    # 既存の生成挙動を一切変えない。マイペルソナはtone/first_person等が追記され、
+    # Gemini・ELYZA(おまけ)の両方に反映される。
+    persona_prompt = _compose_persona_prompt(resolved.settings)
+    narrator_persona_id = req.persona_id
+    narrator_persona_version_id = resolved.version_id
+    narrator_persona_name = resolved.display_name
+    data_origin = resolved.data_origin
     await async_upsert_item(
         {
             "doc_id": doc_id,
@@ -752,22 +751,24 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
             "created_at": datetime.now(timezone.utc).isoformat(),
             "random_weight": random.random(),  # noqa: S311 (無限スクロール用シーク乱数。暗号用途ではない)
             "dpo_pair_id": pair_id,
-            # persona_feature_plan_v3.md Phase3で新設した論理参照4列(現時点で
-            # 生成可能なのは組み込みペルソナのみのためdata_originは常に"builtin")。
+            # persona_feature_plan_v3.md Phase3で新設した論理参照4列。ビルトイン/
+            # マイペルソナ双方の実際の解決結果を記録する("builtin"/"custom")。
             "narrator_persona_id": narrator_persona_id,
             "narrator_persona_version_id": narrator_persona_version_id,
-            "narrator_persona_name": persona["name"],
-            "data_origin": "builtin",
+            "narrator_persona_name": narrator_persona_name,
+            "data_origin": data_origin,
             # persona列(既存のJSON汎用カラム)にリクエストされたペルソナID/温度を記録する。
             # 新規マイグレーション不要でスキーマへ組み込むための選択。
             # 【Phase5 §3.4】narrator_persona_version_id/persona_promptもここに同梱し、
             # workers/ondemand_elyza_worker.pyがFirestoreを引き直さずスナップショットを
-            # そのまま使えるようにする(_claim_job_sync参照)。
+            # そのまま使えるようにする(_claim_job_sync参照)。persona_promptは
+            # _compose_persona_prompt()済みの完全な文字列(tone/first_person等
+            # 込み)のため、ELYZA(おまけ)側もマイペルソナの口調設定を反映できる。
             "persona": {
                 "persona_id": req.persona_id,
                 "temperature": req.temperature,
                 "narrator_persona_version_id": narrator_persona_version_id,
-                "persona_prompt": persona["prompt"],
+                "persona_prompt": persona_prompt,
             },
         }
     )

@@ -1,0 +1,157 @@
+"""test_generate_ai_persona_resolution.py
+===========================================
+改修要件(案A): メイン画面(apps/evaluator/frontend/public/index.html)から
+マイペルソナ/みんなのペルソナを選んで生成できるようにする、POST /api/generate
+(apps/evaluator/backend/api/routers/generate.py::generate_ai)のペルソナ解決・
+DB記録の単体テスト。
+
+generate_ai()がnarrator_personas(マイペルソナ/みんなのペルソナ)を正しく解決し、
+Gemini/ELYZA両方へ渡す合成済みプロンプト文字列・narrator_persona_id等のDB
+メタデータを正しく組み立てて11軸評価パイプライン(progressive_generate)へ
+引き渡すことを検証する。Firestore/Gemini実サービスへは接続しない
+(unittest.mock.patchで代替)。
+"""
+from __future__ import annotations
+
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+from fastapi import HTTPException
+
+from api.routers import generate as generate_router
+from api.routers.persona_generate import _ResolvedPersona
+from models.schemas import GenerateRequest
+
+
+@pytest.mark.anyio
+async def test_generate_ai_resolves_custom_persona_and_dispatches_with_composed_prompt():
+    """テストケース1(カスタムペルソナ生成): カスタムUUIDのpersona_idを渡した際、
+    narrator_personasから解決された設定(tone/first_person込み)がGemini/ELYZA
+    両方に渡すプロンプト文字列へ合成され、DB書き込みのnarrator_persona_id等が
+    正しく"custom"として記録され、progressive_generate(11軸評価パイプライン)へ
+    そのまま引き渡されること。"""
+    db = MagicMock()
+    resolved = _ResolvedPersona(
+        settings={
+            "display_name": "テストペルソナ",
+            "prompt": "あなたは博識な老賢者です。",
+            "first_person": "わし",
+            "speech_style": "語尾に「じゃ」を付ける",
+            "tone": "warm",
+            "favorite_topics": ["歴史"],
+            "taboo": [],
+            "thinking_level": "medium",
+        },
+        version_id="custom-uuid-1__deadbeef12345678",
+        display_name="テストペルソナ",
+        data_origin="custom",
+    )
+
+    upserts: list[dict] = []
+
+    async def fake_upsert(payload):
+        upserts.append(payload)
+
+    dispatched_args: dict = {}
+
+    async def fake_guarded_progressive(*args, **kwargs):
+        dispatched_args["args"] = args
+
+    with patch("api.routers.generate._resolve_persona_for_generation", return_value=resolved), \
+         patch("api.routers.generate.async_upsert_item", side_effect=fake_upsert), \
+         patch("api.routers.generate.sync_once_safe", new=AsyncMock()), \
+         patch("api.routers.generate._guarded_progressive", side_effect=fake_guarded_progressive):
+        req = GenerateRequest(odai="お題", persona_id="custom-uuid-1", temperature=0.6)
+        result = await generate_router.generate_ai(req, db=db)
+        # generate_ai()はasyncio.create_task()で背景タスクを起動するだけで待たない
+        # (HTTPをブロックしないための既存設計)ため、イベントループへ一度制御を
+        # 譲ってタスクが実行されるのを待つ。
+        await asyncio.sleep(0)
+
+    assert result["status"] == "processing"
+    assert upserts, "DBへの初回書き込みが行われていない"
+    first_write = upserts[0]
+    assert first_write["narrator_persona_id"] == "custom-uuid-1"
+    assert first_write["narrator_persona_version_id"] == "custom-uuid-1__deadbeef12345678"
+    assert first_write["narrator_persona_name"] == "テストペルソナ"
+    assert first_write["data_origin"] == "custom"
+
+    # ELYZAジョブスナップショット(persona列)にも合成済みプロンプトが入っていること
+    # (ワーカーはFirestoreを引き直さずこのスナップショットをそのまま使うため、
+    # ELYZA側もマイペルソナの口調設定を反映できる)。
+    composed_prompt = first_write["persona"]["persona_prompt"]
+    assert "あなたは博識な老賢者です。" in composed_prompt
+    assert "一人称: わし" in composed_prompt
+    assert "全体の雰囲気: warm" in composed_prompt
+
+    # progressive_generate(既存の11軸評価・ELYZA8秒フォールバックのパイプライン)
+    # へ合成済みプロンプトとnarrator_persona_idがそのまま引き渡されていること
+    # (既存シグネチャ: db, doc_id, odai, pair_id, persona_prompt, temperature,
+    # narrator_persona_id)。
+    passed_args = dispatched_args["args"]
+    assert passed_args[4] == composed_prompt
+    assert passed_args[6] == "custom-uuid-1"
+
+
+@pytest.mark.anyio
+async def test_generate_ai_builtin_persona_prompt_is_unchanged():
+    """回帰確認: ビルトイン(name/promptの2キーのみ)は_compose_persona_prompt()を
+    経由しても既存の生成挙動を一切変えない(prompt原文がそのまま使われる)こと。"""
+    db = MagicMock()
+    resolved = _ResolvedPersona(
+        settings={"name": "昭和生まれの天才漫才師", "prompt": "あなたは昭和生まれの天才漫才師です。"},
+        version_id="1__abc123",
+        display_name="昭和生まれの天才漫才師",
+        data_origin="builtin",
+    )
+
+    upserts: list[dict] = []
+
+    async def fake_upsert(payload):
+        upserts.append(payload)
+
+    with patch("api.routers.generate._resolve_persona_for_generation", return_value=resolved), \
+         patch("api.routers.generate.async_upsert_item", side_effect=fake_upsert), \
+         patch("api.routers.generate.sync_once_safe", new=AsyncMock()), \
+         patch("api.routers.generate._guarded_progressive", new=AsyncMock()):
+        req = GenerateRequest(odai="お題", persona_id=1, temperature=0.6)
+        await generate_router.generate_ai(req, db=db)
+
+    first_write = upserts[0]
+    assert first_write["data_origin"] == "builtin"
+    assert first_write["narrator_persona_id"] == "1"
+    assert first_write["persona"]["persona_prompt"] == "あなたは昭和生まれの天才漫才師です。"
+
+
+@pytest.mark.anyio
+async def test_generate_ai_returns_404_for_unknown_persona_id():
+    """テストケース2(不正IDフォールバック/エラーハンドリング): 存在しない
+    persona_idが渡された場合、黙示フォールバックせず404を返すこと(§7.3方針を
+    /api/generateでも維持)。"""
+    db = MagicMock()
+
+    with patch(
+        "api.routers.generate._resolve_persona_for_generation",
+        side_effect=HTTPException(status_code=404, detail="不明なpersona_id: does-not-exist"),
+    ):
+        req = GenerateRequest(odai="お題", persona_id="does-not-exist", temperature=0.6)
+        with pytest.raises(HTTPException) as exc_info:
+            await generate_router.generate_ai(req, db=db)
+
+    assert exc_info.value.status_code == 404
+
+
+def test_generate_request_accepts_int_and_normalizes_to_str():
+    """persona_idはint(既存クライアント互換)・str(マイペルソナUUID)いずれも
+    受理し、内部ではstrへ正規化されること。"""
+    req_int = GenerateRequest(odai="お題", persona_id=3)
+    assert req_int.persona_id == "3"
+    assert isinstance(req_int.persona_id, str)
+
+    req_str = GenerateRequest(odai="お題", persona_id="custom-uuid-xyz")
+    assert req_str.persona_id == "custom-uuid-xyz"
+
+    # デフォルト値も従来のint(1)相当のstr"1"を維持する(後方互換)。
+    req_default = GenerateRequest(odai="お題")
+    assert req_default.persona_id == "1"

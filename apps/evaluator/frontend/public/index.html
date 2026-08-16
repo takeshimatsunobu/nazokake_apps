@@ -30,20 +30,20 @@
         <script type="importmap">
         {
             "imports": {
-                "config": "/config.js?v=20260810c",
-                "state": "/state.js?v=20260810c",
-                "api": "/api.js?v=20260810c",
-                "app": "/app.js?v=20260810c",
-                "admin": "/admin.js?v=20260810c",
-                "firebase-config": "/firebase-config.js?v=20260810c",
-                "ui/auth": "/ui/auth.js?v=20260810c",
-                "ui/toast": "/ui/toast.js?v=20260810c",
-                "ui/tabs": "/ui/tabs.js?v=20260810c",
-                "ui/feed": "/ui/feed.js?v=20260810c",
-                "ui/board": "/ui/board.js?v=20260810c",
-                "ui/form": "/ui/form.js?v=20260810c",
-                "ui/result": "/ui/result.js?v=20260810c",
-                "ui/feedback": "/ui/feedback.js?v=20260810c",
+                "config": "/config.js?v=20260817a",
+                "state": "/state.js?v=20260817a",
+                "api": "/api.js?v=20260817a",
+                "app": "/app.js?v=20260817a",
+                "admin": "/admin.js?v=20260817a",
+                "firebase-config": "/firebase-config.js?v=20260817a",
+                "ui/auth": "/ui/auth.js?v=20260817a",
+                "ui/toast": "/ui/toast.js?v=20260817a",
+                "ui/tabs": "/ui/tabs.js?v=20260817a",
+                "ui/feed": "/ui/feed.js?v=20260817a",
+                "ui/board": "/ui/board.js?v=20260817a",
+                "ui/form": "/ui/form.js?v=20260817a",
+                "ui/result": "/ui/result.js?v=20260817a",
+                "ui/feedback": "/ui/feedback.js?v=20260817a",
                 "firebase/app": "https://www.gstatic.com/firebasejs/10.8.0/firebase-app.js",
                 "firebase/auth": "https://www.gstatic.com/firebasejs/10.8.0/firebase-auth.js"
             }
@@ -117,17 +117,24 @@
                         </div>
                         <div class="mb-4">
                             <label for="persona" class="block text-xs font-bold text-gray-600 mb-1">🎭 語り手のペルソナ</label>
+                            <!-- 【2026-08-16改修: マイペルソナ/みんなのペルソナ対応】ビルトイン10体は
+                                 段階的機能向上(progressive enhancement)のため静的に残す(JS未実行/
+                                 API失敗時もこのグループだけは確実に選択できる)。マイペルソナ・
+                                 みんなのペルソナ・＋新規作成の3グループはapp.js::loadPersonaOptions()
+                                 が起動時に動的追加する(personaGroupsBuiltinOptgroup参照)。 -->
                             <select id="persona" class="w-full px-4 py-3 bg-gray-50 border-2 border-[#C5B358]/30 rounded-xl shadow-inner focus:bg-white focus:outline-none focus:border-[#C5B358] focus:ring-4 focus:ring-[#C5B358]/20 transition-all duration-300 text-sm">
-                                <option value="1">1. 昭和生まれの天才漫才師</option>
-                                <option value="2">2. 辞書の編纂者</option>
-                                <option value="3">3. アジア系ITエンジニア</option>
-                                <option value="4">4. 大阪のおばちゃん</option>
-                                <option value="5">5. 理屈っぽい中学2年生男子</option>
-                                <option value="6">6. 超ポジティブな高2ギャル</option>
-                                <option value="7">7. マニアックな大学生</option>
-                                <option value="8">8. 人間観察が趣味の女子大生</option>
-                                <option value="9">9. 社会の不条理に揉まれる若手OL</option>
-                                <option value="10">10. 横文字だらけの中年起業家</option>
+                                <optgroup label="🏛️ 公式" id="persona-group-builtin">
+                                    <option value="1">1. 昭和生まれの天才漫才師</option>
+                                    <option value="2">2. 辞書の編纂者</option>
+                                    <option value="3">3. アジア系ITエンジニア</option>
+                                    <option value="4">4. 大阪のおばちゃん</option>
+                                    <option value="5">5. 理屈っぽい中学2年生男子</option>
+                                    <option value="6">6. 超ポジティブな高2ギャル</option>
+                                    <option value="7">7. マニアックな大学生</option>
+                                    <option value="8">8. 人間観察が趣味の女子大生</option>
+                                    <option value="9">9. 社会の不条理に揉まれる若手OL</option>
+                                    <option value="10">10. 横文字だらけの中年起業家</option>
+                                </optgroup>
                             </select>
                         </div>
                         <div class="mb-6">
@@ -502,7 +509,7 @@
     </button>
 </nav>
         <!-- import mapを経由しないエントリーポイント自体もキャッシュバスティング対象に含める -->
-        <script type="module" src="/main_index.js?v=20260810c"></script>
+        <script type="module" src="/main_index.js?v=20260817a"></script>
     </body>
 </html>
 

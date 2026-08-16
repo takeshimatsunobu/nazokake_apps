@@ -4,7 +4,10 @@ ensureAnonAuth().catch(err => console.error("認証初期化エラー:", err));
 
 import { APP_URL } from "config";
 import { appState } from "state";
-import { apiLogEvent, apiGenerate, apiGetStatus, apiSubmitHumanRiddle, apiFetchFeed, apiSubmitFeedEvaluation, apiSubmitFeedback, apiFetchBoard, apiPostBoard } from "api";
+import {
+    apiLogEvent, apiGenerate, apiGetStatus, apiSubmitHumanRiddle, apiFetchFeed, apiSubmitFeedEvaluation,
+    apiSubmitFeedback, apiFetchBoard, apiPostBoard, apiFetchPersonas, apiFetchPopularPersonas,
+} from "api";
 import { uiSwitchTab } from "ui/tabs";
 import {
     uiGenReset, uiGenLoadingStart, uiGenLoadingStop, uiRenderGenResult, uiShowResult,
@@ -45,9 +48,71 @@ export async function shareText(odai, toku, kokoro, score, isHuman) {
     }
 }
 
+// 【2026-08-16改修: メイン画面のマイペルソナ/みんなのペルソナ対応】
+// ページ読み込み時に一度だけ呼び、<select id="persona">へ「マイペルソナ」
+// 「みんなのペルソナ」「＋新規作成」の3optgroupを動的に追加する。ビルトイン
+// 10体は既にHTML側に静的に存在する(段階的機能向上、API失敗時もそこだけは
+// 確実に選べる)ため、ここでは追加分のみを扱う。
+const PERSONA_CREATE_NEW_VALUE = "__create_new__";
+
+function appendPersonaOptgroup(select, label, items, { valueKey, labelKey }) {
+    if (!items || !items.length) return;
+    const group = document.createElement('optgroup');
+    group.label = label;
+    items.forEach((item) => {
+        const opt = document.createElement('option');
+        opt.value = String(item[valueKey]);
+        opt.textContent = item[labelKey] || `ペルソナ#${item[valueKey]}`;
+        group.appendChild(opt);
+    });
+    select.appendChild(group);
+}
+
+export async function loadPersonaOptions() {
+    const select = document.getElementById('persona');
+    if (!select) return;
+
+    // ①マイペルソナ(GET /v1/personas、認証必須): 匿名認証は既にモジュール読み込み
+    // 時点でensureAnonAuth()が開始済み(app.js冒頭)のため、ここでは完了を待つのみ。
+    try {
+        const idToken = (auth && auth.currentUser) ? await auth.currentUser.getIdToken() : await ensureAnonAuth();
+        const personas = await apiFetchPersonas(idToken);
+        const mine = (personas || []).filter((p) => !p.is_builtin);
+        appendPersonaOptgroup(select, "👤 マイペルソナ", mine, { valueKey: "persona_id", labelKey: "display_name" });
+    } catch (e) {
+        console.warn("マイペルソナの取得に失敗しました(スキップします):", e);
+    }
+
+    // ②みんなのペルソナ(GET /v1/personas/popular、認証不要)
+    try {
+        const popular = await apiFetchPopularPersonas(10);
+        appendPersonaOptgroup(select, "🔥 みんなのペルソナ", popular, { valueKey: "persona_id", labelKey: "name" });
+    } catch (e) {
+        console.warn("みんなのペルソナの取得に失敗しました(スキップします):", e);
+    }
+
+    // ③＋新規作成(ペルソナ管理画面への一発ショートカット)
+    const createGroup = document.createElement('optgroup');
+    createGroup.label = "➕ 新規作成";
+    const createOpt = document.createElement('option');
+    createOpt.value = PERSONA_CREATE_NEW_VALUE;
+    createOpt.textContent = "＋ 新しいペルソナを作る";
+    createGroup.appendChild(createOpt);
+    select.appendChild(createGroup);
+
+    select.addEventListener('change', () => {
+        if (select.value === PERSONA_CREATE_NEW_VALUE) {
+            window.location.href = "/personas/personas.html";
+        }
+    });
+}
+
 export async function startGeneration() {
     const odai = document.getElementById('odaiInput')?.value.trim(); if (!odai) { showError("お題を入力してください！"); return; }
-    const personaId = parseInt(document.getElementById('persona')?.value, 10) || 1;
+    // 【2026-08-16改修】マイペルソナ/みんなのペルソナはUUID文字列のIDを持つため、
+    // parseIntすると壊れる(NaN)。ビルトイン("1"〜"10")も含め、常に文字列の
+    // ままpersona_idとして送信する(バックエンドはint|str両対応、str化済み)。
+    const personaId = document.getElementById('persona')?.value || "1";
     const temperature = parseFloat(document.getElementById('temperature')?.value) || 0.6;
     // UI制御（前回結果のクリア＋ローディング開始）は ui/result.js に委譲。
     uiGenReset();

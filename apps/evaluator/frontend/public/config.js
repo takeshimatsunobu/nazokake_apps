@@ -14,3 +14,11 @@
 // Cloud Runのサービス名が今後また変わっても、firebase.json側の1箇所を直すだけで済む。
 export const API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://127.0.0.1:8000/api' : '/api';
 export const APP_URL = "https://nazokakeapp-137e5.web.app/";
+
+// 【2026-08-16改修: メイン画面のマイペルソナ/みんなのペルソナ対応】/v1/**系
+// エンドポイント(GET /v1/personas, GET /v1/personas/popular等)はAPI_BASEとは
+// 別のプレフィックス無しの絶対パスであり、"/api"を前置しない(apps/evaluator/
+// firebase.jsonのhosting.rewritesで/v1/**を/api/**と並列にCloud Runサービスへ
+// プロキシしているため、末尾に/apiを付けると404になる)。personas/config.jsと
+// 同じ規約。
+export const V1_API_BASE = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') ? 'http://127.0.0.1:8000' : '';

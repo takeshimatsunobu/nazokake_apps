@@ -819,6 +819,46 @@ Hostingサイト自体を既に削除済みで配信先が存在しなかった�
   `test_process_job_proceeds_to_ollama_when_still_processing`（ワーカー、5件）を
   新設。既存分と合わせevaluator/backend 24件・tests+workers 20件、全PASS。
 
+### 12.8 2026-08-17 メイン画面（/index.html）でのマイペルソナ・みんなのペルソナ生成対応（案A）
+
+§12.7の調査で判明した「メイン画面が呼ぶ`POST /api/generate`はビルトイン(int 1〜10)
+しか受け付けず、マイペルソナ/みんなのペルソナ選択が構造的に不可能」という根本原因に対し、
+`/api/generate`自体をカスタムペルソナ対応へ拡張する「案A」を実装した（既存の11軸評価・
+ELYZA8秒フォールバック等の主要機能は維持し、`/v1/generate`側の別パイプラインへの
+乗り換えは行わない選択）。
+
+**バックエンド**:
+- `models/schemas.py::GenerateRequest.persona_id`を`int(ge=1,le=10)`固定から
+  `str`（`GenerateRoutedRequest`と同じint→str正規化バリデータ）へ拡張。
+- `generate.py::generate_ai()`の`get_persona_or_raise()`呼び出しを
+  `persona_generate.py::_resolve_persona_for_generation()`の再利用に置き換え
+  （両ルーターとも`api.deps.get_db()`＝同一Firestoreクライアントを使うため
+  そのまま渡せた）。ビルトイン/`narrator_personas`双方を解決し、存在しないIDは404。
+- `step2_generation.py::_compose_persona_prompt()`を再利用し、解決した設定
+  （ビルトインはprompt原文のみ、マイペルソナはtone/first_person等を追記）から
+  合成したプロンプト文字列をGemini・ELYZAジョブスナップショット双方に注入。
+  ビルトインは`_compose_persona_prompt()`が2キー辞書に対してはprompt原文を
+  そのまま返すため、既存の生成挙動を一切変えない（回帰テストで確認済み）。
+- `narrator_persona_id`/`version_id`/`name`/`data_origin`を解決結果に応じて
+  正しく記録（従来`data_origin`は`"builtin"`固定だった）。
+
+**フロントエンド**:
+- `config.js`に`V1_API_BASE`を追加（`/api`プレフィックス無しで`/v1/**`を叩く用）。
+- `api.js`に`apiFetchPersonas(idToken)`（認証必須）・`apiFetchPopularPersonas(limit)`
+  （認証不要）を追加。
+- `index.html`の`<select id="persona">`をビルトイン10体の`<optgroup>`として維持しつつ、
+  `app.js::loadPersonaOptions()`（`main_index.js`のDOMContentLoadedで起動）が
+  「👤マイペルソナ」「🔥みんなのペルソナ」「➕新規作成」の3optgroupを動的追加。
+  ネットワーク/認証失敗時もビルトイン分は静的に残るため画面が壊れない
+  （progressive enhancement）。「＋新しいペルソナを作る」選択時は`/personas/
+  personas.html`へ即遷移。
+- `startGeneration()`の`parseInt(...)`を除去し、persona_idを文字列のまま送信。
+
+**テスト**: `test_generate_ai_persona_resolution.py`（新規4件: カスタム解決＋合成
+プロンプト検証、ビルトイン無改変の回帰確認、404エラーハンドリング、int→str正規化）、
+`node --check`で変更JS全ファイル構文確認、evaluator/backend 28件・tests+workers
+20件、全PASS。
+
 ### 12.3 2026-08-16 統合モノリス化（案B）: apps/persona_main_functionをapps/evaluator/backendへ統合
 
 **背景**: Cloud Run上でFastAPIを安定・自動稼働させるため、ドメイン・CORS・認証の二重管理を解消する目的で、`apps/persona_main_function`のバックエンドロジック（`/v1/personas`・`/v1/generate`等）を本番バックエンド`apps/evaluator/backend`へ統合した（ユーザー指示による「案B」）。
