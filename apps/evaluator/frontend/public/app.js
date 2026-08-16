@@ -68,12 +68,9 @@ function appendPersonaOptgroup(select, label, items, { valueKey, labelKey }) {
     select.appendChild(group);
 }
 
-export async function loadPersonaOptions() {
-    const select = document.getElementById('persona');
-    if (!select) return;
-
-    // ①マイペルソナ(GET /v1/personas、認証必須): 匿名認証は既にモジュール読み込み
-    // 時点でensureAnonAuth()が開始済み(app.js冒頭)のため、ここでは完了を待つのみ。
+// ①マイペルソナ(GET /v1/personas、認証必須): 匿名認証は既にモジュール読み込み
+// 時点でensureAnonAuth()が開始済み(app.js冒頭)のため、ここでは完了を待つのみ。
+async function loadMyPersonaOptions(select) {
     try {
         const idToken = (auth && auth.currentUser) ? await auth.currentUser.getIdToken() : await ensureAnonAuth();
         const personas = await apiFetchPersonas(idToken);
@@ -82,14 +79,30 @@ export async function loadPersonaOptions() {
     } catch (e) {
         console.warn("マイペルソナの取得に失敗しました(スキップします):", e);
     }
+}
 
-    // ②みんなのペルソナ(GET /v1/personas/popular、認証不要)
+// ②みんなのペルソナ(GET /v1/personas/popular、認証不要)
+async function loadPopularPersonaOptions(select) {
     try {
         const popular = await apiFetchPopularPersonas(10);
         appendPersonaOptgroup(select, "🔥 みんなのペルソナ", popular, { valueKey: "persona_id", labelKey: "name" });
     } catch (e) {
         console.warn("みんなのペルソナの取得に失敗しました(スキップします):", e);
     }
+}
+
+export async function loadPersonaOptions() {
+    const select = document.getElementById('persona');
+    if (!select) return;
+
+    // 【ディープ監査#5】従来は①→②の逐次awaitだったため、Firebase匿名認証
+    // (①側)が遅延・スタックすると、認証と無関係な②(公開API)まで表示が
+    // ブロックされていた。Promise.allSettledで独立並行させ、①が遅くても
+    // ②は自分の完了を待たず表示できるようにする。
+    await Promise.allSettled([
+        loadMyPersonaOptions(select),
+        loadPopularPersonaOptions(select),
+    ]);
 
     // ③＋新規作成(ペルソナ管理画面への一発ショートカット)
     const createGroup = document.createElement('optgroup');
@@ -100,10 +113,19 @@ export async function loadPersonaOptions() {
     createGroup.appendChild(createOpt);
     select.appendChild(createGroup);
 
+    let lastSafeValue = select.value;
     select.addEventListener('change', () => {
         if (select.value === PERSONA_CREATE_NEW_VALUE) {
+            // 【ディープ監査#6】遷移前に選択値を直前の安全な値へ戻しておく。
+            // ブラウザのbfcache(戻る操作)でこのページのDOMがそのまま復元
+            // されると、"__create_new__"が選択されたままの状態で戻ってきて
+            // しまい、ユーザーが気づかず「作る」を押すと不明なpersona_idとして
+            // 送信されてしまうため(startGeneration側にも二重の防御を入れている)。
+            select.value = lastSafeValue;
             window.location.href = "/personas/personas.html";
+            return;
         }
+        lastSafeValue = select.value;
     });
 }
 
@@ -113,6 +135,14 @@ export async function startGeneration() {
     // parseIntすると壊れる(NaN)。ビルトイン("1"〜"10")も含め、常に文字列の
     // ままpersona_idとして送信する(バックエンドはint|str両対応、str化済み)。
     const personaId = document.getElementById('persona')?.value || "1";
+    // 【ディープ監査#6・第二防衛線】bfcache復元等で"＋新しいペルソナを作る"の
+    // センチネル値が選択されたまま送信されそうになった場合、生成を送らず
+    // 作成画面へ誘導する(loadPersonaOptions側のchangeハンドラでの復元
+    // (第一防衛線)をすり抜けた場合の保険)。
+    if (personaId === PERSONA_CREATE_NEW_VALUE) {
+        window.location.href = "/personas/personas.html";
+        return;
+    }
     const temperature = parseFloat(document.getElementById('temperature')?.value) || 0.6;
     // UI制御（前回結果のクリア＋ローディング開始）は ui/result.js に委譲。
     uiGenReset();
@@ -132,7 +162,13 @@ export async function startGeneration() {
         // (ローカル開発)だけでもELYZA側の完走に42秒程度かかることを実測済み。
         // 旧来の60秒だと本番の現実的な往復時間に対して余裕が無く、正常に完走する
         // はずのジョブまでタイムアウトしてGemini単独表示へ縮退していた。
-        pollStatus(data.task_id, Date.now() + 90000);
+        // 【ディープ監査#7】ローカル直接生成パス(K_SERVICE未設定)のELYZA呼び出しは
+        // services/generation.pyでhttpx.Timeout(120.0, connect=5.0)まで待つ設計
+        // のため、旧来の90秒だとバックエンドがまだ処理中でも先にクライアント側が
+        // 「タイムアウト」表示へ倒れてしまうケースがあった(データ自体は失われず
+        // リロードで見えるが、UX上は誤ったタイムアウト表示になる)。バックエンドの
+        // 最大待機時間(120秒)に安全マージンを足した150秒へ揃える。
+        pollStatus(data.task_id, Date.now() + 150000);
     } catch (e) { showError(e.message); }
 }
 // 段階開示ポーリング。本文が出た時点(gemini_generated)からデュアルカードを描画し、

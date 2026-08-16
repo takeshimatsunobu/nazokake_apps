@@ -200,6 +200,12 @@ async def progressive_generate(
                 raw_result_l, "生成結果の検証に失敗しました"
             )
             text_l = _compose_text(odai, validated_result_l)
+            # 【ディープ監査#1】"message"は process_gemini() が単独所有するフィールド
+            # として扱う(process_gemini/process_elyzaがasyncio.gatherで真に並行
+            # 実行されるため、共有すると書き込み順序次第でどちらのメッセージが
+            # 最終的に残るか不定になるレースがあった)。ELYZA/代打経路の進捗は
+            # llmjp_status/llmjp_is_pinch_hitter等の専用フィールドで表現済みのため、
+            # ここでは"message"を書かない。
             await async_upsert_item(
                 {
                     "doc_id": doc_id,
@@ -209,7 +215,6 @@ async def progressive_generate(
                     "llmjp_model_id": pinch_hitter_model_id,
                     "llmjp_is_pinch_hitter": True,
                     "llmjp_fallback_reason": reason,
-                    "message": "代打Geminiが作品を採点中...",
                     "dpo_pair_id": pair_id,
                 }
             )
@@ -239,7 +244,6 @@ async def progressive_generate(
                     "llmjp_model_id": pinch_hitter_model_id,
                     "llmjp_is_pinch_hitter": True,
                     "llmjp_fallback_reason": reason,
-                    "message": "代打生成中にエラーが発生しました",
                 }
             )
 
@@ -318,13 +322,14 @@ async def progressive_generate(
                 raw_result_l, "生成結果の検証に失敗しました"
             )
             text_l = _compose_text(odai, validated_result_l)
+            # 【ディープ監査#1】"message"はprocess_gemini()専有(上記pinch_hitter側と
+            # 同じ理由)。
             await async_upsert_item(
                 {
                     "doc_id": doc_id,
                     "result_llmjp": validated_result_l,
                     "nazokake_text_llmjp": text_l,
                     "llmjp_status": "generated",
-                    "message": "ELYZA作品を採点中...",
                     "dpo_pair_id": pair_id,
                 }
             )
@@ -353,7 +358,6 @@ async def progressive_generate(
                 {
                     "doc_id": doc_id,
                     "llmjp_status": "failed",
-                    "message": "おまけ生成中にエラーが発生しました",
                 }
             )
 
@@ -789,7 +793,11 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
     # 非同期(バックグラウンド生成)モデルにおいても、Gemini/ELYZAの実際の成否を
     # 待たずここで加算してよい。
     if data_origin == "custom":
-        narrator_personas.increment_usage_count(db, narrator_persona_id)
+        # 【ディープ監査#2】increment_usage_count()は同期関数でFirestoreへ
+        # ブロッキングI/Oを行うため、asyncio.to_threadでラップしイベント
+        # ループを塞がないようにする(persona_generate.py::generate_routed()と
+        # 同じ対処)。
+        await asyncio.to_thread(narrator_personas.increment_usage_count, db, narrator_persona_id)
 
     # 背景で生成パイプラインを発火し、即座にレスポンスを返す（HTTPをブロックしない）
     task = asyncio.create_task(

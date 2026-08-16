@@ -503,6 +503,40 @@ async def test_generate_routed_increments_usage_count_for_custom_persona_route_a
 
 
 @pytest.mark.anyio
+async def test_generate_routed_increment_usage_count_runs_via_asyncio_to_thread():
+    """ディープ監査#2の回帰確認: /v1/generate側もincrement_usage_count(同期・
+    ブロッキングI/O)をasyncio.to_threadでラップしていること。"""
+    db = MagicMock()
+    resolved = persona_generate._ResolvedPersona(
+        settings={"prompt": "p", "tone": "warm"},
+        version_id="my-uuid-1__deadbeef",
+        display_name="テストペルソナ",
+        data_origin="custom",
+    )
+    step1 = Step1Result(
+        is_valid_input=True,
+        domain_category="daily_life",
+        vocabulary_difficulty="standard",
+        slang_level="none",
+        wordplay_flexibility="medium",
+        topic_scale="personal",
+        is_seasonal=False,
+    )
+
+    with patch("api.routers.persona_generate.check_block_status", return_value=MagicMock(blocked=False)), \
+         patch("api.routers.persona_generate._resolve_persona_for_generation", return_value=resolved), \
+         patch("api.routers.persona_generate.get_cached_step1", return_value=step1), \
+         patch("api.routers.persona_generate.generate_step2", new=AsyncMock(return_value=("A", "解き", "こころ", "本文", "model-x"))), \
+         patch("api.routers.persona_generate.narrator_personas.increment_usage_count") as mock_incr, \
+         patch("api.routers.persona_generate.asyncio.to_thread", new=AsyncMock()) as mock_to_thread:
+        req = GenerateRoutedRequest(odai="お題", persona_id="my-uuid-1", client_uuid="u1")
+        await persona_generate.generate_routed(req, db=db)
+
+    mock_to_thread.assert_awaited_once_with(mock_incr, db, "my-uuid-1")
+    mock_incr.assert_not_called()
+
+
+@pytest.mark.anyio
 async def test_generate_routed_does_not_increment_usage_count_for_route_b():
     """異常入力(ルートB)は「利用」として数えない(既存の設計方針、回帰確認)。"""
     db = MagicMock()

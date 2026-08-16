@@ -45,11 +45,20 @@ def serialize_doc(doc) -> dict:
     return data
 
 
+_GENERIC_ERROR_MESSAGE = "Internal Server Error: An unexpected error occurred."
+
+
 def handle_exceptions(func: Callable) -> Callable:
     """例外を一元処理するデコレータ。HTTPException はそのまま再送出する。
 
     - async 関数: 例外時に {"status": "error", "message": ...} を返す。
     - sync 関数 : 例外時に HTTP 500 を送出する。
+
+    【ディープ監査#4】以前はf"Internal Server Error: {str(e)}"として生の例外
+    メッセージ(接続情報・内部パス等を含み得る)をそのままクライアントへ
+    返していた。test_fail_closed.pyが検証している「バックグラウンドタスク側の
+    fail closed」と同じ原則を、この同期区間の汎用例外ハンドラにも適用し、
+    実際の例外はサーバーログにのみ記録し、レスポンスには固定の汎用文言だけを返す。
     """
     if inspect.iscoroutinefunction(func):
 
@@ -60,9 +69,10 @@ def handle_exceptions(func: Callable) -> Callable:
             except HTTPException:
                 raise
             except Exception as e:
+                print(f"🚨 [Internal Error] {func.__name__}: {e}", file=sys.stderr, flush=True)
                 return {
                     "status": "error",
-                    "message": f"Internal Server Error: {str(e)}",
+                    "message": _GENERIC_ERROR_MESSAGE,
                 }
 
         return async_wrapper
@@ -75,9 +85,8 @@ def handle_exceptions(func: Callable) -> Callable:
             except HTTPException:
                 raise
             except Exception as e:
-                raise HTTPException(
-                    status_code=500, detail=f"Internal Server Error: {str(e)}"
-                )
+                print(f"🚨 [Internal Error] {func.__name__}: {e}", file=sys.stderr, flush=True)
+                raise HTTPException(status_code=500, detail=_GENERIC_ERROR_MESSAGE)
 
         return sync_wrapper
 

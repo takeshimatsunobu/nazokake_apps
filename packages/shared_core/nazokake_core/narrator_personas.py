@@ -35,9 +35,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import uuid
 from datetime import datetime, timezone
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 NARRATOR_PERSONAS_COLLECTION = "narrator_personas"
 NARRATOR_PERSONA_VERSIONS_COLLECTION = "narrator_persona_versions"
@@ -214,8 +217,21 @@ def save_persona_settings(db, persona_id: str, settings: dict[str, Any]) -> str:
 
 
 def get_persona(db, persona_id: str) -> dict | None:
-    """persona_idに対応するnarrator_personas文書を1件取得する(存在しなければNone)。"""
-    snapshot = db.collection(NARRATOR_PERSONAS_COLLECTION).document(persona_id).get()
+    """persona_idに対応するnarrator_personas文書を1件取得する(存在しなければNone)。
+
+    【ディープ監査#4】Firestore接続障害時、ビルトイン解決経路(nazokake_core.
+    personas.get_personas)は既にハードコードPERSONASへのフォールバックを
+    持つが、この関数(マイペルソナ解決経路)には保護が無く、例外がそのまま
+    _resolve_persona_for_generation()を素通りしてapi/deps.py::handle_exceptionsの
+    汎用ハンドラまで伝播していた。ここで捕捉してNoneへ縮退させることで、
+    呼び出し元の「見つからない場合は404」という既存の分岐へ自然に合流させる
+    (黙示のビルトインへのフォールバックはしない、§7.3の方針を維持)。
+    """
+    try:
+        snapshot = db.collection(NARRATOR_PERSONAS_COLLECTION).document(persona_id).get()
+    except Exception as e:
+        logger.warning(f"⚠️ narrator_personas({persona_id})の取得に失敗しました: {e}")
+        return None
     if not snapshot.exists:
         return None
     return snapshot.to_dict()
@@ -229,8 +245,14 @@ def get_persona_version(db, version_id: str) -> dict | None:
     プリフィルする(apps/persona_main_function/api/routers/personas.py::_to_item経由)
     ために必要になった。9エンドポイントの契約自体は変えず、既存の
     GET /v1/personasのレスポンスを拡充する形で使う。
+
+    【ディープ監査#4】get_persona()と同じ理由でFirestore接続障害時はNoneへ縮退する。
     """
-    snapshot = db.collection(NARRATOR_PERSONA_VERSIONS_COLLECTION).document(version_id).get()
+    try:
+        snapshot = db.collection(NARRATOR_PERSONA_VERSIONS_COLLECTION).document(version_id).get()
+    except Exception as e:
+        logger.warning(f"⚠️ narrator_persona_versions({version_id})の取得に失敗しました: {e}")
+        return None
     if not snapshot.exists:
         return None
     return snapshot.to_dict()

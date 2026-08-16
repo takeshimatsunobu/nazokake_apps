@@ -903,6 +903,50 @@ ELYZA8秒フォールバック等の主要機能は維持し、`/v1/generate`側
 evaluator/backend 30件・tests+workers 20件、全PASS（合計50件、既存分への
 回帰なし）。
 
+### 12.10 2026-08-17 ディープ監査Mediumリスク（#1〜#7）の最小修正パッチ適用
+
+§12.9直後に実施したディープ監査で検出したMediumリスク7件へ、最小修正パッチを適用した。
+
+- **#2 ブロッキングFirestore SDK**: `generate.py::generate_ai()`・
+  `persona_generate.py::generate_routed()`双方の`narrator_personas.
+  increment_usage_count(db, narrator_persona_id)`（同期・ブロッキングI/O）を
+  `await asyncio.to_thread(...)`でラップし、イベントループを塞がないようにした。
+- **#3 persona_idバリデーション**: `models/schemas.py::GenerateRequest.persona_id`に
+  `pattern=r"^[A-Za-z0-9_-]+$"`を追加し、Firestoreドキュメントパス区切り文字
+  `/`等を拒否するようにした。
+- **#4 ペルソナ解決の障害保護＆例外マスキング**: `narrator_personas.py`の
+  `get_persona()`/`get_persona_version()`にtry/exceptを追加し、Firestore障害時は
+  Noneへ縮退（黙示のビルトインへのフォールバックはしない、既存方針を維持）。
+  `api/deps.py::handle_exceptions`の汎用例外ハンドラ（sync/async両方）が生の
+  `str(e)`をレスポンスへ含めていたのを、固定文言`"Internal Server Error: An
+  unexpected error occurred."`へ変更し、実際の例外はサーバーログ(stderr)にのみ
+  記録するようにした。
+- **#1 message共有フィールドのレース**: `process_elyza()`・
+  `process_elyza_pinch_hitter()`の全書き込みから`"message"`キーを削除し、
+  同フィールドを`process_gemini()`の専有とした（ELYZA/代打の進捗は既存の
+  `llmjp_status`/`llmjp_is_pinch_hitter`等の専用フィールドで表現済みのため
+  UI側への実害はない）。
+- **#5 loadPersonaOptions()の逐次ブロック**: マイペルソナ取得（認証必須）と
+  みんなのペルソナ取得（認証不要）を`Promise.allSettled([...])`で独立並行化し、
+  認証遅延が公開APIの表示をブロックしないようにした。
+- **#6 bfcacheでの"＋新規作成"誤送信**: `change`イベントで遷移前に
+  `select.value`を直前の安全な値へ戻す（第一防衛線）に加え、
+  `startGeneration()`内にも`personaId === PERSONA_CREATE_NEW_VALUE`の
+  ガードを追加（第二防衛線）。
+- **#7（当初の詳細タスク一覧には無いが冒頭の"#1〜#7"に含まれるため対応）
+  クライアント/バックエンドのタイムアウト不整合**: `pollStatus()`のポーリング
+  上限を90秒→150秒へ延長し、ELYZA直接呼び出し経路のhttpxタイムアウト（120秒）
+  に安全マージンを持たせて揃えた。
+
+**テスト**: `test_generate_request_rejects_invalid_persona_id_characters`（4パターン）、
+`test_generate_ai_increment_usage_count_runs_via_asyncio_to_thread`、
+`test_generate_routed_increment_usage_count_runs_via_asyncio_to_thread`、
+`test_narrator_personas_get_persona_returns_none_on_firestore_failure`、
+`test_narrator_personas_get_persona_version_returns_none_on_firestore_failure`、
+`test_handle_exceptions_masks_generic_exception_message`（sync/async両方）を
+新設。既存分と合わせevaluator/backend 40件・tests+workers 20件、合計60件、全PASS。
+`node --check`で`app.js`の構文エラー無しを確認。
+
 ### 12.3 2026-08-16 統合モノリス化（案B）: apps/persona_main_functionをapps/evaluator/backendへ統合
 
 **背景**: Cloud Run上でFastAPIを安定・自動稼働させるため、ドメイン・CORS・認証の二重管理を解消する目的で、`apps/persona_main_function`のバックエンドロジック（`/v1/personas`・`/v1/generate`等）を本番バックエンド`apps/evaluator/backend`へ統合した（ユーザー指示による「案B」）。

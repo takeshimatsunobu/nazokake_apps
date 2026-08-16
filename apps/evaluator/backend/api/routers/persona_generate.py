@@ -12,6 +12,7 @@ Firestoreへ直接・同期的に読み書きする、状態を持たないCloud
 """
 from __future__ import annotations
 
+import asyncio
 import uuid
 from datetime import datetime, timezone
 
@@ -175,7 +176,11 @@ async def generate_routed(req: GenerateRoutedRequest, db=Depends(get_db)):
     # increment_usage_count内部で失敗を吸収)のため、失敗しても生成レスポンス
     # 自体には一切影響しない。
     if data_origin == "custom" and route == "A":
-        narrator_personas.increment_usage_count(db, narrator_persona_id)
+        # 【ディープ監査#2】increment_usage_count()は同期関数でFirestoreへ
+        # ブロッキングI/Oを行うため、asyncio.to_threadでラップしイベント
+        # ループを塞がないようにする(この呼び出し中は同一プロセスの他リクエストが
+        # 一切処理されなくなる問題への対処)。
+        await asyncio.to_thread(narrator_personas.increment_usage_count, db, narrator_persona_id)
 
     return GenerateRoutedResponse(
         doc_id=doc_id,

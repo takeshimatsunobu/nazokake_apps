@@ -18,10 +18,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
+from pydantic import ValidationError
 
+from api.deps import handle_exceptions
 from api.routers import generate as generate_router
 from api.routers.persona_generate import _ResolvedPersona
 from models.schemas import GenerateRequest
+from nazokake_core import narrator_personas
 
 
 @pytest.mark.anyio
@@ -151,6 +154,35 @@ async def test_generate_ai_increments_usage_count_for_custom_persona():
 
 
 @pytest.mark.anyio
+async def test_generate_ai_increment_usage_count_runs_via_asyncio_to_thread():
+    """ディープ監査#2の回帰確認: increment_usage_count(同期・ブロッキングI/O)が
+    asyncio.to_threadでラップされ、イベントループを直接塞がない経路で呼ばれる
+    こと。asyncio.to_thread自体をモックし、(関数, 位置引数...)の形で正しく
+    呼ばれたことを検証する。"""
+    db = MagicMock()
+    resolved = _ResolvedPersona(
+        settings={"display_name": "テストペルソナ", "prompt": "あなたは博識な老賢者です。"},
+        version_id="custom-uuid-1__deadbeef12345678",
+        display_name="テストペルソナ",
+        data_origin="custom",
+    )
+
+    with patch("api.routers.generate._resolve_persona_for_generation", return_value=resolved), \
+         patch("api.routers.generate.async_upsert_item", new=AsyncMock()), \
+         patch("api.routers.generate.sync_once_safe", new=AsyncMock()), \
+         patch("api.routers.generate._guarded_progressive", new=AsyncMock()), \
+         patch("api.routers.generate.narrator_personas.increment_usage_count") as mock_incr, \
+         patch("api.routers.generate.asyncio.to_thread", new=AsyncMock()) as mock_to_thread:
+        req = GenerateRequest(odai="お題", persona_id="custom-uuid-1", temperature=0.6)
+        await generate_router.generate_ai(req, db=db)
+
+    mock_to_thread.assert_awaited_once_with(mock_incr, db, "custom-uuid-1")
+    # asyncio.to_thread自体をモックしたため、increment_usage_countの生呼び出しは
+    # 発生していない(呼び出しがasyncio.to_thread経由に一本化されていることの確認)。
+    mock_incr.assert_not_called()
+
+
+@pytest.mark.anyio
 async def test_generate_ai_does_not_increment_usage_count_for_builtin_persona():
     """回帰確認: ビルトイン(data_origin=="builtin")では加算しないこと
     (みんなの人気ペルソナランキングはカスタムペルソナのみが対象のため)。"""
@@ -189,6 +221,78 @@ async def test_generate_ai_returns_404_for_unknown_persona_id():
             await generate_router.generate_ai(req, db=db)
 
     assert exc_info.value.status_code == 404
+
+
+@pytest.mark.parametrize(
+    "bad_persona_id",
+    [
+        "a/b/c",  # Firestoreドキュメントパス区切り文字
+        "../secret",
+        "foo bar",  # 空白
+        "a" * 65,  # max_length=64超過
+    ],
+)
+def test_generate_request_rejects_invalid_persona_id_characters(bad_persona_id):
+    """ディープ監査#3の回帰確認: "/"等のFirestoreドキュメントパス区切り文字や
+    許可されない文字種を含むpersona_idはPydanticバリデーションの時点(422相当)で
+    拒否されること。"""
+    with pytest.raises(ValidationError):
+        GenerateRequest(odai="お題", persona_id=bad_persona_id)
+
+
+def test_narrator_personas_get_persona_returns_none_on_firestore_failure():
+    """ディープ監査#4の回帰確認: Firestore接続障害時、get_persona()は例外を
+    伝播させずNoneへ縮退すること(ビルトイン解決経路get_personas()と同じ
+    フェイルセーフ方針)。"""
+    db = MagicMock()
+    db.collection.return_value.document.return_value.get.side_effect = Exception("接続エラー")
+
+    result = narrator_personas.get_persona(db, "some-id")
+
+    assert result is None
+
+
+def test_narrator_personas_get_persona_version_returns_none_on_firestore_failure():
+    """get_persona_version()も同様にFirestore障害時はNoneへ縮退すること。"""
+    db = MagicMock()
+    db.collection.return_value.document.return_value.get.side_effect = Exception("接続エラー")
+
+    result = narrator_personas.get_persona_version(db, "some-version-id")
+
+    assert result is None
+
+
+@pytest.mark.anyio
+async def test_handle_exceptions_masks_generic_exception_message():
+    """ディープ監査#4の回帰確認: handle_exceptions(非HTTPException)は生の例外
+    メッセージ(内部情報を含み得る)をレスポンスへ含めず、固定の汎用文言のみを
+    返すこと(async関数の場合)。"""
+
+    @handle_exceptions
+    async def _boom():
+        raise RuntimeError("内部の接続文字列やスタック情報を含む機密情報")
+
+    result = await _boom()
+
+    assert result["status"] == "error"
+    assert "内部の接続文字列やスタック情報を含む機密情報" not in result["message"]
+    assert result["message"] == "Internal Server Error: An unexpected error occurred."
+
+
+def test_handle_exceptions_masks_generic_exception_message_sync():
+    """sync関数の場合はHTTPException(500)として送出されるが、detailは同様に
+    固定の汎用文言のみであること。"""
+
+    @handle_exceptions
+    def _boom():
+        raise RuntimeError("内部の接続文字列やスタック情報を含む機密情報")
+
+    with pytest.raises(HTTPException) as exc_info:
+        _boom()
+
+    assert exc_info.value.status_code == 500
+    assert "内部の接続文字列やスタック情報を含む機密情報" not in exc_info.value.detail
+    assert exc_info.value.detail == "Internal Server Error: An unexpected error occurred."
 
 
 def test_generate_request_accepts_int_and_normalizes_to_str():

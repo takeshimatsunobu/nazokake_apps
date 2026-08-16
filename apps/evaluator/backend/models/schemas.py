@@ -16,8 +16,11 @@ class GenerateRequest(BaseModel):
     # (models/persona_schemas.py::GenerateRoutedRequestと同じint→str正規化
     # パターン。既存クライアント(int送信)との互換のため、mode="before"
     # バリデータでintを受理しstrへ正規化する)。
+    # 【ディープ監査#3】"/"等のFirestoreドキュメントパス区切り文字を含む値が
+    # そのままdb.collection(...).document(persona_id)へ渡ると、意図しない
+    # 階層参照になり得るため、英数字・ハイフン・アンダースコアのみを許可する。
     persona_id: str = Field(
-        default="1", min_length=1, max_length=64,
+        default="1", min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$",
         description="組み込みは\"1\"〜\"10\"の数字文字列、マイペルソナ/みんなのペルソナはUUID文字列(intも互換のため受理)",
     )
     temperature: float = Field(default=0.6, ge=0.0, le=1.0)
