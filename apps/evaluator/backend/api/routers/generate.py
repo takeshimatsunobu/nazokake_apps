@@ -35,6 +35,7 @@ from api.deps import get_db, handle_exceptions
 from api.routers.admin_costs import is_budget_exceeded
 from api.routers.persona_generate import _resolve_persona_for_generation
 from models.schemas import GenerateRequest
+from nazokake_core import narrator_personas
 from services.generation import generate_via_gemini, generate_via_llmjp
 from services.evaluation import run_evaluation, AXES
 from services.step2_generation import _compose_persona_prompt
@@ -779,6 +780,17 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
     # 返す前に同期的に完了させることで、CPUが確実に割り当てられているリクエスト
     # 処理中に同期を完結させる。
     await sync_once_safe()
+
+    # 【みんなの人気ペルソナAPI】マイペルソナ(data_origin=="custom")による生成
+    # リクエストをusage_countとして計上する(persona_generate.py::generate_routed()と
+    # 完全に同一の加算パターン)。narrator_personas.increment_usage_count()自体が
+    # 失敗を内部で吸収するベストエフォート設計(カウンタ更新はなぞかけ生成自体の
+    # 成否とは独立させる、という同関数のdocstring方針)のため、/api/generateの
+    # 非同期(バックグラウンド生成)モデルにおいても、Gemini/ELYZAの実際の成否を
+    # 待たずここで加算してよい。
+    if data_origin == "custom":
+        narrator_personas.increment_usage_count(db, narrator_persona_id)
+
     # 背景で生成パイプラインを発火し、即座にレスポンスを返す（HTTPをブロックしない）
     task = asyncio.create_task(
         _guarded_progressive(

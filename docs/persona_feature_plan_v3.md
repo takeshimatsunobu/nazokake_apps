@@ -859,6 +859,50 @@ ELYZA8秒フォールバック等の主要機能は維持し、`/v1/generate`側
 `node --check`で変更JS全ファイル構文確認、evaluator/backend 28件・tests+workers
 20件、全PASS。
 
+### 12.9 2026-08-17 test_fail_closed.pyの本番Firestore汚染排除・利用回数カウント配線
+
+§12.8の事実調査で判明した2件（本番Firestore汚染テスト、利用回数カウント未配線）に対応した。
+
+**test_fail_closed.pyの完全モック化**:
+- 冒頭の`firebase_admin.initialize_app(options={"projectId": "nazokakeapp-137e5"})`
+  （本番プロジェクトへの実接続）を削除。
+- `app.dependency_overrides[get_db] = lambda: MagicMock()`を追加。
+- `_resolve_persona_for_generation`・`is_budget_exceeded`・`sync_once_safe`・
+  `_fetch_terminal_elyza_job`を明示的にモック（`get_status()`のポーリングが
+  `elyza_job_status=="pending"`のまま停滞するため`_fetch_terminal_elyza_job`が
+  毎回呼ばれることが判明、当初の想定より広い範囲のモックが必要だった）。
+- `generate_via_llmjp`（ELYZA経路、K_SERVICE未設定のためローカルOllama直接
+  呼び出し経路を通る）と`run_evaluation`（`services/evaluation.py`内部で
+  `firestore.client()`を直接呼ぶ）もモック。
+- **発見したレースコンディション**: `process_gemini()`と`process_elyza()`は
+  `asyncio.gather`で真に並行実行され、両方とも共有の`"message"`フィールドへ
+  書き込む。元のテストが安定していたのは、実機Ollamaの生成に数秒〜数十秒
+  かかる一方Geminiの失敗は即時のため、テストの最初のポーリングで既に
+  `status=="error"`を検出してループを抜けていたという**latencyの偶然の
+  組み合わせ**によるもので、明示的な同期は無かった。完全モック化で両経路が
+  即時完了するようになった結果このレースが顕在化したため、ELYZA側のモックに
+  `asyncio.sleep(3.0)`を意図的に入れ、元のテストが依拠していた時間的な
+  観測順序を再現した。
+- **検証**: 単体で5回連続実行し全て安定してPASSすることを確認。さらに
+  `firebase_admin.firestore.client`を「呼ばれたら例外を送出する」よう
+  監視用にパッチした状態でテストを実行し、実際に一度も呼ばれないこと
+  （本番Firestoreへの通信が構造的に発生し得ないこと）を実証した。
+
+**/api/generateへの利用回数インクリメント配線**:
+- `generate.py::generate_ai()`に`from nazokake_core import narrator_personas`を
+  追加し、`sync_once_safe()`呼び出し直後（`persona_generate.py::generate_routed()`と
+  同じ配置）に`if data_origin == "custom": narrator_personas.increment_usage_count(db,
+  narrator_persona_id)`を追加。`/api/generate`はバックグラウンド生成モデルの
+  ため`route`（A/B判定）を持たず、`increment_usage_count()`自体が「カウンタ
+  更新はなぞかけ生成自体の成否と独立させる」ベストエフォート設計（同関数の
+  既存docstring）であることを踏まえ、Gemini/ELYZAの実際の成否を待たずに
+  加算する。
+
+**テスト**: `test_generate_ai_increments_usage_count_for_custom_persona`／
+`test_generate_ai_does_not_increment_usage_count_for_builtin_persona`を追加。
+evaluator/backend 30件・tests+workers 20件、全PASS（合計50件、既存分への
+回帰なし）。
+
 ### 12.3 2026-08-16 統合モノリス化（案B）: apps/persona_main_functionをapps/evaluator/backendへ統合
 
 **背景**: Cloud Run上でFastAPIを安定・自動稼働させるため、ドメイン・CORS・認証の二重管理を解消する目的で、`apps/persona_main_function`のバックエンドロジック（`/v1/personas`・`/v1/generate`等）を本番バックエンド`apps/evaluator/backend`へ統合した（ユーザー指示による「案B」）。

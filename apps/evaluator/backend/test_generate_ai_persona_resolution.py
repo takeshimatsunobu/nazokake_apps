@@ -125,6 +125,55 @@ async def test_generate_ai_builtin_persona_prompt_is_unchanged():
 
 
 @pytest.mark.anyio
+async def test_generate_ai_increments_usage_count_for_custom_persona():
+    """改修要件(利用回数インクリメント配線): data_origin=="custom"の場合、
+    narrator_personas.increment_usage_count(db, narrator_persona_id)が
+    呼ばれること(persona_generate.py::generate_routed()と同一の加算パターン)。
+    /api/generateは非同期(バックグラウンド生成)モデルのため、Gemini/ELYZAの
+    実際の成否を待たずgenerate_ai()の同期部分で加算する。"""
+    db = MagicMock()
+    resolved = _ResolvedPersona(
+        settings={"display_name": "テストペルソナ", "prompt": "あなたは博識な老賢者です。"},
+        version_id="custom-uuid-1__deadbeef12345678",
+        display_name="テストペルソナ",
+        data_origin="custom",
+    )
+
+    with patch("api.routers.generate._resolve_persona_for_generation", return_value=resolved), \
+         patch("api.routers.generate.async_upsert_item", new=AsyncMock()), \
+         patch("api.routers.generate.sync_once_safe", new=AsyncMock()), \
+         patch("api.routers.generate._guarded_progressive", new=AsyncMock()), \
+         patch("api.routers.generate.narrator_personas.increment_usage_count") as mock_incr:
+        req = GenerateRequest(odai="お題", persona_id="custom-uuid-1", temperature=0.6)
+        await generate_router.generate_ai(req, db=db)
+
+    mock_incr.assert_called_once_with(db, "custom-uuid-1")
+
+
+@pytest.mark.anyio
+async def test_generate_ai_does_not_increment_usage_count_for_builtin_persona():
+    """回帰確認: ビルトイン(data_origin=="builtin")では加算しないこと
+    (みんなの人気ペルソナランキングはカスタムペルソナのみが対象のため)。"""
+    db = MagicMock()
+    resolved = _ResolvedPersona(
+        settings={"name": "昭和生まれの天才漫才師", "prompt": "あなたは昭和生まれの天才漫才師です。"},
+        version_id="1__abc123",
+        display_name="昭和生まれの天才漫才師",
+        data_origin="builtin",
+    )
+
+    with patch("api.routers.generate._resolve_persona_for_generation", return_value=resolved), \
+         patch("api.routers.generate.async_upsert_item", new=AsyncMock()), \
+         patch("api.routers.generate.sync_once_safe", new=AsyncMock()), \
+         patch("api.routers.generate._guarded_progressive", new=AsyncMock()), \
+         patch("api.routers.generate.narrator_personas.increment_usage_count") as mock_incr:
+        req = GenerateRequest(odai="お題", persona_id=1, temperature=0.6)
+        await generate_router.generate_ai(req, db=db)
+
+    mock_incr.assert_not_called()
+
+
+@pytest.mark.anyio
 async def test_generate_ai_returns_404_for_unknown_persona_id():
     """テストケース2(不正IDフォールバック/エラーハンドリング): 存在しない
     persona_idが渡された場合、黙示フォールバックせず404を返すこと(§7.3方針を
