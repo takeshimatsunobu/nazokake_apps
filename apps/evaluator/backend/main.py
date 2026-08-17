@@ -102,10 +102,40 @@ from nazokake_core.firestore_sync import async_restore_from_firestore
 _firestore_restore_done = asyncio.Event()
 _firestore_restore_status: dict = {"state": "pending", "error": None, "stats": None}
 
+# 【本番503調査(2026-08-17)】このEvent/dictはプロセス内メモリのグローバル変数で
+# あり、Cloud Runの複数コンテナインスタンス間では一切共有されない。/api/healthが
+# ある1インスタンスで"completed"を返していても、オートスケールで新たに起動した
+# (またはまだ復元処理の途中の)別インスタンスへ/api/generateがルーティングされれば、
+# そのインスタンス自身の_firestore_restore_doneは未setのため503になる
+# (「health は completed なのに generate は 503」という報告の直接原因)。
+# 真のインスタンス間状態共有には外部ストア(Firestore/Redis等)が要るが、下記の
+# 通り/api/generate・/api/status/{doc_id}は復元対象データに一切依存しないため、
+# 状態共有ではなくゲート対象からの除外で解消する(過剰な設計を避ける)。
+
 # 復元ゲートの対象外パス。/api/healthはCloud Runの起動プローブ/ヘルスチェックが
 # 叩くため、復元中でも常に即応する必要がある(復元自体の進捗もここで確認できる
 # よう_firestore_restore_statusを応答に含める、下記healthz参照)。
 _RESTORE_GATE_EXEMPT_PATHS = {"/api/health"}
+
+# 【本番503調査(2026-08-17)】復元ゲートが防ぎたいのは「復元未完了のローカル
+# SQLiteへ問い合わせて不完全な(空に近い)結果を静かに返す」ことのみ(§本ゲートの
+# docstring参照)。以下2エンドポイントはこの前提に当てはまらないため、パス
+# プレフィックス単位で除外する。
+#   - POST /api/generate: 新規doc_id(uuid4)を発行してSQLiteへ新規insertする
+#     だけの書き込み専用エンドポイントで、復元対象の既存データを一切読まない
+#     (generate.py::generate_ai()参照、async_get_item呼び出し無し)。
+#   - GET /api/status/{doc_id}: ローカルSQLiteに無ければ(instructions/285の
+#     設計により)Firestoreへ能動フォールバックして取り込む自己修復ロジックを
+#     既に持つため(generate.py::get_status()参照)、復元完了を待つ必要がない。
+_RESTORE_GATE_EXEMPT_PREFIXES = ("/api/status/",)
+_RESTORE_GATE_EXEMPT_EXACT = {"/api/generate"}
+
+# 【本番503調査(2026-08-17)】async_restore_from_firestore()自体には
+# タイムアウトが無く、Firestore側の異常(ネットワーク不調等)で万一ハング
+# した場合、そのインスタンスは_firestore_restore_doneが永久にsetされず
+# ゲート対象パスへ503を返し続けてしまう(フェールセーフの欠落)。安全側の
+# 上限を設け、超過時は「失敗」扱いで確実にゲートを解放する。
+_FIRESTORE_RESTORE_TIMEOUT_SECONDS = 60.0
 
 
 async def _run_firestore_restore_in_background() -> None:
@@ -121,13 +151,17 @@ async def _run_firestore_restore_in_background() -> None:
     global _firestore_restore_status
     _firestore_restore_status = {"state": "in_progress", "error": None, "stats": None}
     try:
-        stats = await async_restore_from_firestore()
+        stats = await asyncio.wait_for(
+            async_restore_from_firestore(), timeout=_FIRESTORE_RESTORE_TIMEOUT_SECONDS
+        )
         _firestore_restore_status = {"state": "completed", "error": None, "stats": stats}
         logger.info(f"✅ [起動時リストア] Firestoreからの復元が完了しました: {stats}")
     except Exception as e:
         # 【絶対制約】リストア失敗はサーバー起動そのものを失敗させない。復元は
         # あくまでバックアップからの補完であり、失敗してもsync_once()による
         # 通常の同期(ローカル→Firestore)は継続できるため致命的ではない。
+        # asyncio.TimeoutErrorもExceptionのサブクラスのためここで一律捕捉され、
+        # ハング時も"failed"としてゲートが確実に解放される(下記finally参照)。
         _firestore_restore_status = {"state": "failed", "error": str(e), "stats": None}
         logger.error(f"⚠️ [起動時リストア] Firestoreからの復元に失敗しました(空のDBのまま起動を継続します): {e}")
     finally:
@@ -157,7 +191,10 @@ app = FastAPI(title="なぞかけディスカバリー API", lifespan=lifespan)
 @app.middleware("http")
 async def _firestore_restore_gate(request, call_next):
     """Firestoreからの起動時復元が完了するまで、/api/* への呼び出しを503で
-    ガードする(/api/healthは常に例外、Cloud Runの起動プローブ用)。
+    ガードする(/api/healthは常に例外、Cloud Runの起動プローブ用。加えて
+    /api/generate・/api/status/{doc_id}も、復元対象データに依存しないため
+    _RESTORE_GATE_EXEMPT_EXACT/_RESTORE_GATE_EXEMPT_PREFIXESで例外とする、
+    詳細は各定数のコメント参照)。
 
     復元未完了の状態で/api/pending等が不完全なローカルDBへそのまま問い合わせて
     「静かに間違った(空に近い)結果」を返すことを防ぐのが目的。復元は通常
@@ -170,7 +207,12 @@ async def _firestore_restore_gate(request, call_next):
     後から追加したものほど外側になるStarletteの挙動に合わせた配置)。
     """
     path = request.url.path
-    if path in _RESTORE_GATE_EXEMPT_PATHS or not path.startswith("/api"):
+    if (
+        path in _RESTORE_GATE_EXEMPT_PATHS
+        or path in _RESTORE_GATE_EXEMPT_EXACT
+        or path.startswith(_RESTORE_GATE_EXEMPT_PREFIXES)
+        or not path.startswith("/api")
+    ):
         return await call_next(request)
     if not _firestore_restore_done.is_set():
         return JSONResponse(
