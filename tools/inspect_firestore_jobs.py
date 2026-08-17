@@ -40,6 +40,15 @@ if sys.platform == "win32":
     sys.stdout.reconfigure(encoding="utf-8")
     sys.stderr.reconfigure(encoding="utf-8")
 
+from dotenv import load_dotenv  # noqa: E402
+
+# 【2026-08-18修正】本ツールはこれまで.envを一切読み込んでいなかったため、
+# GCP_PROJECT_ID未設定のまま_ensure_firebase_app()がADCの既定プロジェクトへ
+# フォールバックし(tools/generate_doc_via_gemini.pyと同じ規約でリポジトリ
+# ルートの.envを読む)、開発機のgcloud ADCが別プロジェクトを指している場合に
+# 本番Firestore(nazokakeapp-137e5)へ接続できず失敗していた(本番調査時に発覚)。
+load_dotenv(BASE_DIR / ".env")
+
 from firebase_admin import firestore  # noqa: E402
 
 from nazokake_core.firestore_sync import (  # noqa: E402

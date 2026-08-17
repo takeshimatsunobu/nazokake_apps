@@ -85,6 +85,28 @@ _WORKER_OWNED_ELYZA_JOB_FIELDS = {
     "elyza_job_retry_count",
 }
 
+# 【本番調査(2026-08-18): ELYZAが常に8秒ACKタイムアウトで代打になる障害】
+# elyza_job_statusは_WORKER_OWNED_ELYZA_JOB_FIELDSの中で唯一、ワーカーだけでなく
+# Cloud Run自身も書く値("pending"=generate_ai()の初回合図、"cancelled"=
+# apps/evaluator/backend/api/routers/generate.py::process_elyza()の8秒ACK
+# タイムアウト確定)。_build_push_payload()の「リモートに既に値があればローカルの
+# 陳腐化した値で上書きしない」という保護(instructions/282)は、本来ワーカーの
+# 進捗(processing/completed/dead_letter)をCloud Runの定期バックアップPushが
+# 巻き戻すのを防ぐためのものだが、"pending"→"cancelled"というCloud Run自身の
+# 正当な書き込みまで一律に弾いてしまっていた: generate_ai()が最初にpendingを
+# Push→8秒後にcancelledへローカル更新してPushし直しても、リモートが既に
+# "pending"(値あり)のためこの2回目のPushからelyza_job_statusが除外され、
+# Firestore側はpendingのまま永久に取り残される。取り残されたジョブは
+# workers/ondemand_elyza_worker.py::_find_claimable_doc_idsのpendingクエリに
+# 今後も何度でもヒットし続け、ワーカーの処理枠(CLAIM_BATCH_SIZE)を既に代打済みの
+# 無駄なジョブで消費してしまい、新規ジョブが8秒ACK窓に間に合わなくなる
+# (本番Firestoreで実際にstatus=all_completed/elyza_job_status=pendingのまま
+# 取り残された件数15件を確認、うち10件はllmjp_status=completed=既に代打済み)。
+# "pending"はCloud Run自身が書く値でありワーカーの進捗ではないため、リモートが
+# まだ"pending"の間はこのフィールドを保護対象から除外してよい(ワーカーが実際に
+# claimして"pending"以外へ進めた後にのみ保護を有効化する)。
+_ELYZA_JOB_STATUS_UNCLAIMED = "pending"
+
 
 def _resolve_collection() -> str:
     """環境変数 FIRESTORE_SYNC_COLLECTION で同期先コレクションを上書きできる
@@ -111,12 +133,24 @@ def _build_push_payload(
     既に値が設定されているものは、ローカルの陳腐化した値で上書きしないよう
     payloadから除外する(instructions/282)。リモートにまだ存在しない場合
     (ドキュメント新規作成時の初回"pending"合図)は、通常通りローカル値を含める。
+
+    【2026-08-18修正】elyza_job_statusに限っては、リモートの値がまだ"pending"
+    (=ワーカーが一度もclaimしておらず、Cloud Run自身が書いた値のまま)の間は
+    保護対象から除外しない。これにより8秒ACKタイムアウト時のCloud Run自身の
+    "pending"→"cancelled"更新がFirestoreへ正しく反映されるようになる
+    (_ELYZA_JOB_STATUS_UNCLAIMEDのコメント参照)。
     """
     payload = {k: v for k, v in row.items() if k not in _LOCAL_ONLY_FIELDS and v is not None}
     if remote_data:
         for field in _WORKER_OWNED_ELYZA_JOB_FIELDS:
-            if field in payload and remote_data.get(field) is not None:
-                del payload[field]
+            if field not in payload:
+                continue
+            remote_value = remote_data.get(field)
+            if remote_value is None:
+                continue
+            if field == "elyza_job_status" and remote_value == _ELYZA_JOB_STATUS_UNCLAIMED:
+                continue
+            del payload[field]
     return payload
 
 
