@@ -81,6 +81,18 @@ EVAL_SCHEMA = {
 }
 
 # 評価用システムプロンプト（A-1）。{odai} / {nazokake_text} を実行時に差し込む。
+# 【フロントエンド「採点中」スピナー固着調査(2026-08-18)】evaluation呼び出し
+# (google-genai SDK)には明示的なタイムアウトが無く、Ollama側(services/generation.py、
+# httpx.Timeout(120.0))と非対称だった。Gemini API側が何らかの理由で応答を返さない
+# 場合、process_gemini()がasyncio.gather内で無期限に停止し、status が
+# "gemini_generated"のまま進まなくなる(ELYZA側は独立コルーチンのため先に完了し、
+# 結果として「ELYZAだけ描画されGemini側だけ採点中のまま」という見た目になり得る)。
+# ELYZA側の実測タイムアウト(最大45秒)より安全に長い60秒を上限とし、
+# 超過時は明示的に失敗させprocess_gemini()の既存except節でstatus="error"へ
+# 確実に倒す(フロントエンドのpollStatus()は"error"を即座に検知しエラー表示へ
+# 遷移する設計のため、無期限の「採点中」よりはるかに改善する)。
+_EVAL_TIMEOUT_SEC = 60.0
+
 EVAL_RUBRIC_TEMPLATE = """あなたは「謎掛け学術振興会」の主席分析官AIです。
 認知科学・言語学・詩学の知見に基づき、提示された「なぞかけ作品」を11の評価軸で厳密に採点します。
 
@@ -147,7 +159,9 @@ async def run_evaluation(odai: str, nazokake_text: str) -> dict:
 
     start_time = asyncio.get_running_loop().time()
     try:
-        response = await asyncio.to_thread(_call)
+        response = await asyncio.wait_for(
+            asyncio.to_thread(_call), timeout=_EVAL_TIMEOUT_SEC
+        )
         elapsed = asyncio.get_running_loop().time() - start_time
         usage = getattr(response, "usage_metadata", None)
         data = json.loads(response.text)
@@ -156,6 +170,8 @@ async def run_evaluation(odai: str, nazokake_text: str) -> dict:
         # 【Phase1】呼び出し・パース・スキーマ検証のいずれで失敗しても
         # success=Falseとして記録し、元の例外はそのまま呼び出し元へ伝播させる
         # (エラー時の挙動自体は変更しない。計装を追加するのみ)。
+        # asyncio.TimeoutErrorもExceptionのサブクラスのためここで一律捕捉され、
+        # 呼び出し元(process_gemini)のexcept節でstatus="error"へ確実に倒れる。
         elapsed = asyncio.get_running_loop().time() - start_time
         await _log_evaluation_cost(model_name, execution_time_sec=elapsed, success=False)
         raise

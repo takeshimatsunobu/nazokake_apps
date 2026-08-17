@@ -330,6 +330,10 @@ export async function startGeneration() {
         // 「タイムアウト」表示へ倒れてしまうケースがあった(データ自体は失われず
         // リロードで見えるが、UX上は誤ったタイムアウト表示になる)。バックエンドの
         // 最大待機時間(120秒)に安全マージンを足した150秒へ揃える。
+        // 【採点中スピナー固着調査】このtaskIdを「現在アクティブな生成」として記録する。
+        // 以前の生成が未完了のままここに到達した場合、その古いtaskId向けの
+        // pollStatus()ループは次回のポーリングチェックで自己終了する。
+        _activeGenTaskId = data.task_id;
         pollStatus(data.task_id, Date.now() + 150000);
     } catch (e) { showError(e.message); }
 }
@@ -356,17 +360,37 @@ function isElyzaSideDone(data) {
 // タスクごとに一度だけタイムアウトアラートを出すためのガード。
 const _timedOutTasks = new Set();
 
+// 【採点中スピナー固着調査(2026-08-18)】現在アクティブな(=最後にstartGeneration()が
+// 発火した)taskId。ユーザーが前回生成の完了を待たずに「別のお題で作る」→再生成した
+// 場合、古いtaskId向けのpollStatus()ループが取り残されて動き続け、新しいカードの
+// 描画結果を古いデータで上書きし続けるレース(実機テストで最大数秒の表示チラつきを
+// 確認済み)があった。以後のpollStatus呼び出しはこの値と一致する場合のみ描画・
+// 再スケジュールし、一致しなければ静かに自己終了する。
+let _activeGenTaskId = null;
+
 // deadline: このタスクのポーリングを打ち切る絶対時刻(ms epoch、呼び出し元で90秒後に
 // 設定)。ローカルGPU(ELYZA)が停止・暴走して応答が返らない場合でも、期限が来たら
 // ポーリングを諦めてGeminiの結果のみを画面に確定表示する(無限ロード防止のフォールバック)。
 async function pollStatus(taskId, deadline) {
+    if (taskId !== _activeGenTaskId) return; // 別の生成に取って代わられた古いポーリングは即終了
     try {
         const data = await apiGetStatus(taskId);
+        if (taskId !== _activeGenTaskId) return; // await中に新しい生成が始まっていた場合も同様
         if (data.status === 'error' || data.eval_status === 'error') { throw new Error(data.message || "エラー"); }
         const shown = ['gemini_generated', 'gemini_completed', 'all_completed', 'completed'].includes(data.status);
         if (shown) {
             uiGenLoadingStop();
-            uiRenderGenResult(data, taskId);
+            // 【採点中スピナー固着調査】描画自体(DOM操作)で予期しない例外が起きても
+            // ポーリングループそのものは継続させる。ここで例外が伝播すると、直後の
+            // catchがuiMarkGenPollFailed+showErrorでポーリングを完全に打ち切ってしまい、
+            // 次回以降届くはずの正常なデータ(採点結果等)を永久に受け取れなくなる
+            // (スピナーが固まって見える一因になり得るため、1回の描画失敗ではループを
+            // 諦めない設計にする)。
+            try {
+                uiRenderGenResult(data, taskId);
+            } catch (renderErr) {
+                console.error("結果描画中にエラーが発生しました(ポーリングは継続します):", renderErr);
+            }
         }
         const overallDone = data.status === 'all_completed' || data.status === 'completed';
         if (overallDone && isElyzaSideDone(data)) { return; } // 全完了（Gemini・ELYZA双方）。ポーリング終了
