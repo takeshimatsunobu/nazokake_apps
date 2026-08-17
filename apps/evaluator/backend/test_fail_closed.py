@@ -31,14 +31,16 @@ app.include_router(generate.router)
 
 # 【本番Firestore汚染の根絶】従来はfirebase_admin.initialize_app(options={"projectId":
 # "nazokakeapp-137e5"})でモジュール読み込み時に本番プロジェクトへ接続していたため、
-# generate_ai()内のペルソナ解決(_resolve_persona_for_generation → get_personas(db))や
-# get_status()のFirestore再Pull(_fetch_terminal_elyza_job)が実際に本番の
-# nazokake_itemsコレクションへ読み書きしていた(エミュレータがこの開発機では
+# generate_ai()内のペルソナ解決(_resolve_persona_for_generation → get_personas(db))が
+# 実際に本番のnazokake_itemsコレクションへ読み書きしていた(エミュレータがこの開発機では
 # Javaバージョン制約により起動できないため、tests/conftest.pyの自動フォールバックも
 # 効かない)。get_db依存をMagicMockへ差し替えるだけでは、_resolve_persona_for_generation
 # 内部のFirestoreクエリ(db.collection(...).stream()等)がMagicMockに対して呼ばれ
 # 予測不能な挙動(TypeErrorや非JSON化可能な戻り値)になり得るため、Firestoreへ
 # 実際に到達し得る関数はすべて名前レベルで明示的にモックする方針にする。
+# 【Push型アーキテクチャ移行(2026-08-18)】get_status()のFirestore再Pull
+# (旧_fetch_terminal_elyza_job)はジョブキュー廃止に伴い削除済みのため、
+# もはやモック対象にする必要が無い。
 app.dependency_overrides[get_db] = lambda: MagicMock()
 
 
@@ -49,9 +51,8 @@ async def test_fail_closed_on_gemini_exception():
     the API returns a generic error message and does not leak the exception details.
 
     本番Firestoreへは一切接続しない(get_db依存の差し替え、および
-    _resolve_persona_for_generation/is_budget_exceeded/sync_once_safe/
-    _fetch_terminal_elyza_jobの明示的モックにより、Firestoreへ到達し得る
-    経路をすべて遮断している)。
+    _resolve_persona_for_generation/is_budget_exceeded/sync_once_safeの
+    明示的モックにより、Firestoreへ到達し得る経路をすべて遮断している)。
 
     【generate_via_llmjp/run_evaluationもモックする理由】K_SERVICE未設定
     (ローカル開発相当)のためprocess_elyza()は直接Ollama呼び出し経路を通る。
@@ -115,10 +116,6 @@ async def test_fail_closed_on_gemini_exception():
          patch(
              "api.routers.generate.sync_once_safe",
              new=AsyncMock(),
-         ), \
-         patch(
-             "api.routers.generate._fetch_terminal_elyza_job",
-             new=AsyncMock(return_value=None),
          ):
         # Keep all background task operations, polling, and assertions inside the with patch context
         # so that the mock remains active until the asynchronous tasks complete.

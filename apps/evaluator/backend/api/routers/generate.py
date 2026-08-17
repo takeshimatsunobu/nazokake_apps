@@ -6,11 +6,15 @@ GET  /status/{doc_id} : 段階的ステータス（processing → gemini_complet
 フロー（生成と評価を分離）:
   1. Gemini 生成 → status:gemini_generated（本文先行）→ 評価 → status:gemini_completed
   2. 裏でELYZA 生成 → llmjp_status:generated（本文先行）→ 評価 → status:all_completed
-     【instructions/258】ローカル開発(K_SERVICE未設定)では直接Ollamaを呼ぶ経路A。
-     Cloud Run本番(K_SERVICE設定済み)ではLLMJP_URL等のトンネル設定が無く経路Aが
-     構造的に到達不能なため試みず、generate_ai()が書き込むelyza_job_status経由の
-     オンデマンドジョブキュー(instructions/250, workers/ondemand_elyza_worker.py)
-     である経路Bにのみ委ねる。
+     【Push型アーキテクチャ(2026-08-18)】Firestoreジョブキュー(elyza_job_status
+     経由のポーリング・8秒ACK待ち・ワーカー監視、instructions/250)を廃止し、
+     Cloud RunからCloudflare Tunnel経由で自宅PCのOllamaへ直接HTTP POSTする
+     方式(services/generation.py::generate_via_elyza_direct、環境変数
+     LOCAL_ELYZA_ENDPOINT)へ統一した。接続確立3秒/推論15秒という短い
+     タイムアウトで即座に諦め、Firestoreの往復を挟まずGemini Flash Lite
+     代打へ切り替える(process_elyza参照)。ローカル開発機でLOCAL_ELYZA_ENDPOINT
+     未設定・K_SERVICE未設定の場合のみ、従来通りlocalhost直叩き
+     (generate_via_llmjp)を試みる。
 Gemini(信頼パス)の失敗のみ status:error。ELYZA(おまけ)の失敗は graceful（llmjp_status:failed）。
 
 【Local-First】永続化先はFirestoreではなく packages/shared_core/nazokake_core/database.py の
@@ -36,7 +40,12 @@ from api.routers.admin_costs import is_budget_exceeded
 from api.routers.persona_generate import _resolve_persona_for_generation
 from models.schemas import GenerateRequest
 from nazokake_core import narrator_personas
-from services.generation import generate_via_gemini, generate_via_llmjp
+from services.generation import (
+    ElyzaDirectUnavailable,
+    generate_via_elyza_direct,
+    generate_via_gemini,
+    generate_via_llmjp,
+)
 from services.evaluation import run_evaluation, AXES
 from services.step2_generation import _compose_persona_prompt
 from nazokake_core.database import async_get_item, async_upsert_item
@@ -250,74 +259,36 @@ async def progressive_generate(
     async def process_elyza() -> None:
         """おまけパス: 生成→本文先行→評価→スコア。失敗は graceful に llmjp_status:failed。
 
-        【instructions/258: 経路Aの到達不能修復】Cloud Run本番環境にはLLMJP_URL/
-        CF_CLIENT_ID等のトンネル設定が存在せず(cloudbuild.yaml確認済み)、
-        デフォルトのlocalhost:11434は構造的に到達不能(instructions/257で実測確認)。
-        K_SERVICE(Cloud Run自身が注入する環境変数。main.pyのログ初期化と同じ検出規約)
-        が設定されている場合はこの直接呼び出し自体を試みず、generate_ai()が既に
-        書き込み済みのelyza_job_status="pending"を経由するinstructions/250の
-        オンデマンドジョブキュー(workers/ondemand_elyza_worker.py)を
-        _ELYZA_WAIT_TIMEOUT_SEC秒だけ待つ。
+        【Push型アーキテクチャ(2026-08-18)】Firestoreジョブキュー(elyza_job_status
+        経由のACKポーリング・ワーカー監視)を廃止した。LOCAL_ELYZA_ENDPOINTが
+        設定されていれば、環境(Cloud Run/ローカル開発)を問わずCloudflare Tunnel
+        経由で自宅PCのOllamaへ直接POSTする(generate_via_elyza_direct、接続確立
+        3秒/推論15秒でタイムアウト)。未設定の場合は、K_SERVICE未設定(ローカル
+        開発機で自宅PC自身がバックエンドも動かしている想定)に限り、従来通り
+        localhost直叩き(generate_via_llmjp)を試みる。Cloud Run上でLOCAL_ELYZA_
+        ENDPOINTも未設定の場合は、待たずに即座にGemini Flash Lite代打へ切り替える。
 
-        【真の代打ロジック】「100%代打が出るならそれはスタメンだ」という指摘を
-        踏まえ、Cloud Run環境=即Gemini Flash Liteという以前の緊急対応(完全バイパス)
-        を撤回。まずローカルワーカーの完了を待ち、制限時間内に完了すれば実際の
-        ELYZA結果を採用する。タイムアウトまたはdead_letter(恒久失敗)の場合のみ、
-        process_elyza_pinch_hitter()でGemini Flash Liteに代打させる。
-        ローカル開発(K_SERVICE未設定)では従来通り直接Ollama呼び出し(経路A)を試みる。
+        自宅PC未起動・トンネル切断・推論遅延はいずれもElyzaDirectUnavailableへ
+        正規化され、Firestoreの往復やポーリング待ちを一切挟まず即座に代打へ
+        切り替わる(process_elyza_pinch_hitter)。実機から応答はあったが出力
+        スキーマが不正だった場合は区別し、実際のELYZA失敗(llmjp_status:failed)
+        として記録する(データ完全性のため代打への黙った差し替えは行わない、
+        generate_via_llmjp()と同じ既存方針)。
         """
-        if os.getenv("K_SERVICE"):
-            # 【高速フォールバック】まず最大_ELYZA_ACK_TIMEOUT_SEC(8秒)だけ、
-            # ローカルワーカーがジョブをclaimした証跡(elyza_job_statusの遷移)を
-            # 待つ。ここでACKが得られなければワーカーはオフラインと判定し、
-            # 残り時間(最大37秒)を無駄に待たず即座に代打へ切り替える。
-            logger.info(
-                f"[{doc_id}] ℹ️ Cloud Run環境のため、オンデマンドジョブキュー(経路B)からの"
-                f"ACKを最大{_ELYZA_ACK_TIMEOUT_SEC:.0f}秒待機します。"
-            )
-            acked = await _wait_for_elyza_ack(doc_id)
-            if not acked:
-                logger.warning(
-                    f"[{doc_id}] ⚠️ {_ELYZA_ACK_TIMEOUT_SEC:.0f}秒以内にローカルワーカーから"
-                    "ACK(ジョブclaim)が得られなかった(オフラインと判定)ため、"
-                    "Gemini Flash代打へ即座に切り替えます。"
-                )
-                # 【二重実行防止】この時点でelyza_job_statusはまだ"pending"のまま
-                # (ワーカーが一度もclaimしていない)。代打を発火する前に"cancelled"へ
-                # 書き換えることで、後から自宅PCが起動しワーカーがポーリングを
-                # 再開しても、_find_claimable_doc_ids/_claim_job_syncの対象条件
-                # (status=="pending" または stale化したprocessing)のいずれにも
-                # 一致せず、二度とこのジョブをclaimできなくなる
-                # (workers/ondemand_elyza_worker.py::_claim_job_sync参照、
-                # 追加のガード実装は不要でこの1点のみで成立する設計)。
-                # sync_once_safe()でFirestoreへ即時反映し、ワーカーのポーリングとの
-                # 競合窓をできるだけ短くする(generate_ai()の初回書き込みと同じ理由)。
-                await async_upsert_item(
-                    {"doc_id": doc_id, "elyza_job_status": "cancelled"}
-                )
-                await sync_once_safe()
-                await process_elyza_pinch_hitter("worker_ack_timeout")
-                return
-
-            logger.info(
-                f"[{doc_id}] ✅ ローカルワーカーからACKを確認。完了を"
-                f"最大{_ELYZA_WAIT_TIMEOUT_SEC:.0f}秒待機します。"
-            )
-            worker_result = await _wait_for_elyza_worker_or_none(doc_id)
-            if worker_result is not None:
-                await async_upsert_item({"doc_id": doc_id, **worker_result})
-                logger.info(
-                    f"[{doc_id}] ✅ ローカルワーカーが制限時間内に完了しました(代打なし)。"
-                )
-                return
+        if os.environ.get("LOCAL_ELYZA_ENDPOINT"):
+            elyza_caller = generate_via_elyza_direct
+        elif not os.getenv("K_SERVICE"):
+            elyza_caller = generate_via_llmjp
+        else:
             logger.warning(
-                f"[{doc_id}] ⚠️ ローカルワーカーが制限時間内に応答しなかった"
-                "(またはdead_letterへ隔離済み)ため、Gemini Flash代打へ切り替えます。"
+                f"[{doc_id}] ⚠️ LOCAL_ELYZA_ENDPOINT未設定のCloud Run環境のため、"
+                "Gemini Flash代打へ即座に切り替えます。"
             )
-            await process_elyza_pinch_hitter("worker_completion_timeout")
+            await process_elyza_pinch_hitter("elyza_endpoint_not_configured")
             return
+
         try:
-            raw_result_l = await generate_via_llmjp(odai, persona_prompt, temperature)
+            raw_result_l = await elyza_caller(odai, persona_prompt, temperature)
             validated_result_l = _validate_result_with_fallback(
                 raw_result_l, "生成結果の検証に失敗しました"
             )
@@ -352,6 +323,12 @@ async def progressive_generate(
                     "llmjp_status": "completed",
                 }
             )
+        except ElyzaDirectUnavailable as e:
+            logger.warning(
+                f"[{doc_id}] ⚠️ 自宅PCへの直叩きが利用できないため({e})、"
+                "Gemini Flash代打へ即座に切り替えます。"
+            )
+            await process_elyza_pinch_hitter(e.reason)
         except Exception as e:
             logger.exception(f"[{doc_id}] ELYZAパスで致命的エラー発生: {e}")
             await async_upsert_item(
@@ -398,160 +375,6 @@ async def _guarded_progressive(
             )
         except Exception as db_e:
             logger.error(f"[{doc_id}] エラーステータスのDB書き込みに失敗: {db_e}")
-
-
-# 【instructions/250】オンデマンドELYZAワーカーがFirestoreへ書き戻す結果のうち、
-# GET /status がマージしてよいフィールドのみを明示的に列挙する(スコープ限定)。
-# status/eval_status/result/scores等のGemini・主系フィールドはここに含めない
-# (SSoT §8.2の一方向同期原則への例外はこの狭いフィールド集合に限定されるため)。
-# 【instructions/286】elyza_job_status自体もここに含める。フロントエンドが
-# ポーリング終了判定に用いるため(以前は完了/失敗を問わずレスポンスに一切
-# 含まれておらず、ローカルSQLiteにも反映されなかった)。
-_ELYZA_JOB_MERGE_FIELDS = (
-    "elyza_job_status",
-    "llmjp_status",
-    "result_llmjp",
-    "nazokake_text_llmjp",
-    "scores_llmjp",
-    "s_total_llmjp",
-    "overall_llmjp",
-    "axis_comments_llmjp",
-    "llmjp_fallback_reason",
-)
-
-
-def _fetch_terminal_elyza_job_sync(doc_id: str) -> dict | None:
-    """Firestoreの該当ドキュメントを直接読み取り、オンデマンドELYZAワーカーが
-    elyza_job_statusを終端状態(completed または dead_letter。pending/processing
-    以外)へ更新済みであれば、マージ対象フィールドのみを返す(読み取り専用。
-    Cloud Run側からのFirestoreへの書き込みは一切行わない)。
-
-    【instructions/286】以前は remote.get("elyza_job_status") == "completed" の
-    場合のみ真としていたため、ジョブが dead_letter(恒久失敗)へ落ちた場合に
-    永遠にマージされず、ローカルSQLiteのelyza_job_statusがpendingのまま残り、
-    フロントエンドのポーリングが無限ループする不具合があった。
-
-    firebase_adminの同期APIをそのまま使う(呼び出し元でasyncio.to_threadに包む)。
-    """
-    _ensure_firebase_app()
-    db = firestore.client()
-    snapshot = db.collection(_resolve_collection()).document(doc_id).get()
-    if not snapshot.exists:
-        return None
-    remote = snapshot.to_dict() or {}
-    if remote.get("elyza_job_status") in ("pending", "processing"):
-        return None
-    return {field: remote.get(field) for field in _ELYZA_JOB_MERGE_FIELDS}
-
-
-async def _fetch_terminal_elyza_job(doc_id: str) -> dict | None:
-    """Firestore参照が失敗しても(オフライン・権限エラー等)、ローカルSQLite単独の
-    結果へ安全に縮退できるよう、例外はここで吸収してNoneを返す
-    (呼び出し元のポーリングエンドポイント自体を落とさない)。
-    """
-    try:
-        return await asyncio.to_thread(_fetch_terminal_elyza_job_sync, doc_id)
-    except Exception as e:
-        logger.warning(
-            f"⚠️ [ELYZA Job] Firestoreからの結果マージに失敗(ローカルのみで続行): {e}"
-        )
-        return None
-
-
-# 【実測に基づく調整】Cloud Run本番でオンデマンドELYZAワーカー(経路B)の完了を
-# 待つ最大秒数。当初32秒に短縮したが、実機計測(1発入魂アルゴリズム化後)で
-# 正常成功ケースが約40秒かかることが判明し、32秒では成功間近のELYZAを
-# 「早すぎる見切り」で代打へ切り替えてしまっていた。実測40秒を安全にカバーする
-# 45秒へ再調整する。フロントエンドのクライアント側デッドライン(app.js: 90秒)には
-# まだ十分な余裕があり、タイムアウト後のGemini Flash Lite代打呼び出し
-# (数秒〜十数秒)の余地も残る。
-_ELYZA_WAIT_TIMEOUT_SEC = 45.0
-_ELYZA_WAIT_POLL_INTERVAL_SEC = 2.0
-
-
-# 【高速フォールバック(8秒ACK判定)】ローカルワーカーが完全にオフライン(電源断・
-# 回線不調等)の場合、_ELYZA_WAIT_TIMEOUT_SEC(45秒)まるごと待ってから代打へ
-# 切り替えるのはユーザー体験上遅すぎる。ワーカーが実際にジョブをclaimした証跡
-# (elyza_job_statusが"pending"から動く)を短時間だけ先に確認することで、
-# 「オフライン」と「オンラインだが処理に時間がかかっている」を早期に区別する。
-_ELYZA_ACK_TIMEOUT_SEC = 8.0
-
-
-def _fetch_elyza_job_status_sync(doc_id: str) -> str | None:
-    """elyza_job_statusフィールドのみを読み取る軽量クエリ(ACK判定専用)。
-
-    ドキュメント自体が無い、またはFirestoreへの参照に失敗した場合はNoneを返す
-    (呼び出し元はこれを「まだACKされていない」として扱う)。
-    """
-    _ensure_firebase_app()
-    db = firestore.client()
-    snapshot = db.collection(_resolve_collection()).document(doc_id).get()
-    if not snapshot.exists:
-        return None
-    remote = snapshot.to_dict() or {}
-    return remote.get("elyza_job_status")
-
-
-async def _fetch_elyza_job_status(doc_id: str) -> str | None:
-    try:
-        return await asyncio.to_thread(_fetch_elyza_job_status_sync, doc_id)
-    except Exception as e:
-        logger.warning(f"⚠️ [ELYZA ACK判定] Firestoreからの状態取得に失敗: {e}")
-        return None
-
-
-async def _wait_for_elyza_ack(
-    doc_id: str,
-    timeout_sec: float = _ELYZA_ACK_TIMEOUT_SEC,
-    poll_interval_sec: float = _ELYZA_WAIT_POLL_INTERVAL_SEC,
-) -> bool:
-    """elyza_job_statusが"pending"以外(processing/completed/dead_letter)へ
-    遷移するのを、最大timeout_sec秒だけ待つ。ローカルワーカーが実際にジョブを
-    claimした(=オンライン)ことを示す最初の証跡がこの遷移であるため、これを
-    「ACK」とみなす。
-
-    timeout_sec以内にACKを観測できれば True(ワーカーはオンライン、通常の
-    _wait_for_elyza_worker_or_noneへ処理を委ねてよい)、観測できなければ False
-    (ワーカーがオフラインと判定し、即座にGemini Flash代打へ切り替える)。
-    """
-    elapsed = 0.0
-    while elapsed < timeout_sec:
-        status = await _fetch_elyza_job_status(doc_id)
-        if status is not None and status != "pending":
-            return True
-        await asyncio.sleep(poll_interval_sec)
-        elapsed += poll_interval_sec
-    return False
-
-
-async def _wait_for_elyza_worker_or_none(
-    doc_id: str,
-    timeout_sec: float = _ELYZA_WAIT_TIMEOUT_SEC,
-    poll_interval_sec: float = _ELYZA_WAIT_POLL_INTERVAL_SEC,
-) -> dict | None:
-    """オンデマンドELYZAワーカー(workers/ondemand_elyza_worker.py)がジョブを
-    終端状態(completed/dead_letter)へ進めるのを、最大timeout_sec秒だけ待つ。
-
-    - ワーカーが制限時間内に llmjp_status=="completed" まで完了させた場合:
-      _ELYZA_JOB_MERGE_FIELDS の辞書を返す(呼び出し元がそのままupsertする)。
-    - dead_letter(ワーカー側がリトライを使い果たして恒久失敗)、またはタイムアウト
-      した場合: Noneを返す(=呼び出し元は代打へ切り替える)。
-
-    timeout_sec/poll_interval_secを引数化しているのは、検証スクリプト
-    (scripts/test_pinch_hitter_rate.py)が実際の待機を伴わず短時間で代打分岐を
-    再現できるようにするため(本番呼び出し側は既定値のまま使う)。
-    """
-    elapsed = 0.0
-    while elapsed < timeout_sec:
-        result = await _fetch_terminal_elyza_job(doc_id)
-        if result is not None:
-            if result.get("llmjp_status") == "completed":
-                return result
-            # dead_letter等、終端だが失敗: 代打対象として扱う。
-            return None
-        await asyncio.sleep(poll_interval_sec)
-        elapsed += poll_interval_sec
-    return None
 
 
 def _fetch_full_document_sync(doc_id: str) -> dict[str, Any] | None:
@@ -624,43 +447,11 @@ async def get_status(doc_id: str):
         if data is None:
             raise HTTPException(status_code=404, detail="Not found")
 
-    # 【instructions/250→285】ローカルSQLite側にデータはあっても、オンデマンド
-    # ELYZAワーカーがまだジョブを完了させていない(elyza_job_statusがpending/
-    # processing等の未終端状態)場合、ワーカーがFirestoreへ直接書き込んだ最新の
-    # 進捗(completed等)を能動的にPullし、ローカルSQLiteへ上書き同期してから
-    # レスポンスを返す(llmjp_status=="completed"の場合は、ローカルの直接生成
-    # パスで既に完結しているため、無駄なFirestore問い合わせを行わない)。
-    #
-    # 【改修要件: フォールバック確定後もワーカーの後発完了を拾う】8秒ACK
-    # タイムアウトでelyza_job_status="cancelled"＋Gemini Flash代打を確定させた
-    # 直後に、ワーカーがclaim済みだったジョブを実際に完了させてFirestoreへ
-    # 書き戻すレースが起こり得る(worker側は_is_still_processing_syncで大部分を
-    # 防ぐが、claim〜その確認の間隙は完全には無くせない)。この場合llmjp_status
-    # は既に"completed"(代打の結果)だが、本物のELYZA結果(nazokake_text_llmjp)を
-    # 一度も取り込めていない。破棄せず、確定済みのfallback_triggered/エンジン
-    # 表記はそのまま維持しつつ、本物の結果をDB・レスポンスへ保持できるよう、
-    # この場合に限り再Pullの対象へ加える(本物を取り込めば以降はこの分岐に
-    # 入らなくなるため、無条件の無限リトライにはならない)。
-    fallback_missing_real_result = bool(data.get("llmjp_is_pinch_hitter")) and not data.get(
-        "nazokake_text_llmjp"
-    )
-    should_pull_elyza_progress = data.get("llmjp_status") != "completed" and data.get(
-        "elyza_job_status"
-    ) in ("pending", "processing")
-    should_pull_late_worker_result = (
-        data.get("llmjp_status") == "completed" and fallback_missing_real_result
-    )
-    if should_pull_elyza_progress or should_pull_late_worker_result:
-        elyza_job_result = await _fetch_terminal_elyza_job(doc_id)
-        if elyza_job_result is not None:
-            try:
-                await async_upsert_item({"doc_id": doc_id, **elyza_job_result})
-            except Exception as e:
-                logger.warning(
-                    f"⚠️ [ELYZA Job] Firestoreから取得した進捗のローカルSQLiteへの"
-                    f"上書き同期に失敗(doc_id={doc_id}): {e}"
-                )
-            data = {**data, **elyza_job_result}
+    # 【Push型アーキテクチャ(2026-08-18)】ELYZA(実機またはGemini代打)は
+    # progressive_generate()内のasyncio.gatherでGeminiと同じ背景タスク内で
+    # 完結するため、Firestoreジョブキューを介した非同期な後発完了を待って
+    # 追いPullする仕組み(旧elyza_job_status経由)は不要になった。ローカル
+    # SQLiteの値をそのまま返す。
 
     return {
         "status": data.get("status") or "unknown",
@@ -747,11 +538,10 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
             "status": "processing",
             "eval_status": "processing",
             "llmjp_status": "pending",
-            # 【instructions/250】オンデマンドELYZAワーカー用のジョブキュー合図。ここで
-            # Firestoreへ直接書き込むことは絶対にしない(SSoT §8.2の一方向同期原則)。
-            # この値は他フィールドと同様にローカルSQLiteへ書くだけであり、直後の
-            # sync_once_safe(既存の一方向Push)が自動的にFirestoreへ伝播させる。
-            "elyza_job_status": "pending",
+            # 【Push型アーキテクチャ(2026-08-18)】elyza_job_status(オンデマンド
+            # ワーカー用のジョブキュー合図)はもはや書かない。ELYZA(実機/代打)は
+            # progressive_generate()内で直接完結するため、Firestore経由でclaimを
+            # 待つ別プロセスは存在しない。
             "message": "AIが生成中...",
             "created_at": datetime.now(timezone.utc).isoformat(),
             "random_weight": random.random(),  # noqa: S311 (無限スクロール用シーク乱数。暗号用途ではない)
@@ -763,12 +553,12 @@ async def generate_ai(req: GenerateRequest, db=Depends(get_db)):
             "narrator_persona_name": narrator_persona_name,
             "data_origin": data_origin,
             # persona列(既存のJSON汎用カラム)にリクエストされたペルソナID/温度を記録する。
-            # 新規マイグレーション不要でスキーマへ組み込むための選択。
-            # 【Phase5 §3.4】narrator_persona_version_id/persona_promptもここに同梱し、
-            # workers/ondemand_elyza_worker.pyがFirestoreを引き直さずスナップショットを
-            # そのまま使えるようにする(_claim_job_sync参照)。persona_promptは
-            # _compose_persona_prompt()済みの完全な文字列(tone/first_person等
-            # 込み)のため、ELYZA(おまけ)側もマイペルソナの口調設定を反映できる。
+            # 新規マイグレーション不要でスキーマへ組み込むための選択(監査・デバッグ用の
+            # スナップショットとして保持)。【Push型アーキテクチャ移行後】process_elyza()は
+            # このクロージャのpersona_prompt変数を直接使うため、生成そのものにはもう
+            # このカラムを経由しない(旧workers/ondemand_elyza_worker.pyは現在
+            # elyza_job_statusを一切受け取らなくなり事実上休止状態、_claim_job_sync
+            # 経由でのみこの列を参照する)。
             "persona": {
                 "persona_id": req.persona_id,
                 "temperature": req.temperature,

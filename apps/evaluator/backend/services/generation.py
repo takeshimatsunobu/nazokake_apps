@@ -702,6 +702,162 @@ async def generate_via_llmjp(
         await asyncio.to_thread(_vram_lock.release)
 
 
+# ============================================================
+# 【Push型アーキテクチャ移行(2026-08-18)】Firestoreジョブキュー(workers/
+# ondemand_elyza_worker.pyによるポーリング、instructions/250)を廃止し、
+# Cloud RunからCloudflare Tunnel経由で自宅PCのOllamaへ直接HTTP POSTする方式へ
+# 移行する。自宅PC停止時・トンネル切断時・推論が遅い場合のいずれも、
+# Firestoreの往復やポーリング待ちを一切挟まず、接続確立3秒/推論15秒という
+# 短いタイムアウトで即座に諦め、Gemini Flash Lite代打へ切り替える
+# (api/routers/generate.py::process_elyza参照)。
+# ============================================================
+
+_LOCAL_ELYZA_CONNECT_TIMEOUT_SEC = 3.0
+_LOCAL_ELYZA_READ_TIMEOUT_SEC = 15.0
+
+
+class ElyzaDirectUnavailable(Exception):
+    """自宅PCへの直叩きが利用できないことを表す(呼び出し元は即座にGemini代打へ
+    切り替えてよい)。LOCAL_ELYZA_ENDPOINT未設定・接続不可(自宅PC/トンネル停止)・
+    タイムアウト(推論が遅い)のいずれもこの例外に正規化する。
+
+    reason: 呼び出し元(api/routers/generate.py::process_elyza)が
+    llmjp_fallback_reasonへそのまま記録する機械可読な識別子。原因の種類ごとに
+    区別できるよう("home_pc_unreachable"/"elyza_inference_timeout"/
+    "home_pc_error_response")、GET /status/{doc_id}のfallback_reasonとして
+    ユーザー・運用者の双方が原因を判別しやすくする。
+
+    【データ完全性への配慮】ELYZAから実際に応答は返ったが出力スキーマが不正
+    だった場合(実機は生きている)は、この例外には含めない(generate_via_llmjp()
+    と同じ既存方針: "ELYZAの出力"と称するデータへGeminiの出力が黙って混入する
+    ことを防ぐため、通常のValueError/RuntimeErrorとして送出し呼び出し元は
+    llmjp_status="failed"の実失敗として記録する)。
+    """
+
+    def __init__(self, message: str, reason: str = "home_pc_unreachable_or_timeout"):
+        super().__init__(message)
+        self.reason = reason
+
+
+def _elyza_direct_call_sync(
+    url: str, system_prompt: str, user_prompt: str, model: str, temperature: float
+) -> str:
+    payload = {
+        "model": model,
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ],
+        "max_tokens": 800,
+        "temperature": temperature,
+        "top_p": 0.9,
+        "response_format": {"type": "json_object"},
+    }
+    headers = {
+        "ngrok-skip-browser-warning": "true",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    }
+    cf_id = os.environ.get("CF_CLIENT_ID")
+    cf_secret = os.environ.get("CF_CLIENT_SECRET")
+    if cf_id and cf_secret:
+        headers["CF-Access-Client-Id"] = cf_id
+        headers["CF-Access-Client-Secret"] = cf_secret
+
+    timeout = httpx.Timeout(
+        _LOCAL_ELYZA_READ_TIMEOUT_SEC, connect=_LOCAL_ELYZA_CONNECT_TIMEOUT_SEC
+    )
+    # 【実測に基づく実装選択】要件はhttpx.AsyncClientでの直接呼び出しだが、
+    # このファイル冒頭のchat_completion_local()に残る実機計測の通り、
+    # firebase_admin(gRPC)と同一イベントループでhttpx.AsyncClientを使うと
+    # Windows既定のProactorEventLoopとの相性でOllama応答が22.8秒→7.3秒級に
+    # ブロートすることを確認済み(3倍)。本関数は15秒という切り詰めたタイムアウトで
+    # 早期に代打判定する設計のため、このブロートで誤ってタイムアウト扱いに
+    # なることを避ける必要がある。そのため既存パターンと同様、同期httpx.Clientを
+    # asyncio.to_thread経由の別スレッドで実行し(呼び出し元からは非同期に見える)、
+    # 同じ副作用を避ける。
+    with httpx.Client(timeout=timeout) as client:
+        res = client.post(url, json=payload, headers=headers)
+        res.raise_for_status()
+        return (
+            res.json()
+            .get("choices", [{}])[0]
+            .get("message", {})
+            .get("content", "")
+            .strip()
+        )
+
+
+async def generate_via_elyza_direct(
+    odai: str,
+    persona_prompt: str | None = None,
+    temperature_override: float | None = None,
+) -> dict:
+    """【Push型アーキテクチャ】Cloud RunからCloudflare Tunnel経由で自宅PCの
+    Ollama(ELYZA)へ直接POSTする。ジョブキュー・ACKポーリング・ワーカー監視は
+    一切介さない直線的な1リクエスト完結の生成。
+
+    接続先はLOCAL_ELYZA_ENDPOINT(例: https://xxxx.trycloudflare.com、
+    scripts/start_elyza_tunnel.ps1が払い出すQuick Tunnel URL、または独自
+    ドメインの名前付きTunnel)。未設定・接続不可・タイムアウトのいずれも
+    ElyzaDirectUnavailableへ正規化し、呼び出し元(process_elyza)がゼロ秒待機で
+    Gemini Flash Lite代打へ切り替えられるようにする。
+    """
+    endpoint = os.environ.get("LOCAL_ELYZA_ENDPOINT")
+    if not endpoint:
+        raise ElyzaDirectUnavailable(
+            "LOCAL_ELYZA_ENDPOINT が未設定のため、直叩きは利用できません。",
+            reason="elyza_endpoint_not_configured",
+        )
+
+    sys_prompt, user_prompt, dyn_temp = await _build_gen_prompts(
+        odai, persona_prompt, temperature_override
+    )
+    model = os.environ.get("LLMJP_MODEL", "elyza:8b")
+    url = endpoint.rstrip("/") + "/v1/chat/completions"
+    print(f"🏠🔌 [Push直叩き] 自宅PCのELYZAへ直接送信中... ({url}, model={model})")
+
+    start_time = asyncio.get_running_loop().time()
+    try:
+        raw = await asyncio.to_thread(
+            _elyza_direct_call_sync, url, sys_prompt, user_prompt, model, dyn_temp
+        )
+    except (httpx.ConnectError, httpx.ConnectTimeout) as e:
+        elapsed = asyncio.get_running_loop().time() - start_time
+        await _log_generation_cost("Ollama-direct", execution_time_sec=elapsed, success=False)
+        raise ElyzaDirectUnavailable(
+            f"自宅PCまたはCloudflare Tunnelへ接続できませんでした(PC未起動の可能性): {e}",
+            reason="home_pc_unreachable",
+        ) from e
+    except httpx.ReadTimeout as e:
+        elapsed = asyncio.get_running_loop().time() - start_time
+        await _log_generation_cost("Ollama-direct", execution_time_sec=elapsed, success=False)
+        raise ElyzaDirectUnavailable(
+            f"自宅PCからの応答が{_LOCAL_ELYZA_READ_TIMEOUT_SEC:.0f}秒以内に得られませんでした: {e}",
+            reason="elyza_inference_timeout",
+        ) from e
+    except httpx.HTTPError as e:
+        # 接続先が到達可能ではあるがエラー応答(5xx等)を返した場合も、実機の
+        # 一時的な不調とみなしPC未起動と同様に扱う(Firestore往復を挟まず即代打)。
+        elapsed = asyncio.get_running_loop().time() - start_time
+        await _log_generation_cost("Ollama-direct", execution_time_sec=elapsed, success=False)
+        raise ElyzaDirectUnavailable(
+            f"自宅PCからエラー応答を受け取りました: {e}", reason="home_pc_error_response"
+        ) from e
+
+    elapsed = asyncio.get_running_loop().time() - start_time
+    await _log_generation_cost("Ollama-direct", execution_time_sec=elapsed, success=True)
+
+    cand = _extract_json_dict(raw)
+    if not _valid_nazokake(cand):
+        # 【データ完全性】実機からの応答はあったがスキーマ不正。PC未起動とは
+        # 区別し、実際のELYZA失敗として記録する(Gemini代打への黙った差し替えは
+        # generate_via_llmjp()と同じ理由で行わない)。
+        raise ValueError("ELYZA出力がスキーマ不正でした(必須フィールド欠落)")
+
+    print("✅ [Push直叩き] ELYZA生成に成功しました。")
+    return _finalize(cand)
+
+
 async def generate_nazokake(odai: str) -> dict:
     """後方互換ラッパ（test_pipeline 等の既存呼び出し用）。ELYZA → Gemini の順で試す。"""
     try:
