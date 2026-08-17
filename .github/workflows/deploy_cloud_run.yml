@@ -172,6 +172,15 @@ jobs:
           # api/routers/generate.py::process_elyza参照)。未設定時はCloud Run上で
           # 即座にGemini Flash Lite代打へ切り替わるフェイルセーフ設計のため、
           # このURLが一時的に無効でも本番全体が止まることはない。
+          # 【2026-08-18: Cloudflare Access対応】elyza.nazokake-master.comは
+          # Cloudflare Access(Zero Trust)で保護されており、Service Token
+          # (Access > Service Auth で発行、対象Accessアプリケーションのポリシーで
+          # 許可済み)のClient ID/SecretをCF-Access-Client-Id/CF-Access-Client-Secret
+          # ヘッダーとして送らないと403で拒否される(services/generation.py::
+          # _elyza_direct_call_sync参照、既存実装済み)。GCP Secret Managerへは
+          # まだ移行しておらずGitHub Secretsから直接注入する(OWNER_EMAILと同じ
+          # 既存パターン)。未登録の場合はヘッダーが付与されないだけで、Access側が
+          # 403を返しGemini Flash Lite代打へ安全にフォールバックする(致命的にはならない)。
           env_vars: |
             EXCHANGE_RATE_USD_JPY=160.0
             SERVER_COST_PER_HOUR_JPY=5.0
@@ -179,6 +188,8 @@ jobs:
             STEP1_MODEL=gemini-2.5-flash
             STEP2_MODEL=gemini-3.6-flash
             LOCAL_ELYZA_ENDPOINT=https://elyza.nazokake-master.com
+            CF_CLIENT_ID=${{ secrets.CF_CLIENT_ID }}
+            CF_CLIENT_SECRET=${{ secrets.CF_CLIENT_SECRET }}
 
       # 【instructions/291】instructions/290で確定した「片肺デプロイ」(バックエンドの
       # みが自動デプロイされ、Firebase Hostingへのフロントエンド配信が
