@@ -166,12 +166,19 @@ jobs:
           # thinking_config(マイペルソナのthinking_level)を受け付けず、本番でも
           # 「Thinking level is not supported for this model」の400エラーになる
           # ことをローカルE2E検証で確認したため、明示的に指定する。
+          # 【2026-08-18: Push型ELYZA直叩きアーキテクチャ移行】自宅PCのCloudflare
+          # Tunnel(Windowsサービス常駐・固定ホスト名)を経由してOllamaへ直接POSTする
+          # ための接続先(services/generation.py::generate_via_elyza_direct、
+          # api/routers/generate.py::process_elyza参照)。未設定時はCloud Run上で
+          # 即座にGemini Flash Lite代打へ切り替わるフェイルセーフ設計のため、
+          # このURLが一時的に無効でも本番全体が止まることはない。
           env_vars: |
             EXCHANGE_RATE_USD_JPY=160.0
             SERVER_COST_PER_HOUR_JPY=5.0
             OWNER_EMAIL=${{ secrets.OWNER_EMAIL }}
             STEP1_MODEL=gemini-2.5-flash
             STEP2_MODEL=gemini-3.6-flash
+            LOCAL_ELYZA_ENDPOINT=https://elyza.nazokake-master.com
 
       # 【instructions/291】instructions/290で確定した「片肺デプロイ」(バックエンドの
       # みが自動デプロイされ、Firebase Hostingへのフロントエンド配信が
