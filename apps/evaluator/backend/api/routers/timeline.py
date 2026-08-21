@@ -52,6 +52,14 @@ def _to_timeline_item(data: dict) -> TimelineItem:
     # デフォルト値(Field(0, ...))を正しく適用させる(Noneを明示的に渡すと
     # int型のバリデーションに失敗するため、in data判定で選別する)。
     projected = {k: data[k] for k in _TIMELINE_FIELDS if k in data}
+    # 【本番500バグ修正】TimelineItem.persona_idはstr固定(マイペルソナのUUID文字列も
+    # 保持するための設計、クラス定義のコメント参照)だが、str化される前の時期に
+    # 書き込まれた旧ドキュメントはpersona_idがintのまま保存されており、Pydantic v2は
+    # int→strの暗黙変換を行わないため無条件にValidationError(500)になっていた
+    # (本番のGET /v1/timelineで実際に発生していたことを確認済み)。ここで明示的に
+    # str化することで、新旧いずれの形式のドキュメントも安全に描画できるようにする。
+    if projected.get("persona_id") is not None:
+        projected["persona_id"] = str(projected["persona_id"])
     return TimelineItem.model_validate(projected)
 
 
